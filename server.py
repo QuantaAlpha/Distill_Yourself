@@ -871,6 +871,56 @@ def _record_error(patterns: dict, raw_msg: str, sid: str, day: str, project: str
 
 
 # ---------------------------------------------------------------------------
+# AI Engine detection and execution (Codex → claude -p fallback)
+# ---------------------------------------------------------------------------
+_ai_engine_cache = None  # "codex" | "claude" | ""
+
+
+def _detect_ai_engine():
+    """Auto-detect available AI CLI: Codex first, then claude -p."""
+    global _ai_engine_cache
+    if _ai_engine_cache is not None:
+        return _ai_engine_cache
+    for name, cmd in [("codex", ["codex", "--version"]), ("claude", ["claude", "--version"])]:
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=5)
+            _ai_engine_cache = name
+            print(f"AI engine: {name}")
+            return _ai_engine_cache
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+    _ai_engine_cache = ""
+    return _ai_engine_cache
+
+
+def _run_ai_engine(prompt, allow_write=False, timeout=300):
+    """Execute prompt via detected AI engine. Returns (stdout, stderr, returncode).
+    Raises FileNotFoundError if no engine available."""
+    engine = _detect_ai_engine()
+    if engine == "codex":
+        sandbox = "workspace-write" if allow_write else "read-only"
+        r = subprocess.run(
+            ["codex", "--sandbox", sandbox, "--ask-for-approval", "never",
+             "exec", "--skip-git-repo-check", prompt],
+            capture_output=True, text=True, timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+        return r.stdout, r.stderr, r.returncode
+    elif engine == "claude":
+        r = subprocess.run(
+            ["claude", "-p"],
+            input=prompt,
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return r.stdout, r.stderr, r.returncode
+    else:
+        raise FileNotFoundError(
+            "No AI engine found. Install Codex (npm i -g @openai/codex) "
+            "or Claude Code (npm i -g @anthropic-ai/claude-code)."
+        )
+
+
+# ---------------------------------------------------------------------------
 # HTTP Server
 # ---------------------------------------------------------------------------
 class ChatViewerHandler(SimpleHTTPRequestHandler):
@@ -1014,13 +1064,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 "totalProjects": len(_index.get("projects", {})),
             }
 
-    # Tabs that use direct Python analysis (no Codex needed)
+    # Tabs that use direct Python analysis (no AI engine needed)
     _DIRECT_TABS = {"rules", "signals", "patterns"}
-    # Tabs that need AI (Codex) to generate
+    # Tabs that need AI (Codex / claude -p) to generate
     _AI_TABS = {"profile", "memory"}
 
     def _get_evolve_tab(self, tab: str, refresh: bool, source: str, date: str, project: str) -> dict:
-        """Get evolve tab data: serve cache or run analyze.py / Codex to generate."""
+        """Get evolve tab data: serve cache or run analyze.py / AI engine to generate."""
         cache_path = CACHE_DIR / "evolve" / f"{tab}.json"
 
         # If not refreshing and cache exists, serve it
@@ -1034,7 +1084,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         if tab in self._DIRECT_TABS:
             return self._evolve_direct(tab, source, date, project)
         else:
-            return self._evolve_via_codex(tab, source, date, project, cache_path)
+            return self._evolve_via_ai(tab, source, date, project, cache_path)
 
     def _evolve_direct(self, tab: str, source: str, date: str, project: str) -> dict:
         """Run analyze.py directly for rules/signals/patterns."""
@@ -1060,26 +1110,21 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         }
         return fallbacks.get(tab, {})
 
-    def _evolve_via_codex(self, tab: str, source: str, date: str, project: str, cache_path: Path) -> dict:
-        """Run Codex CLI to analyze conversations and write results via evolve-write."""
+    def _evolve_via_ai(self, tab: str, source: str, date: str, project: str, cache_path: Path) -> dict:
+        """Run AI engine to analyze conversations and write results via evolve-write."""
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
-        prompt = self._build_evolve_codex_prompt(tab, source, date, project, cli_path)
+        prompt = self._build_evolve_prompt(tab, source, date, project, cli_path)
 
         try:
-            subprocess.run(
-                ["codex", "--sandbox", "workspace-write", "--ask-for-approval", "never",
-                 "exec", "--skip-git-repo-check", prompt],
-                capture_output=True, text=True, timeout=300,
-                stdin=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            return self._evolve_fallback(tab, "codex CLI not found")
+            _run_ai_engine(prompt, allow_write=True, timeout=300)
+        except FileNotFoundError as e:
+            return self._evolve_fallback(tab, str(e))
         except subprocess.TimeoutExpired:
             return self._evolve_fallback(tab, "timeout")
         except Exception as e:
             return self._evolve_fallback(tab, str(e))
 
-        # After Codex finishes, read the cache file it wrote via evolve-write
+        # After AI engine finishes, read the cache file it wrote via evolve-write
         if cache_path.exists():
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
@@ -1087,7 +1132,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             except (json.JSONDecodeError, OSError):
                 pass
 
-        return self._evolve_fallback(tab, "Codex did not produce valid output")
+        engine = _detect_ai_engine() or "AI"
+        return self._evolve_fallback(tab, f"{engine} did not produce valid output")
 
     def _evolve_fallback(self, tab: str, reason: str) -> dict:
         """Return empty data with error info."""
@@ -1097,8 +1143,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         }
         return fallbacks.get(tab, {"_error": reason})
 
-    def _build_evolve_codex_prompt(self, tab: str, source: str, date: str, project: str, cli_path: str) -> str:
-        """Build a prompt that instructs Codex to analyze conversations and write results via evolve-write."""
+    def _build_evolve_prompt(self, tab: str, source: str, date: str, project: str, cli_path: str) -> str:
+        """Build a prompt that instructs the AI engine to analyze conversations and write results via evolve-write."""
         # Build CLI flags for data querying
         cli_flags = f"--date {date} --source {source}"
         if project:
@@ -1725,18 +1771,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             # Build context-aware prompt
             full_prompt = self._build_chat_prompt(prompt, context_type, session_id, scope)
 
-            # Execute Codex CLI
+            # Execute AI engine (Codex or claude -p)
             try:
-                result = subprocess.run(
-                    ["codex", "--sandbox", "read-only", "--ask-for-approval", "never",
-                     "exec", "--skip-git-repo-check", full_prompt],
-                    capture_output=True, text=True, timeout=300,
-                    stdin=subprocess.DEVNULL,
-                )
-                output = result.stdout.strip()
-                if not output and result.stderr:
-                    # Filter out noise from stderr
-                    stderr = result.stderr.strip()
+                stdout, stderr, _ = _run_ai_engine(full_prompt, allow_write=False, timeout=300)
+                output = stdout.strip()
+                if not output and stderr:
+                    stderr = stderr.strip()
                     noise = ["plugin manifest", "MCP", "Warning", "shutdown"]
                     lines = [l for l in stderr.split("\n") if not any(n in l for n in noise)]
                     if lines:
@@ -1745,8 +1785,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                         output = "(No output)"
                 if not output:
                     output = "(No output)"
-            except FileNotFoundError:
-                output = "Error: `codex` CLI not found. Install it with `npm install -g @openai/codex`"
+            except FileNotFoundError as e:
+                output = f"Error: {e}"
             except subprocess.TimeoutExpired:
                 output = "Error: Request timed out (5 min limit)"
             except Exception as e:
@@ -1757,7 +1797,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             self._error(404, "Not found")
 
     def _build_chat_prompt(self, prompt: str, context_type: str, session_id: str, scope: dict = None) -> str:
-        """Build a context-enriched prompt for Codex with rich metadata and CLI tools."""
+        """Build a context-enriched prompt for the AI engine with rich metadata and CLI tools."""
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
         context_parts = [
             f"You have a CLI tool for analyzing conversation history: python3 {cli_path} <command> [options]",
