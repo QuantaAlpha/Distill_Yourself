@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Chat Viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Top Bar: Logo + Search -->
+    <header id="top-bar">
+      <a id="logo" href="#" title="Home">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Chat Viewer</span>
+      </a>
+      <div class="search-wrapper">
+        <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input type="text" id="global-search" placeholder="搜索对话内容…" autocomplete="off">
+        <span id="search-stats" class="search-stats"></span>
+        <kbd class="kbd-hint">/</kbd>
+      </div>
+    </header>
+
+    <div id="main-layout">
+      <!-- Left Sidebar (ChatGPT-style) -->
+      <aside id="sidebar">
+        <!-- Navigation -->
+        <nav id="sidebar-nav">
+          <button class="sidebar-nav-item active" data-view="sessions">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Sessions
+          </button>
+          <button class="sidebar-nav-item" data-view="ai">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 2v4"/><path d="M12 12l7-7"/><circle cx="12" cy="12" r="3"/></svg>
+            AI Evolve
+          </button>
+          <button class="sidebar-nav-item" data-view="insights">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            Insights
+          </button>
+        </nav>
+        <!-- Filter button + popover -->
+        <div id="filter-btn-wrapper">
+          <button id="filter-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filter</span>
+            <span id="filter-chips"></span>
+          </button>
+          <div id="filter-popover" class="hidden">
+            <div class="filter-popover-section">
+              <div class="filter-popover-label">Source</div>
+              <div id="source-tabs"></div>
+            </div>
+            <div class="filter-popover-section">
+              <div class="filter-popover-label">Date</div>
+              <div class="date-filters"></div>
+            </div>
+            <div class="filter-popover-section">
+              <div class="filter-popover-label">Project</div>
+              <div id="project-bar">
+                <button id="project-trigger"><span id="project-trigger-text">All Projects</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 4 5 6.5 7.5 4"/></svg></button>
+                <div id="project-dropdown" class="hidden"></div>
+              </div>
+            </div>
+            <button id="filter-clear" class="hidden">Clear all</button>
+          </div>
+        </div>
+        <!-- Session list / Chat history -->
+        <div id="sidebar-content">
+          <div id="panel-sessions" class="sidebar-panel">
+            <div class="panel-label">Recent <span id="session-count" class="badge"></span></div>
+            <ul id="session-list"></ul>
+          </div>
+          <div id="panel-chat" class="sidebar-panel hidden">
+            <div class="panel-label" style="display:flex;justify-content:space-between;align-items:center">
+              Analysis History
+              <button id="btn-new-chat" class="btn-sidebar-action">+ New</button>
+            </div>
+            <ul id="chat-history-list"></ul>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right: Content Area -->
+      <main id="content">
+        <!-- Empty state when no session selected -->
+        <div id="empty-state">
+          <div style="text-align:center;padding:80px 40px;color:var(--text-muted)">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.3;margin-bottom:16px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <p style="font-size:14px">Select a session to view</p>
+          </div>
+        </div>
+        <!-- Insights view (tabbed: hotspots / heatmap / errors / health / snippets) -->
+        <div id="insights-view" class="hidden">
+          <div id="insights-tabs">
+            <button class="insights-tab active" data-tab="heatmap">Tool Heatmap</button>
+            <button class="insights-tab" data-tab="hotspots">File Hotspots</button>
+            <button class="insights-tab" data-tab="errors">Error Patterns</button>
+            <button class="insights-tab" data-tab="health">Project Health</button>
+            <button class="insights-tab" data-tab="snippets">Snippets</button>
+          </div>
+          <div id="insights-body"></div>
+        </div>
+
+        <!-- AI view (Evolve + AI Chat combined) -->
+        <div id="ai-view" class="hidden">
+          <div id="ai-scope-bar"></div>
+          <div id="ai-split">
+            <div id="ai-evolve-panel">
+              <div id="evolve-overview-bar"></div>
+              <div id="evolve-tabs">
+                <button class="evolve-tab active" data-tab="profile">🧬 Profile</button>
+                <button class="evolve-tab" data-tab="memory">🧠 Memory</button>
+                <button class="evolve-tab" data-tab="rules">📐 Rules</button>
+                <button class="evolve-tab" data-tab="signals">⚡ Signals</button>
+                <button class="evolve-tab" data-tab="patterns">🔄 Patterns</button>
+              </div>
+              <div id="evolve-tab-content">
+                <div id="evolve-tab-header">
+                  <span id="evolve-tab-updated">尚未分析</span>
+                  <button id="evolve-tab-refresh" class="btn-text">🔄 Refresh</button>
+                  <button id="evolve-refresh-all" class="btn-text">🔄 All</button>
+                </div>
+                <div id="evolve-tab-body">
+                  <div class="evolve-empty-state">
+                    <p>点击刷新，开始分析最近的对话</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="ai-chat-panel">
+              <div id="ai-chat-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-light)">
+                <span style="font-weight:600;font-size:14px">💬 AI Analysis</span>
+                <button id="btn-new-chat-ai" class="btn-sidebar-action">+ New</button>
+              </div>
+              <div id="ai-chat-presets" class="preset-grid preset-grid-1col"></div>
+              <div id="ai-chat-messages"></div>
+              <div id="ai-chat-input-area">
+                <textarea id="ai-chat-input" placeholder="输入跨会话分析需求…" rows="1"></textarea>
+                <button id="ai-chat-send">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="conversation-view" class="hidden">
+          <div id="conv-header">
+            <button id="btn-back" class="btn-icon" title="Back">←</button>
+            <div id="conv-title-area">
+              <h2 id="conv-title"></h2>
+              <span id="conv-meta"></span>
+            </div>
+            <div id="conv-actions">
+              <button id="btn-copy-conv" class="btn-text" title="Copy conversation (User + Assistant only)">📋 Copy</button>
+              <button id="btn-refresh" class="btn-text" title="Refresh">↻ Refresh</button>
+              <button id="btn-user-only" class="btn-text" title="Show user messages only">👤 User Only</button>
+              <button id="btn-collapse-all" class="btn-text" title="Expand/collapse tool blocks">Expand All</button>
+              <button id="btn-export" class="btn-text" title="Export as Markdown">⬇ Export</button>
+            </div>
+          </div>
+          <div id="conv-body">
+            <div id="messages-container"></div>
+            <aside id="right-panel">
+              <!-- Tab switcher for right panel -->
+              <div id="rp-tabs">
+                <button class="rp-tab" data-panel="outline">Outline</button>
+                <button class="rp-tab active" data-panel="ai">AI</button>
+                <button class="rp-tab" data-panel="summary">Summary</button>
+              </div>
+              <div id="rp-outline" class="rp-content hidden">
+                <ul id="outline-list"></ul>
+              </div>
+              <div id="rp-summary" class="rp-content hidden">
+                <div id="summary-body"></div>
+              </div>
+              <div id="rp-ai" class="rp-content">
+                <div id="session-ai-presets" class="preset-grid preset-grid-1col">
+                  <button class="preset-card" data-prompt="梳理本次对话的核心需求和目标。&#10;&#10;**工作流**：&#10;1. 运行 `read -s <session_id>` 获取对话摘要（用户消息+结论）&#10;2. 运行 `queries --session <session_id>` 提取所有用户原始输入&#10;3. 综合分析需求演变&#10;&#10;**输出格式**：&#10;- **背景**：一句话描述场景&#10;- **需求列表**（每条标注 ✅已完成 / 🔄进行中 / ❌未开始）：需求描述 | 验收标准&#10;- **需求变更**：对话中需求变化及原因&#10;- **遗漏风险**：可能被忽略的隐含需求">
+                    <span class="preset-icon">📋</span>
+                    <div class="preset-info"><span class="preset-title">需求梳理</span><span class="preset-desc">提取需求列表，标注完成状态和优先级</span></div>
+                  </button>
+                  <button class="preset-card" data-prompt="提取本次对话中的技术决策和方案选择。&#10;&#10;**工作流**：&#10;1. 运行 `read -s <session_id>` 获取对话全貌&#10;2. 运行 `queries --session <session_id> -k 决定` 和 `-k 方案` 定位决策消息&#10;3. 对关键段落运行 `read <session_id>` 看完整上下文&#10;&#10;**输出格式**：每个决策点按 ADR 格式：&#10;1. ⭐ 决策问题&#10;2. 考虑的方案（含被否决的及原因）&#10;3. 最终选择及理由&#10;4. 潜在风险或后续影响&#10;按重要性排序，关键决策标 ⭐">
+                    <span class="preset-icon">🎯</span>
+                    <div class="preset-info"><span class="preset-title">决策提取</span><span class="preset-desc">技术决策、方案选择及理由</span></div>
+                  </button>
+                  <button class="preset-card" data-prompt="提取本次对话中的所有问题和错误。&#10;&#10;**工作流**：&#10;1. 运行 `read <session_id>` 获取完整对话（含工具调用摘要）&#10;2. 关注 [tools: ...] 段落附近的错误上下文&#10;3. 运行 `queries --session <session_id> -k 错` 和 `-k bug` 定位问题讨论&#10;&#10;**输出格式**：每个问题：&#10;- **现象**：发生了什么&#10;- **根因**：为什么发生&#10;- **解法**：怎么解决的&#10;- **教训**：一句话可复用教训&#10;无明显踩坑则分析代码变更中的潜在隐患">
+                    <span class="preset-icon">🐛</span>
+                    <div class="preset-info"><span class="preset-title">踩坑总结</span><span class="preset-desc">Bug、错误及解法，提炼可复用教训</span></div>
+                  </button>
+                  <button class="preset-card" data-prompt="Review all code changes in this session.&#10;&#10;**工作流**：&#10;1. 运行 `read <session_id>` 获取完整对话（含工具调用可见 Edit/Write 操作）&#10;2. 运行 `files --date 1d` 查看本次涉及的文件热点&#10;3. 对关键文件直接读取当前版本做 review&#10;&#10;**输出格式**：&#10;1. **Changes**: What was changed and why&#10;2. **Quality**: Readability, maintainability, performance&#10;3. **Bugs**: Potential bugs or missed edge cases&#10;4. **Security**: Injection, XSS, auth, data exposure risks&#10;5. **Improvements**: Specific suggestions with examples&#10;Severity: 🔴 Critical → 🟡 Warning → 🔵 Suggestion">
+                    <span class="preset-icon">🔍</span>
+                    <div class="preset-info"><span class="preset-title">Code Review</span><span class="preset-desc">代码质量、安全性和改进点</span></div>
+                  </button>
+                  <button class="preset-card" data-prompt="提取本次对话中所有未完成事项。&#10;&#10;**工作流**：&#10;1. 运行 `read -s <session_id>` 获取对话摘要&#10;2. 运行 `queries --session <session_id>` 看所有用户请求&#10;3. 对比请求 vs 实际完成，识别差距&#10;&#10;**输出格式**：&#10;- **未完成功能**：提到但未实现的功能&#10;- **遗留Bug**：已知未修复的问题&#10;- **优化建议**：可选的改进方向&#10;- **下一步**：建议的后续行动&#10;每项标注优先级 P0/P1/P2">
+                    <span class="preset-icon">📝</span>
+                    <div class="preset-info"><span class="preset-title">待办提取</span><span class="preset-desc">未完成任务、遗留问题和下一步</span></div>
+                  </button>
+                  <button class="preset-card" data-prompt="分析本次对话中用户对AI的纠正和修正。&#10;&#10;**工作流**：&#10;1. 运行 `read <session_id>` 获取完整对话&#10;2. 运行 `queries --session <session_id>` 提取用户原始消息&#10;3. 搜索纠正信号词：不是/不要/应该/你忘了/wrong/actually 等&#10;4. 分析纠正前后的上下文理解原因&#10;&#10;**输出格式**：每个纠正模式生成规则：&#10;- **规则**：一句话描述&#10;- **原因**：为什么需要&#10;- **示例**：正反例&#10;只提取有普遍复用价值的规则，可直接用于 CLAUDE.md">
+                    <span class="preset-icon">🧠</span>
+                    <div class="preset-info"><span class="preset-title">规则提炼</span><span class="preset-desc">从纠正中提取 CLAUDE.md 规则建议</span></div>
+                  </button>
+                </div>
+                <div id="session-ai-messages"></div>
+                <div id="session-ai-input-area">
+                  <textarea id="session-ai-input" placeholder="问关于这个会话的问题…" rows="1"></textarea>
+                  <button id="session-ai-send">Send</button>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div id="search-results" class="hidden">
+          <div id="search-results-header">
+            <h2>Search Results</h2>
+            <span id="search-result-count" class="badge"></span>
+            <select id="search-sort" title="Sort order">
+              <option value="date-desc">By Date ↓</option>
+              <option value="date-asc">By Date ↑</option>
+              <option value="relevance">By Relevance</option>
+            </select>
+          </div>
+          <ul id="search-results-list"></ul>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <div id="msg-modal" class="hidden">
+    <div class="msg-modal-backdrop"></div>
+    <div class="msg-modal-content">
+      <button class="msg-modal-close">✕</button>
+      <div class="msg-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Keyboard help overlay -->
+  <div id="kbd-help" class="hidden">
+    <div class="kbd-help-inner">
+      <h3>Keyboard Shortcuts</h3>
+      <table>
+        <tr><td><kbd>/</kbd></td><td>Focus search</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close / blur search</td></tr>
+        <tr><td><kbd>1</kbd></td><td>Home</td></tr>
+        <tr><td><kbd>2</kbd></td><td>Sessions</td></tr>
+        <tr><td><kbd>3</kbd></td><td>Insights</td></tr>
+        <tr><td><kbd>4</kbd></td><td>AI page</td></tr>
+        <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Next / previous session</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Open selected session</td></tr>
+        <tr><td><kbd>h</kbd></td><td>Go back to Home</td></tr>
+        <tr><td><kbd>n</kbd> / <kbd>N</kbd></td><td>Next / previous user message</td></tr>
+        <tr><td><kbd>o</kbd></td><td>Toggle outline panel</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+      </table>
+      <p style="margin-top:12px;font-size:12px;color:var(--text-muted)">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="evolve.js"></script>
+</body>
+</html>

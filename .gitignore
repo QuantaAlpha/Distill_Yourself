@@ -1,0 +1,11 @@
+.visual-ask/
+.DS_Store
+.cache/
+.claude/
+.knowhow/
+.superpowers/
+skills/
+*.jsonl
+__pycache__/
+*.pyc
+bench.py
