@@ -918,10 +918,10 @@ def _detect_ai_engine():
     return _ai_engine_cache
 
 
-def _run_ai_engine(prompt, allow_write=False, timeout=300):
+def _run_ai_engine(prompt, allow_write=False, timeout=300, engine_override="auto"):
     """Execute prompt via detected AI engine. Returns (stdout, stderr, returncode).
     Raises FileNotFoundError if no engine available."""
-    engine = _detect_ai_engine()
+    engine = engine_override if engine_override and engine_override != "auto" else _detect_ai_engine()
     if engine == "codex":
         sandbox = "workspace-write" if allow_write else "read-only"
         r = subprocess.run(
@@ -945,7 +945,7 @@ def _run_ai_engine(prompt, allow_write=False, timeout=300):
         )
 
 
-def _run_ai_engine_stream(prompt, allow_write=False, timeout=300):
+def _run_ai_engine_stream(prompt, allow_write=False, timeout=300, engine_override="auto"):
     """Execute prompt via detected AI engine, yielding SSE events as JSONL lines arrive.
 
     Yields dicts: {"type": "tool", "name": ..., "status": ...}
@@ -953,7 +953,7 @@ def _run_ai_engine_stream(prompt, allow_write=False, timeout=300):
                   {"type": "done", "content": ...}
                   {"type": "error", "message": ...}
     """
-    engine = _detect_ai_engine()
+    engine = engine_override if engine_override and engine_override != "auto" else _detect_ai_engine()
     if not engine:
         yield {"type": "error", "message": "No AI engine found"}
         return
@@ -1156,11 +1156,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 source = params.get("source", ["all"])[0]
                 date = params.get("date", ["7d"])[0]
                 project = params.get("project", [""])[0]
+                engine = params.get("engine", ["auto"])[0]
                 stream = params.get("stream", ["0"])[0] == "1"
                 if stream and tab in self._AI_TABS:
-                    self._handle_evolve_stream(tab, source, date, project)
+                    self._handle_evolve_stream(tab, source, date, project, engine)
                 else:
-                    self._json_response(self._get_evolve_tab(tab, refresh, source, date, project))
+                    self._json_response(self._get_evolve_tab(tab, refresh, source, date, project, engine))
         else:
             # Serve static files (with path traversal protection)
             if path == "/":
@@ -1251,7 +1252,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
     # Tabs that need AI (Codex / claude -p) to generate
     _AI_TABS = {"profile", "memory"}
 
-    def _get_evolve_tab(self, tab: str, refresh: bool, source: str, date: str, project: str) -> dict:
+    def _get_evolve_tab(self, tab: str, refresh: bool, source: str, date: str, project: str, engine: str = "auto") -> dict:
         """Get evolve tab data: serve cache or run analyze.py / AI engine to generate."""
         cache_path = CACHE_DIR / "evolve" / f"{tab}.json"
 
@@ -1266,7 +1267,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         if tab in self._DIRECT_TABS:
             return self._evolve_direct(tab, source, date, project)
         else:
-            return self._evolve_via_ai(tab, source, date, project, cache_path)
+            return self._evolve_via_ai(tab, source, date, project, cache_path, engine)
 
     def _evolve_direct(self, tab: str, source: str, date: str, project: str) -> dict:
         """Run analyze.py directly for rules/signals/patterns."""
@@ -1292,13 +1293,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         }
         return fallbacks.get(tab, {})
 
-    def _evolve_via_ai(self, tab: str, source: str, date: str, project: str, cache_path: Path) -> dict:
+    def _evolve_via_ai(self, tab: str, source: str, date: str, project: str, cache_path: Path, engine: str = "auto") -> dict:
         """Run AI engine to analyze conversations and write results via evolve-write."""
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
         prompt = self._build_evolve_prompt(tab, source, date, project, cli_path)
 
         try:
-            _run_ai_engine(prompt, allow_write=True, timeout=300)
+            _run_ai_engine(prompt, allow_write=True, timeout=300, engine_override=engine)
         except FileNotFoundError as e:
             return self._evolve_fallback(tab, str(e))
         except subprocess.TimeoutExpired:
@@ -1317,7 +1318,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         engine = _detect_ai_engine() or "AI"
         return self._evolve_fallback(tab, f"{engine} did not produce valid output")
 
-    def _handle_evolve_stream(self, tab: str, source: str, date: str, project: str):
+    def _handle_evolve_stream(self, tab: str, source: str, date: str, project: str, engine: str = "auto"):
         """SSE streaming for AI evolve tabs (profile/memory)."""
         cache_path = CACHE_DIR / "evolve" / f"{tab}.json"
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
@@ -1325,7 +1326,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
         self._start_sse()
         try:
-            for evt in _run_ai_engine_stream(prompt, allow_write=True, timeout=300):
+            for evt in _run_ai_engine_stream(prompt, allow_write=True, timeout=300, engine_override=engine):
                 self._sse_event(evt)
         except Exception as e:
             self._sse_event({"type": "error", "message": str(e)})
@@ -1968,6 +1969,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             self._handle_chat_stream()
         elif parsed.path == "/api/chat":
             self._handle_chat_legacy()
+        elif parsed.path == "/api/evolve/sync":
+            self._handle_evolve_sync()
         else:
             self._error(404, "Not found")
 
@@ -2150,9 +2153,287 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             return "\n".join(context_parts) + "\n\n--- User Request ---\n" + prompt
         return prompt
 
+    def _handle_evolve_sync(self):
+        """Handle POST /api/evolve/sync — preview or execute sync to Claude Code."""
+        try:
+            data = json.loads(self._read_post_body())
+        except json.JSONDecodeError:
+            self._error(400, "Invalid JSON")
+            return
+
+        action = data.get("action", "preview")
+        targets = data.get("targets", [])
+
+        if action not in ("preview", "execute"):
+            self._error(400, "Invalid action")
+            return
+
+        result = {}
+
+        if "memory" in targets:
+            memory_cache = CACHE_DIR / "evolve" / "memory.json"
+            if memory_cache.exists():
+                try:
+                    mem_data = json.loads(memory_cache.read_text(encoding="utf-8"))
+                    if action == "preview":
+                        result["memory"] = _evolve_sync_memory_preview(mem_data)
+                    else:
+                        result["memory"] = _evolve_sync_memory_execute(mem_data)
+                except (json.JSONDecodeError, OSError) as e:
+                    result["memory"] = {"error": str(e)}
+            else:
+                result["memory"] = {"error": "Memory cache not found — run Refresh first"}
+
+        if "claude_md" in targets:
+            profile_cache = CACHE_DIR / "evolve" / "profile.json"
+            if profile_cache.exists():
+                try:
+                    prof_data = json.loads(profile_cache.read_text(encoding="utf-8"))
+                    if action == "preview":
+                        result["claude_md"] = _evolve_sync_claude_md_preview(prof_data)
+                    else:
+                        result["claude_md"] = _evolve_sync_claude_md_execute(prof_data)
+                except (json.JSONDecodeError, OSError) as e:
+                    result["claude_md"] = {"error": str(e)}
+            else:
+                result["claude_md"] = {"error": "Profile cache not found — run Refresh first"}
+
+        result["ok"] = all("error" not in v for v in result.values() if isinstance(v, dict))
+        self._json_response(result)
+
     def log_message(self, format, *args):
         """Suppress default request logging for cleaner output."""
         pass
+
+
+# ---------------------------------------------------------------------------
+# Evolve Sync — pure Python format conversion
+# ---------------------------------------------------------------------------
+CLAUDE_MD_PATH = Path.home() / ".claude" / "CLAUDE.md"
+MEMORY_DIR = Path.home() / ".claude" / "memory"
+MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
+SYNC_MARKER_START = "<!-- evolve-sync:profile:start -->"
+SYNC_MARKER_END = "<!-- evolve-sync:profile:end -->"
+
+
+def _sanitize_filename(text: str) -> str:
+    """Convert text to a safe filename component."""
+    # Keep alphanumeric, Chinese chars, hyphens, underscores
+    clean = re.sub(r'[^\w\u4e00-\u9fff-]', '_', text)
+    clean = re.sub(r'_+', '_', clean).strip('_')
+    return clean[:60] if clean else "unnamed"
+
+
+def _evolve_sync_memory_preview(mem_data: dict) -> dict:
+    """Generate preview of what memory sync would do."""
+    nodes = {n["id"]: n for n in mem_data.get("nodes", [])}
+    cards = {c["id"]: c for c in mem_data.get("cards", [])}
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+    files = []
+    for nid, node in nodes.items():
+        if node.get("confidence") == "low":
+            files.append({"id": nid, "filename": "", "label": node.get("label", ""), "status": "skip"})
+            continue
+        fname = f"evolve_{nid}.md"
+        fpath = MEMORY_DIR / fname
+        status = "update" if fpath.exists() else "create"
+        files.append({"id": nid, "filename": fname, "label": node.get("label", ""), "status": status})
+
+    summary = {"create": 0, "update": 0, "skip": 0}
+    for f in files:
+        summary[f["status"]] = summary.get(f["status"], 0) + 1
+
+    return {"files": files, "summary": summary}
+
+
+def _evolve_sync_memory_execute(mem_data: dict) -> dict:
+    """Write memory files from evolve data."""
+    nodes = {n["id"]: n for n in mem_data.get("nodes", [])}
+    cards = {c["id"]: c for c in mem_data.get("cards", [])}
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+    created, updated = 0, 0
+    written_files = []
+
+    for nid, node in nodes.items():
+        if node.get("confidence") == "low":
+            continue
+
+        card = cards.get(nid, {})
+        label = node.get("label", "")
+        name_kebab = _sanitize_filename(label)
+        fname = f"evolve_{nid}.md"
+        fpath = MEMORY_DIR / fname
+
+        is_update = fpath.exists()
+
+        # Build frontmatter
+        content_lines = [
+            "---",
+            f"name: {name_kebab}",
+            f"description: {label}",
+            "type: feedback",
+            "source: evolve-sync",
+            "---",
+            "",
+            card.get("content", label),
+        ]
+
+        evidence = card.get("evidence", "")
+        if evidence:
+            content_lines.extend(["", f"**Evidence:** {evidence}"])
+
+        meta_parts = []
+        if card.get("firstSeen"):
+            meta_parts.append(f"**First seen:** {card['firstSeen']}")
+        if card.get("lastSeen"):
+            meta_parts.append(f"**Last seen:** {card['lastSeen']}")
+        if node.get("frequency"):
+            meta_parts.append(f"**Frequency:** {node['frequency']}")
+        if meta_parts:
+            content_lines.append(" | ".join(meta_parts))
+
+        content_lines.append("")  # trailing newline
+        fpath.write_text("\n".join(content_lines), encoding="utf-8")
+        written_files.append(fname)
+
+        if is_update:
+            updated += 1
+        else:
+            created += 1
+
+    # Update MEMORY.md index
+    _update_memory_index(written_files, nodes)
+
+    return {"created": created, "updated": updated}
+
+
+def _update_memory_index(written_files: list, nodes: dict):
+    """Add new evolve entries to MEMORY.md if not already listed."""
+    if not MEMORY_INDEX.exists():
+        return
+
+    existing_text = MEMORY_INDEX.read_text(encoding="utf-8")
+    existing_lower = existing_text.lower()
+    new_lines = []
+
+    for fname in written_files:
+        if fname.lower() in existing_lower:
+            continue
+        # Find the node for this file
+        nid = fname.replace("evolve_", "").replace(".md", "")
+        node = nodes.get(nid, {})
+        label = node.get("label", fname)
+        new_lines.append(f"| [{fname}]({fname}) | feedback | {label} |")
+
+    if new_lines:
+        # Append to file
+        if not existing_text.endswith("\n"):
+            existing_text += "\n"
+        existing_text += "\n".join(new_lines) + "\n"
+        MEMORY_INDEX.write_text(existing_text, encoding="utf-8")
+
+
+def _evolve_sync_claude_md_preview(prof_data: dict) -> dict:
+    """Generate preview of what CLAUDE.md sync would do."""
+    categories = prof_data.get("categories", [])
+    radar = prof_data.get("radar", {})
+    dims = radar.get("dimensions", [])
+
+    # Count items (excluding low confidence)
+    item_count = sum(
+        len([i for i in cat.get("items", []) if i.get("confidence") != "low"])
+        for cat in categories
+    )
+
+    # Generate the section to estimate lines
+    section = _build_profile_section(prof_data)
+    line_count = len(section.strip().split("\n"))
+
+    status = "replace" if _claude_md_has_marker() else "append"
+
+    return {
+        "status": status,
+        "categories": len(categories),
+        "radar_dims": len(dims),
+        "items": item_count,
+        "lines": line_count,
+    }
+
+
+def _evolve_sync_claude_md_execute(prof_data: dict) -> dict:
+    """Write profile section to CLAUDE.md."""
+    section = _build_profile_section(prof_data)
+
+    CLAUDE_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    if CLAUDE_MD_PATH.exists():
+        existing = CLAUDE_MD_PATH.read_text(encoding="utf-8")
+    else:
+        existing = ""
+
+    if SYNC_MARKER_START in existing and SYNC_MARKER_END in existing:
+        # Replace between markers
+        start_idx = existing.index(SYNC_MARKER_START)
+        end_idx = existing.index(SYNC_MARKER_END) + len(SYNC_MARKER_END)
+        new_text = existing[:start_idx] + section + existing[end_idx:]
+        status = "replaced"
+    else:
+        # Append
+        if existing and not existing.endswith("\n\n"):
+            existing = existing.rstrip("\n") + "\n\n"
+        new_text = existing + section
+        status = "appended"
+
+    CLAUDE_MD_PATH.write_text(new_text, encoding="utf-8")
+    line_count = len(section.strip().split("\n"))
+    return {"status": status, "lines": line_count}
+
+
+def _build_profile_section(prof_data: dict) -> str:
+    """Build the markdown section for CLAUDE.md from profile data."""
+    lines = [SYNC_MARKER_START, "## User Profile (Evolve Auto-sync)", ""]
+
+    for cat in prof_data.get("categories", []):
+        icon = cat.get("icon", "")
+        name = cat.get("name", "")
+        tags = cat.get("tags", [])
+        items = [i for i in cat.get("items", []) if i.get("confidence") != "low"]
+
+        if not items:
+            continue
+
+        lines.append(f"### {icon} {name}")
+        if tags:
+            lines.append(f"- **标签**: {', '.join(tags)}")
+        for item in items:
+            lines.append(f"- {item['text']}")
+        lines.append("")
+
+    # Radar
+    dims = prof_data.get("radar", {}).get("dimensions", [])
+    if dims:
+        lines.append("### 📊 能力雷达")
+        lines.append("| 领域 | 评分 | 依据 |")
+        lines.append("|------|------|------|")
+        for dim in dims:
+            score = dim.get("score", 0)
+            name = dim.get("name", "")
+            evidence = dim.get("evidence", "")
+            lines.append(f"| {name} | {score:.2f} | {evidence} |")
+        lines.append("")
+
+    lines.append(SYNC_MARKER_END)
+    return "\n".join(lines) + "\n"
+
+
+def _claude_md_has_marker() -> bool:
+    """Check if CLAUDE.md already has the evolve sync marker."""
+    if not CLAUDE_MD_PATH.exists():
+        return False
+    text = CLAUDE_MD_PATH.read_text(encoding="utf-8")
+    return SYNC_MARKER_START in text
 
 
 # ---------------------------------------------------------------------------

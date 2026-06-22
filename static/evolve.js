@@ -44,6 +44,10 @@
     // Refresh all
     const refreshAll = $("#evolve-refresh-all");
     if (refreshAll) refreshAll.onclick = () => refreshAllEvolveTabs();
+
+    // Sync button
+    const syncBtn = $("#evolve-tab-sync");
+    if (syncBtn) syncBtn.onclick = () => toggleSyncPanel();
   }
 
   function switchEvolveTab(tab) {
@@ -51,6 +55,7 @@
     $$(".evolve-tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     renderEvolveTabContent(tab);
     updateEvolveOverviewBar();
+    updateSyncButtonState();
   }
 
   // ── Cache ──
@@ -74,6 +79,7 @@
   function setCachedTab(tab, data) {
     evolveCache[tab] = { updatedAt: new Date().toISOString(), data };
     saveEvolveCache();
+    updateSyncButtonState();
   }
 
   // ── Scope (reads from shared global state set by initAiPage in app.js) ──
@@ -172,6 +178,7 @@
       source: scope.source || "all",
       date: scope.date || "7d",
       project: scope.project || "",
+      engine: scope.engine || "auto",
     });
 
     // AI tabs use SSE streaming for real-time progress
@@ -202,7 +209,7 @@
     }
     if (updatedEl) updatedEl.textContent = "AI 启动中…";
 
-    const streamState = { accumulated: "", textBlock: null, runningCard: null, stepCount: 0 };
+    const streamState = { blockText: "", textBlock: null, runningCard: null, stepCount: 0 };
 
     return fetch(`/api/evolve/${tab}?${params}`)
       .then(response => {
@@ -243,6 +250,7 @@
       case "tool": {
         if (evt.status === "running") {
           state.textBlock = null;
+          state.blockText = "";
           const card = document.createElement("div");
           card.className = "tool-card running";
           const detail = evt.detail ? esc(evt.detail) : "";
@@ -266,18 +274,18 @@
         break;
       }
       case "text":
-        state.accumulated += evt.content;
+        state.blockText += evt.content;
         if (!state.textBlock) {
           state.textBlock = document.createElement("div");
           state.textBlock.className = "text-block";
           container.appendChild(state.textBlock);
         }
         state.textBlock.innerHTML = window.renderMarkdownSimple
-          ? window.renderMarkdownSimple(state.accumulated)
-          : `<pre>${esc(state.accumulated)}</pre>`;
+          ? window.renderMarkdownSimple(state.blockText)
+          : `<pre>${esc(state.blockText)}</pre>`;
         break;
       case "result":
-        state.accumulated = evt.content;
+        state.blockText = evt.content;
         if (!state.textBlock) {
           state.textBlock = document.createElement("div");
           state.textBlock.className = "text-block";
@@ -606,11 +614,13 @@
     const nodeIds = new Set(nodes.map(n => n.id));
     const validLinks = links.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target));
 
+    const pad = 20;
     const simulation = d3.forceSimulation(nodes)
-      .force("link", d3.forceLink(validLinks).id(d => d.id).distance(60).strength(d => d.strength || 0.3))
-      .force("charge", d3.forceManyBody().strength(-80))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(d => Math.sqrt(d.frequency || 1) * 5 + 8));
+      .force("link", d3.forceLink(validLinks).id(d => d.id).distance(50).strength(d => d.strength || 0.5))
+      .force("charge", d3.forceManyBody().strength(-40))
+      .force("x", d3.forceX(width / 2).strength(0.15))
+      .force("y", d3.forceY(height / 2).strength(0.15))
+      .force("collision", d3.forceCollide().radius(d => Math.sqrt(d.frequency || 1) * 4 + 6));
 
     activeSimulation = simulation;
 
@@ -643,6 +653,10 @@
       .style("font-size", "9px").style("fill", "var(--text-muted)");
 
     simulation.on("tick", () => {
+      nodes.forEach(d => {
+        d.x = Math.max(pad, Math.min(width - pad, d.x));
+        d.y = Math.max(pad, Math.min(height - pad, d.y));
+      });
       link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
         .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
       node.attr("transform", d => `translate(${d.x},${d.y})`);
@@ -895,6 +909,143 @@
       .text(d => {
         const label = d.data.label || "";
         return label.length > d.r / 3 ? label.substring(0, Math.floor(d.r / 3)) + "…" : label;
+      });
+  }
+
+  // ── Sync to Claude Code ──
+  const SYNC_TABS = new Set(["profile", "memory"]);
+
+  function updateSyncButtonState() {
+    const btn = $("#evolve-tab-sync");
+    if (!btn) return;
+    const hasSyncableData = SYNC_TABS.has(evolveActiveTab) && getCachedTab(evolveActiveTab);
+    btn.disabled = !hasSyncableData;
+  }
+
+  function toggleSyncPanel() {
+    const panel = $("#evolve-sync-panel");
+    if (!panel) return;
+    if (!panel.classList.contains("hidden")) {
+      panel.classList.add("hidden");
+      panel.innerHTML = "";
+      return;
+    }
+    // Show panel and fetch preview
+    panel.classList.remove("hidden");
+    panel.innerHTML = '<div style="padding:8px 0;color:var(--text-muted);font-size:12px">Loading preview...</div>';
+
+    const targets = [];
+    if (getCachedTab("memory")) targets.push("memory");
+    if (getCachedTab("profile")) targets.push("claude_md");
+
+    if (targets.length === 0) {
+      panel.innerHTML = '<div style="padding:8px 0;color:var(--text-muted)">No Profile or Memory data to sync. Run Refresh first.</div>';
+      return;
+    }
+
+    fetch("/api/evolve/sync", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action: "preview", targets})
+    })
+      .then(r => r.json())
+      .then(data => renderSyncPanel(panel, data, targets))
+      .catch(err => {
+        panel.innerHTML = `<div style="color:var(--danger,#e53e3e)">Preview failed: ${(window.esc || String)(err.message)}</div>`;
+      });
+  }
+
+  function renderSyncPanel(panel, preview, initialTargets) {
+    const esc = window.esc || String;
+    let html = '<div class="sync-panel-title">同步到 Claude Code</div>';
+
+    // Memory target
+    const memData = preview.memory;
+    const hasMemory = memData && !memData.error;
+    html += `<div class="sync-target${hasMemory ? '' : ' disabled'}" id="sync-target-memory">
+      <input type="checkbox" id="sync-check-memory" ${hasMemory ? 'checked' : 'disabled'}>
+      <div class="sync-target-info">
+        <div class="sync-target-label">Memory</div>
+        <div class="sync-target-path">~/.claude/memory/</div>
+        <div class="sync-target-summary">`;
+    if (hasMemory) {
+      const s = memData.summary;
+      html += `+${s.create} new · ~${s.update} update · ${s.skip} skip`;
+    } else {
+      html += esc(memData ? memData.error : "No memory data");
+    }
+    html += `</div></div></div>`;
+
+    // CLAUDE.md target
+    const mdData = preview.claude_md;
+    const hasMd = mdData && !mdData.error;
+    html += `<div class="sync-target${hasMd ? '' : ' disabled'}" id="sync-target-claude-md">
+      <input type="checkbox" id="sync-check-claude-md" ${hasMd ? 'checked' : 'disabled'}>
+      <div class="sync-target-info">
+        <div class="sync-target-label">CLAUDE.md</div>
+        <div class="sync-target-path">~/.claude/CLAUDE.md</div>
+        <div class="sync-target-summary">`;
+    if (hasMd) {
+      const action = mdData.status === "replace" ? "替换" : "追加";
+      html += `${action} User Profile 段落 (${mdData.categories} 分类, ${mdData.radar_dims} 雷达维度, ~${mdData.lines} 行)`;
+    } else {
+      html += esc(mdData ? mdData.error : "No profile data");
+    }
+    html += `</div></div></div>`;
+
+    // Actions
+    const canSync = hasMemory || hasMd;
+    html += `<div class="sync-actions">
+      <button class="btn-text" id="sync-cancel">取消</button>
+      <button class="btn-text btn-confirm" id="sync-confirm" ${canSync ? '' : 'disabled'}>确认同步</button>
+    </div>`;
+
+    panel.innerHTML = html;
+
+    // Bind events
+    const cancelBtn = panel.querySelector("#sync-cancel");
+    if (cancelBtn) cancelBtn.onclick = () => { panel.classList.add("hidden"); panel.innerHTML = ""; };
+
+    const confirmBtn = panel.querySelector("#sync-confirm");
+    if (confirmBtn) confirmBtn.onclick = () => executeSyncFromPanel(panel);
+  }
+
+  function executeSyncFromPanel(panel) {
+    const targets = [];
+    const memCheck = panel.querySelector("#sync-check-memory");
+    const mdCheck = panel.querySelector("#sync-check-claude-md");
+    if (memCheck && memCheck.checked) targets.push("memory");
+    if (mdCheck && mdCheck.checked) targets.push("claude_md");
+
+    if (targets.length === 0) return;
+
+    const confirmBtn = panel.querySelector("#sync-confirm");
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "同步中..."; }
+
+    fetch("/api/evolve/sync", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action: "execute", targets})
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          let msg = "✓ 同步完成 — ";
+          const parts = [];
+          if (data.memory) parts.push(`Memory: +${data.memory.created} new, ~${data.memory.updated} updated`);
+          if (data.claude_md) parts.push(`CLAUDE.md: ${data.claude_md.status} (${data.claude_md.lines} lines)`);
+          msg += parts.join("; ");
+          panel.innerHTML = `<div class="sync-result">${(window.esc || String)(msg)}</div>`;
+        } else {
+          const errors = [];
+          if (data.memory && data.memory.error) errors.push(`Memory: ${data.memory.error}`);
+          if (data.claude_md && data.claude_md.error) errors.push(`CLAUDE.md: ${data.claude_md.error}`);
+          panel.innerHTML = `<div class="sync-result error">${(window.esc || String)(errors.join("; ") || "Sync failed")}</div>`;
+        }
+        setTimeout(() => { panel.classList.add("hidden"); panel.innerHTML = ""; }, 3000);
+      })
+      .catch(err => {
+        panel.innerHTML = `<div class="sync-result error">Sync failed: ${(window.esc || String)(err.message)}</div>`;
       });
   }
 

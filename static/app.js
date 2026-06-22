@@ -35,6 +35,7 @@
   let globalScopeSource = "all";
   let globalScopeDate = "7d";
   let globalScopeProject = "";
+  let globalScopeEngine = "auto";
 
   // Insights page state
   let insightsActiveTab = "heatmap";
@@ -1856,8 +1857,7 @@
     _autoScroll(container);
 
     let _currentTextBlock = null; // the active .text-block element
-    let _lastText = "";
-    let _textOffset = 0; // chars of accumulated text already rendered in previous blocks
+    let _blockText = ""; // text accumulated for the CURRENT block only
     let _renderTimer = null;
     let _started = false;
     let _runningCard = null; // the currently running tool card
@@ -1886,9 +1886,13 @@
         _ensureStarted();
 
         if (evt.status === "running") {
-          // Save offset: text already rendered in the previous block
-          _textOffset = _lastText.length;
-          // Close current text block (new tool interrupts text)
+          // Remove cursor from the previous text block
+          if (_currentTextBlock) {
+            const cursor = _currentTextBlock.querySelector(".stream-cursor");
+            if (cursor) cursor.remove();
+          }
+          // Reset per-block accumulator; close current text block
+          _blockText = "";
           _currentTextBlock = null;
           // Create a new tool card
           const card = document.createElement("div");
@@ -1919,16 +1923,14 @@
         _autoScroll(container);
       },
 
-      updateText(accumulated) {
+      updateText(chunk) {
         _ensureStarted();
-        _lastText = accumulated;
+        _blockText += chunk;
         const block = _ensureTextBlock();
         if (!_renderTimer) {
           _renderTimer = requestAnimationFrame(() => {
             _renderTimer = null;
-            // Only render the portion after the offset (text new to this block)
-            const blockText = _lastText.slice(_textOffset);
-            block.innerHTML = renderMarkdownSimple(blockText) + '<span class="stream-cursor">▍</span>';
+            block.innerHTML = renderMarkdownSimple(_blockText) + '<span class="stream-cursor">▍</span>';
             _autoScroll(container);
           });
         }
@@ -1937,11 +1939,12 @@
       finalize(fullText) {
         _ensureStarted();
         turn.classList.add("done");
-        // Render final text (without cursor) — only the last block's portion
-        if (fullText) {
+        // Remove all streaming cursors from earlier blocks
+        turn.querySelectorAll(".stream-cursor").forEach(c => c.remove());
+        // Render final block text (without cursor)
+        if (_blockText || fullText) {
           const block = _ensureTextBlock();
-          const blockText = fullText.slice(_textOffset);
-          block.innerHTML = renderMarkdownSimple(blockText);
+          block.innerHTML = renderMarkdownSimple(_blockText || fullText);
           // Add action buttons
           const actions = document.createElement("div");
           actions.className = "text-block-actions";
@@ -2051,15 +2054,15 @@
     switch (evt.type) {
       case "text":
         state.text += evt.content;
-        if (callbacks.text) callbacks.text(state.text);
+        // Pass raw chunk (not accumulated) — each block accumulates its own
+        if (callbacks.text) callbacks.text(evt.content);
         break;
       case "tool":
         if (callbacks.tool) callbacks.tool(evt);
         break;
       case "result":
-        // Claude's final result — authoritative full text, replace accumulated
+        // Claude's final result — treat as a text chunk for the current block
         state.text = evt.content;
-        if (callbacks.text) callbacks.text(state.text);
         break;
       case "done":
         if (callbacks.done) callbacks.done(evt.content || state.text);
@@ -2135,13 +2138,10 @@
     sessionAiLoading = true;
     const assistantTurn = currentSessionId === targetSessionId
       ? createAssistantTurn(container) : null;
-    let accumulated = "";
-
     sendChatStream(text, "session", targetSessionId)
       .onText(chunk => {
-        accumulated = chunk; // chunk is accumulated text from server
         if (assistantTurn && currentSessionId === targetSessionId) {
-          assistantTurn.updateText(accumulated);
+          assistantTurn.updateText(chunk);
         }
       })
       .onTool(evt => {
@@ -2151,7 +2151,7 @@
       })
       .onDone(fullText => {
         sessionAiLoading = false;
-        const reply = fullText || accumulated || "(empty response)";
+        const reply = fullText || "(empty response)";
         cache.messages.push({role: "assistant", content: reply});
         saveChatToStorage();
         if (assistantTurn && currentSessionId === targetSessionId) {
@@ -2206,7 +2206,7 @@
     if (window.initEvolveView) window.initEvolveView();
     // Override getEvolveScope to read from shared global scope
     window.getEvolveScope = function() {
-      return { source: globalScopeSource, date: globalScopeDate, project: globalScopeProject };
+      return { source: globalScopeSource, date: globalScopeDate, project: globalScopeProject, engine: globalScopeEngine };
     };
   }
 
@@ -2292,6 +2292,28 @@
     };
     bar.appendChild(projSelect);
 
+    // Engine dropdown
+    const engineLabel = document.createElement("span");
+    engineLabel.className = "scope-label";
+    engineLabel.textContent = "Engine";
+    bar.appendChild(engineLabel);
+
+    const engineSelect = document.createElement("select");
+    engineSelect.id = "ai-scope-engine";
+    [
+      { key: "auto", label: "Auto" },
+      { key: "codex", label: "Codex" },
+      { key: "claude", label: "Claude" },
+    ].forEach(e => {
+      const opt = document.createElement("option");
+      opt.value = e.key;
+      opt.textContent = e.label;
+      engineSelect.appendChild(opt);
+    });
+    engineSelect.value = globalScopeEngine;
+    engineSelect.onchange = () => { globalScopeEngine = engineSelect.value; };
+    bar.appendChild(engineSelect);
+
     // Scope stats
     let scopeFiltered = filtered;
     if (globalScopeProject) scopeFiltered = scopeFiltered.filter(s => s.project === globalScopeProject);
@@ -2364,19 +2386,17 @@
     // Show streaming bubble
     globalAiLoading = true;
     const assistantTurn = createAssistantTurn(container);
-    let accumulated = "";
 
     sendChatStream(text, "global", null, scope)
       .onText(chunk => {
-        accumulated = chunk;
-        assistantTurn.updateText(accumulated);
+        assistantTurn.updateText(chunk);
       })
       .onTool(evt => {
         assistantTurn.addTool(evt);
       })
       .onDone(fullText => {
         globalAiLoading = false;
-        const reply = fullText || accumulated || "(empty response)";
+        const reply = fullText || "(empty response)";
         assistantTurn.finalize(reply);
         saveGlobalChatMessage("assistant", reply);
         // Update title
