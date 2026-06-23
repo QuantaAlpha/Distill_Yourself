@@ -86,6 +86,38 @@ def _get_filtered(args) -> dict:
     return _apply_filters(sessions, args)
 
 
+def _get_filtered_db(args) -> list:
+    """Return filtered sessions from SQLite DB as a list of dicts."""
+    import db as _db
+    _db.init_db()
+    days_map = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
+    max_days = days_map.get(getattr(args, "date", ""), 99999)
+    return _db.get_filtered_sessions(
+        source=getattr(args, "source", "all"),
+        project=getattr(args, "project", ""),
+        max_days=max_days,
+    )
+
+
+def _get_messages_db(args, role="user", limit=99999) -> list:
+    """Return messages for filtered sessions from SQLite DB."""
+    import db as _db
+    sessions = _get_filtered_db(args)
+    if not sessions:
+        return []
+    sids = [s["id"] for s in sessions]
+    conn = _db.get_conn()
+    placeholders = ",".join("?" * len(sids))
+    rows = conn.execute(f"""
+        SELECT m.text, m.ts, m.role, m.idx, s.project_name, s.source, s.id AS session_id,
+               s.title
+        FROM messages m JOIN sessions s ON m.session_id = s.id
+        WHERE m.session_id IN ({placeholders}) AND m.role = ?
+        ORDER BY m.ts DESC LIMIT ?
+    """, sids + [role, limit]).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -251,10 +283,9 @@ def cmd_search(args):
 
 def cmd_queries(args):
     """Extract user queries/messages only — across sessions or from one session."""
-    _init_index()
-
     # Single session mode
     if args.session:
+        _init_index()
         with server._index_lock:
             sessions = server._index.get("sessions", {})
         # Find session
@@ -282,32 +313,51 @@ def cmd_queries(args):
         return
 
     # Cross-session mode: extract all user queries
-    filtered = _get_filtered(args)
-    items = sorted(filtered.values(), key=lambda m: m.get("date", ""), reverse=True)
-
-    all_queries = []
-    for m in items:
-        sid = m.get("id", "")
-        title = m.get("title", "")[:50]
-        project = m.get("projectName", "")
-        source = m.get("source", "claude")
-        for ut in m.get("userTexts", []):
-            text = ut.get("text", "")
+    # Try DB first; fall back to old method if DB is empty
+    db_rows = _get_messages_db(args, role="user", limit=99999)
+    if db_rows:
+        all_queries = []
+        for row in db_rows:
+            text = row.get("text", "")
             if len(text) < 3:
                 continue
-            # Skip system-looking text
             if text.strip().startswith(("<", "{", "```")):
                 continue
             if args.keyword and args.keyword.lower() not in text.lower():
                 continue
             all_queries.append({
-                "sessionId": sid,
-                "title": title,
-                "project": project,
-                "source": source,
-                "date": ut.get("ts", "")[:16],
+                "sessionId": row.get("session_id", ""),
+                "title": row.get("title", "")[:50],
+                "project": row.get("project_name", ""),
+                "source": row.get("source", "claude"),
+                "date": (row.get("ts") or "")[:16],
                 "text": text[:400],
             })
+    else:
+        filtered = _get_filtered(args)
+        items = sorted(filtered.values(), key=lambda m: m.get("date", ""), reverse=True)
+        all_queries = []
+        for m in items:
+            sid = m.get("id", "")
+            title = m.get("title", "")[:50]
+            project = m.get("projectName", "")
+            source = m.get("source", "claude")
+            for ut in m.get("userTexts", []):
+                text = ut.get("text", "")
+                if len(text) < 3:
+                    continue
+                if text.strip().startswith(("<", "{", "```")):
+                    continue
+                if args.keyword and args.keyword.lower() not in text.lower():
+                    continue
+                all_queries.append({
+                    "sessionId": sid,
+                    "title": title,
+                    "project": project,
+                    "source": source,
+                    "date": ut.get("ts", "")[:16],
+                    "text": text[:400],
+                })
 
     all_queries.sort(key=lambda q: q.get("date", ""), reverse=True)
     shown = all_queries[:args.limit]
@@ -324,8 +374,6 @@ def cmd_queries(args):
 
 def cmd_corrections(args):
     """Find user correction / dissatisfaction patterns across sessions."""
-    filtered = _get_filtered(args)
-
     # Correction signal patterns (Chinese + English)
     patterns = [
         # Chinese: explicit correction
@@ -451,7 +499,46 @@ def cmd_corrections(args):
     corrections = []
     seen_keys = set()  # deduplicate by (sid, idx)
 
-    for sid, meta in filtered.items():
+    # Build per-session data from DB if available, else fall back to old index
+    db_sessions = _get_filtered_db(args)
+    if db_sessions:
+        import db as _db
+        _db.init_db()
+        sids = [s["id"] for s in db_sessions]
+        conn = _db.get_conn()
+        placeholders = ",".join("?" * len(sids))
+        msg_rows = conn.execute(f"""
+            SELECT m.session_id, m.idx, m.role, m.text
+            FROM messages m
+            WHERE m.session_id IN ({placeholders})
+            ORDER BY m.session_id, m.idx
+        """, sids).fetchall()
+        # Reconstruct per-session structure
+        from collections import defaultdict
+        sess_user = defaultdict(list)
+        sess_asst = defaultdict(list)
+        for r in msg_rows:
+            entry = {"idx": r["idx"], "text": r["text"], "ts": ""}
+            if r["role"] == "user":
+                sess_user[r["session_id"]].append(entry)
+            elif r["role"] == "assistant":
+                sess_asst[r["session_id"]].append(entry)
+        sessions_iter = {
+            s["id"]: {
+                "id": s["id"],
+                "title": s.get("title", ""),
+                "projectName": s.get("project_name", ""),
+                "date": s.get("date", ""),
+                "filePath": s.get("file_path", ""),
+                "userTexts": sess_user[s["id"]],
+                "assistantSnippets": sess_asst[s["id"]],
+            }
+            for s in db_sessions
+        }
+    else:
+        sessions_iter = _get_filtered(args)
+
+    for sid, meta in sessions_iter.items():
         user_texts = meta.get("userTexts", [])
         asst_snippets = meta.get("assistantSnippets", [])
         # Build idx -> snippet lookup for quick adjacency check
@@ -563,8 +650,6 @@ def cmd_corrections(args):
 
 def cmd_decisions(args):
     """Extract potential decision points from conversations."""
-    filtered = _get_filtered(args)
-
     # Tighter decision patterns — require decision-making context words
     decision_re = re.compile(
         r'(?:决定[了用采]|最终选|采用了?|放弃了?|'
@@ -575,31 +660,60 @@ def cmd_decisions(args):
     )
 
     decisions = []
-    for sid, meta in filtered.items():
-        for ut in meta.get("userTexts", []):
-            text = ut.get("text", "")
-            # Skip noise: too short, too long, system-looking, or AI-generated prompts
+
+    # Try DB first; fall back to old method if DB is empty
+    db_rows = _get_messages_db(args, role="user", limit=99999)
+    if db_rows:
+        # Build a session-id → session meta lookup from DB
+        db_sessions = {s["id"]: s for s in _get_filtered_db(args)}
+        for row in db_rows:
+            text = row.get("text", "")
+            sid = row.get("session_id", "")
+            meta = db_sessions.get(sid, {})
+            # Skip noise
             if len(text) < 10 or len(text) > 2000:
                 continue
             if text.strip().startswith(("<", "{", "```", "#")):
                 continue
-            # Skip AI-generated prompts injected as "user" messages in Codex sessions
             if "analyze.py" in text or "CLI tool" in text or "工作流" in text[:50]:
                 continue
             if text.strip().startswith(("You are review", "You have a CLI", "Search the web")):
                 continue
-            # Skip task notification artifacts
             if text.strip().startswith(("toolu_", "a9bd", "Agent ")):
                 continue
             if decision_re.search(text):
                 decisions.append({
                     "sessionId": sid,
                     "title": meta.get("title", "")[:60],
-                    "project": meta.get("projectName", ""),
-                    "date": meta.get("date", "")[:10],
+                    "project": meta.get("project_name", ""),
+                    "date": (meta.get("date") or "")[:10],
                     "text": text[:400],
-                    "filePath": meta.get("filePath", ""),
+                    "filePath": meta.get("file_path", ""),
                 })
+    else:
+        filtered = _get_filtered(args)
+        for sid, meta in filtered.items():
+            for ut in meta.get("userTexts", []):
+                text = ut.get("text", "")
+                if len(text) < 10 or len(text) > 2000:
+                    continue
+                if text.strip().startswith(("<", "{", "```", "#")):
+                    continue
+                if "analyze.py" in text or "CLI tool" in text or "工作流" in text[:50]:
+                    continue
+                if text.strip().startswith(("You are review", "You have a CLI", "Search the web")):
+                    continue
+                if text.strip().startswith(("toolu_", "a9bd", "Agent ")):
+                    continue
+                if decision_re.search(text):
+                    decisions.append({
+                        "sessionId": sid,
+                        "title": meta.get("title", "")[:60],
+                        "project": meta.get("projectName", ""),
+                        "date": meta.get("date", "")[:10],
+                        "text": text[:400],
+                        "filePath": meta.get("filePath", ""),
+                    })
 
     decisions.sort(key=lambda d: d.get("date", ""), reverse=True)
 
@@ -698,27 +812,48 @@ def cmd_errors(args):
 
 def cmd_stats(args):
     """Show aggregate statistics."""
-    filtered = _get_filtered(args)
-    total = len(filtered)
+    # Try DB first; fall back to old method if DB is empty
+    db_sessions = _get_filtered_db(args)
+    if db_sessions:
+        total = len(db_sessions)
+        proj_counts = {}
+        src_counts = {}
+        total_msgs = 0
+        total_size = 0
+        dates = []
+        for s in db_sessions:
+            pname = s.get("project_name") or "unknown"
+            proj_counts[pname] = proj_counts.get(pname, 0) + 1
+            src = s.get("source", "claude")
+            src_counts[src] = src_counts.get(src, 0) + 1
+            total_msgs += s.get("user_message_count") or 0
+            total_size += s.get("file_size") or 0
+            if s.get("date"):
+                dates.append(s["date"][:10])
+    else:
+        filtered = _get_filtered(args)
+        total = len(filtered)
+        if total == 0:
+            print("No sessions match the filters.")
+            return
+        proj_counts = {}
+        src_counts = {}
+        total_msgs = 0
+        total_size = 0
+        dates = []
+        for sid, m in filtered.items():
+            pname = m.get("projectName", "unknown")
+            proj_counts[pname] = proj_counts.get(pname, 0) + 1
+            src = m.get("source", "claude")
+            src_counts[src] = src_counts.get(src, 0) + 1
+            total_msgs += m.get("userMessageCount", 0)
+            total_size += m.get("fileSize", 0)
+            if m.get("date"):
+                dates.append(m["date"][:10])
+
     if total == 0:
         print("No sessions match the filters.")
         return
-
-    proj_counts = {}
-    src_counts = {}
-    total_msgs = 0
-    total_size = 0
-    dates = []
-
-    for sid, m in filtered.items():
-        pname = m.get("projectName", "unknown")
-        proj_counts[pname] = proj_counts.get(pname, 0) + 1
-        src = m.get("source", "claude")
-        src_counts[src] = src_counts.get(src, 0) + 1
-        total_msgs += m.get("userMessageCount", 0)
-        total_size += m.get("fileSize", 0)
-        if m.get("date"):
-            dates.append(m["date"][:10])
 
     dates.sort()
 
@@ -832,10 +967,6 @@ def cmd_files(args):
 
 def cmd_highlights(args):
     """Per-session one-line highlights: topic, key signals, message count."""
-    filtered = _get_filtered(args)
-    items = sorted(filtered.values(), key=lambda m: m.get("date", ""), reverse=True)
-    items = items[:args.limit]
-
     # Reuse correction + decision regexes for signal counting
     correction_re = re.compile(
         r'不是这样|不对[，。！\s]|不要这样|你忘了|应该是|错了[，。！\s]|你搞错|这样不行|别这样做|重新来|'
@@ -854,50 +985,117 @@ def cmd_highlights(args):
         re.IGNORECASE
     )
 
-    if not args.json:
-        print(f"Highlights for {len(items)} sessions:\n")
+    # Try DB first; fall back to old method if DB is empty
+    db_sessions = _get_filtered_db(args)
+    if db_sessions:
+        import db as _db
+        _db.init_db()
+        # Load user messages in bulk for all sessions
+        sids = [s["id"] for s in db_sessions]
+        conn = _db.get_conn()
+        placeholders = ",".join("?" * len(sids))
+        msg_rows = conn.execute(f"""
+            SELECT session_id, text FROM messages
+            WHERE session_id IN ({placeholders}) AND role='user'
+            ORDER BY session_id, idx
+        """, sids).fetchall()
+        # Group messages by session
+        from collections import defaultdict
+        sess_texts = defaultdict(list)
+        for r in msg_rows:
+            sess_texts[r["session_id"]].append(r["text"])
 
-    results = []
-    for m in items:
-        sid = m.get("id", "")
-        title = m.get("title", "Untitled")[:50]
-        project = m.get("projectName", "")
-        source = m.get("source", "claude")[:3]
-        date = m.get("date", "")[:10]
-        msg_count = m.get("userMessageCount", 0)
+        items = sorted(db_sessions, key=lambda s: s.get("date", ""), reverse=True)
+        items = items[:args.limit]
 
-        # Count signals from user texts
-        corrections = 0
-        decisions = 0
-        topics = []
-        for ut in m.get("userTexts", []):
-            text = ut.get("text", "")
-            if len(text) < 3 or text.strip().startswith(("<", "{", "```")):
-                continue
-            if correction_re.search(text):
-                corrections += 1
-            if decision_re.search(text):
-                decisions += 1
-            # Collect first meaningful user message as topic hint
-            if not topics and len(text) > 10 and not text.startswith(("#", "```")):
-                topics.append(text[:80].replace("\n", " "))
+        if not args.json:
+            print(f"Highlights for {len(items)} sessions:\n")
 
-        topic = topics[0] if topics else title
-        signals = []
-        if corrections:
-            signals.append(f"corr:{corrections}")
-        if decisions:
-            signals.append(f"dec:{decisions}")
-        sig_str = " ".join(signals) if signals else "-"
+        results = []
+        for s in items:
+            sid = s["id"]
+            title = (s.get("title") or "Untitled")[:50]
+            project = s.get("project_name", "")
+            source = (s.get("source", "claude") or "claude")[:3]
+            date = (s.get("date") or "")[:10]
+            msg_count = s.get("user_message_count") or 0
 
-        if args.json:
-            results.append({
-                "id": sid, "date": date, "source": source, "project": project,
-                "title": title, "topic": topic, "messages": msg_count,
-                "corrections": corrections, "decisions": decisions,
-            })
-        else:
-            print(f"  [{source}] {date} {msg_count:3d}msg {sig_str:12s} {project[:20]:20s} | {topic}")
+            corrections = 0
+            decisions = 0
+            topics = []
+            for text in sess_texts.get(sid, []):
+                if len(text) < 3 or text.strip().startswith(("<", "{", "```")):
+                    continue
+                if correction_re.search(text):
+                    corrections += 1
+                if decision_re.search(text):
+                    decisions += 1
+                if not topics and len(text) > 10 and not text.startswith(("#", "```")):
+                    topics.append(text[:80].replace("\n", " "))
+
+            topic = topics[0] if topics else title
+            signals = []
+            if corrections:
+                signals.append(f"corr:{corrections}")
+            if decisions:
+                signals.append(f"dec:{decisions}")
+            sig_str = " ".join(signals) if signals else "-"
+
+            if args.json:
+                results.append({
+                    "id": sid, "date": date, "source": source, "project": project,
+                    "title": title, "topic": topic, "messages": msg_count,
+                    "corrections": corrections, "decisions": decisions,
+                })
+            else:
+                print(f"  [{source}] {date} {msg_count:3d}msg {sig_str:12s} {project[:20]:20s} | {topic}")
+    else:
+        filtered = _get_filtered(args)
+        items = sorted(filtered.values(), key=lambda m: m.get("date", ""), reverse=True)
+        items = items[:args.limit]
+
+        if not args.json:
+            print(f"Highlights for {len(items)} sessions:\n")
+
+        results = []
+        for m in items:
+            sid = m.get("id", "")
+            title = m.get("title", "Untitled")[:50]
+            project = m.get("projectName", "")
+            source = m.get("source", "claude")[:3]
+            date = m.get("date", "")[:10]
+            msg_count = m.get("userMessageCount", 0)
+
+            corrections = 0
+            decisions = 0
+            topics = []
+            for ut in m.get("userTexts", []):
+                text = ut.get("text", "")
+                if len(text) < 3 or text.strip().startswith(("<", "{", "```")):
+                    continue
+                if correction_re.search(text):
+                    corrections += 1
+                if decision_re.search(text):
+                    decisions += 1
+                if not topics and len(text) > 10 and not text.startswith(("#", "```")):
+                    topics.append(text[:80].replace("\n", " "))
+
+            topic = topics[0] if topics else title
+            signals = []
+            if corrections:
+                signals.append(f"corr:{corrections}")
+            if decisions:
+                signals.append(f"dec:{decisions}")
+            sig_str = " ".join(signals) if signals else "-"
+
+            if args.json:
+                results.append({
+                    "id": sid, "date": date, "source": source, "project": project,
+                    "title": title, "topic": topic, "messages": msg_count,
+                    "corrections": corrections, "decisions": decisions,
+                })
+            else:
+                print(f"  [{source}] {date} {msg_count:3d}msg {sig_str:12s} {project[:20]:20s} | {topic}")
 
     if args.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))
