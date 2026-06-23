@@ -1503,8 +1503,9 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
         parts = [
             f"CLI for analyzing conversation history: python3 {cli_path} <command> [options]",
-            f"Commands: stats, queries, corrections, highlights, decisions, files, sessions, read <id>, search <query>",
+            f"Commands: stats, queries, corrections, highlights, decisions, files, aggregates, sessions, read <id>, search <query>",
             f"Options: --date --source --project --limit",
+            "Tip: 'aggregates' returns pre-computed project distribution + daily activity as JSON (fastest, <100ms).",
             f"Scope: {cli_flags} ({session_count} sessions)",
             "",
         ]

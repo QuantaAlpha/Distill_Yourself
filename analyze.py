@@ -1611,6 +1611,20 @@ def _delete_evolve_data(tab, existing, ids):
     return existing
 
 
+def cmd_aggregates(args):
+    """Print pre-computed aggregates from SQLite DB as JSON."""
+    import db as _db
+    _db.init_db()
+    keys = ["project_distribution", "daily_activity", "topic_by_project"]
+    result = {}
+    for k in keys:
+        val = _db.get_aggregate(k)
+        if val:
+            result[k] = json.loads(val)
+    if getattr(args, "json", False) or True:  # always JSON for this command
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def cmd_evolve_write(args):
     """Write/merge/delete Evolve tab data with schema validation.
 
@@ -1741,6 +1755,8 @@ Examples:
                        help="Write mode: replace (full), merge (add/update), delete (remove by id)")
     p_ew.add_argument("--ids", default="", help="Comma-separated ids/names for delete mode")
 
+    sub.add_parser("aggregates", help="Print pre-computed aggregates from SQLite DB as JSON")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1753,6 +1769,7 @@ Examples:
         "stats": cmd_stats, "files": cmd_files, "highlights": cmd_highlights,
         "evolve-rules": cmd_evolve_rules, "evolve-signals": cmd_evolve_signals,
         "evolve-patterns": cmd_evolve_patterns, "evolve-write": cmd_evolve_write,
+        "aggregates": cmd_aggregates,
     }
 
     save_path = getattr(args, "save", "")
