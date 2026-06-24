@@ -738,20 +738,60 @@
         const div = document.createElement("div");
         div.className = "evolve-memory-card";
         div.dataset.id = card.id;
-        const typeColors = { preference: "var(--accent)", workflow: "var(--bash-accent)", tooling: "var(--read-accent)", design: "var(--edit-accent)", communication: "var(--grep-accent)" };
+        const typeColors = {
+            preference: "var(--accent)", workflow: "var(--bash-accent)",
+            tooling: "var(--read-accent)", design: "var(--edit-accent)",
+            communication: "var(--grep-accent)",
+            "偏好": "var(--accent)", "工作流": "var(--bash-accent)",
+            "工具": "var(--read-accent)", "设计": "var(--edit-accent)",
+            "沟通": "var(--grep-accent)"
+        };
         const node = (data.nodes || []).find(n => n.id === card.id);
         const type = node?.type || "preference";
         const conf = node?.confidence || "medium";
+        const trigger = card.trigger || "";
+        const instruction = card.instruction || "";
+        const avoid = card.avoid || "";
+        const hasV2 = trigger && instruction;
+
+        let bodyHtml = "";
+        if (hasV2) {
+          bodyHtml = `<div class="memory-card-body">
+            <div class="memory-field"><span class="memory-field-label">When:</span> ${esc(trigger)}</div>
+            <div class="memory-field"><span class="memory-field-label">Do:</span> ${esc(instruction)}</div>
+            ${avoid ? `<div class="memory-field"><span class="memory-field-label">Avoid:</span> ${esc(avoid)}</div>` : ""}
+          </div>`;
+        } else {
+          bodyHtml = `<div class="memory-card-body">${esc(card.content || "")}</div>`;
+        }
+
+        let evidenceHtml = "";
+        if (Array.isArray(card.evidence) && card.evidence.length) {
+          const items = card.evidence.slice(0, 3).map(ev =>
+            typeof ev === "object" ? `"${esc(ev.quote || "")}" <span class="evidence-meta">(${esc(ev.date || "")})</span>` : esc(String(ev))
+          ).join("<br>");
+          evidenceHtml = `<div class="memory-card-evidence">${items}</div>`;
+        } else if (typeof card.evidence === "string" && card.evidence) {
+          evidenceHtml = `<div class="memory-card-evidence">"${esc(card.evidence)}"</div>`;
+        }
+
+        const priorityBadge = node?.priority ? `<span class="memory-priority ${node.priority}">${node.priority}</span>` : "";
+        const statusBadge = node?.status === "stale" ? `<span class="memory-status stale">stale</span>` : "";
+        const conflictsHtml = (card.conflictsWith?.length)
+          ? `<span class="memory-conflicts" title="Conflicts with: ${card.conflictsWith.join(', ')}">⚡</span>` : "";
+
         div.innerHTML = `<div class="memory-card-header">
             <span class="memory-type-dot" style="background:${typeColors[type] || "var(--accent)"}"></span>
-            <span class="memory-card-label">${esc(card.content || card.id)}</span>
+            <span class="memory-card-label">${esc(node?.label || card.id)}</span>
+            ${priorityBadge}${statusBadge}${conflictsHtml}
             <span class="memory-confidence ${conf}">${conf}</span>
           </div>
+          ${bodyHtml}
           <div class="memory-card-meta">
             ${card.firstSeen ? `<span>First: ${card.firstSeen}</span>` : ""}
             ${card.lastSeen ? `<span>Last: ${card.lastSeen}</span>` : ""}
           </div>
-          ${card.evidence ? `<div class="memory-card-evidence">"${esc(card.evidence)}"</div>` : ""}`;
+          ${evidenceHtml}`;
         listDiv.appendChild(div);
       });
     }
@@ -772,7 +812,14 @@
     const rect = container.getBoundingClientRect();
     const width = Math.max(rect.width || 450, 300);
     const height = Math.max(rect.height || 350, 280);
-    const typeColors = { preference: "#5856d6", workflow: "#16a34a", tooling: "#d97706", design: "#ea580c", communication: "#2563eb" };
+    const typeColors = {
+        preference: "#5856d6", workflow: "#16a34a",
+        tooling: "#d97706", design: "#ea580c",
+        communication: "#2563eb",
+        "偏好": "#5856d6", "工作流": "#16a34a",
+        "工具": "#d97706", "设计": "#ea580c",
+        "沟通": "#2563eb"
+    };
     const typeLabels = { preference: "偏好", workflow: "工作流", tooling: "工具", design: "设计", communication: "沟通" };
     const n = nodes.length;
 

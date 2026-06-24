@@ -1430,9 +1430,22 @@ _EVOLVE_SCHEMAS = {
     },
     "memory": {
         "top_fields": {"nodes": list, "links": list, "cards": list},
-        "node": {"required": {"id": str, "label": str}, "optional": {"type": str, "frequency": (int, float), "confidence": str, "sessions": list}},
-        "link": {"required": {"source": str, "target": str}, "optional": {"strength": (int, float)}},
-        "card": {"required": {"id": str, "content": str}, "optional": {"firstSeen": str, "lastSeen": str, "evidence": str}},
+        "node": {
+            "required": {"id": str, "label": str},
+            "optional": {"type": str, "frequency": (int, float), "confidence": str,
+                         "priority": str, "status": str, "scope": str, "sessions": list}
+        },
+        "link": {
+            "required": {"source": str, "target": str},
+            "optional": {"strength": (int, float), "relation": str}
+        },
+        "card": {
+            "required": {"id": str},
+            "optional": {"trigger": str, "instruction": str, "avoid": str,
+                         "content": str, "firstSeen": str, "lastSeen": str,
+                         "lastValidated": str, "evidence": (str, list),
+                         "conflictsWith": list}
+        },
         "id_field": "id",
     },
     "rules": {
@@ -1647,6 +1660,395 @@ def _delete_evolve_data(tab, existing, ids):
     return existing
 
 
+def cmd_profile_digest(args):
+    """Generate a pre-computed profile digest for sub-agents."""
+    from collections import defaultdict
+    import db as _db
+    _db.init_db()
+
+    result = {}
+
+    # --- meta ---
+    db_sessions = _get_filtered_db(args)
+    total_sessions = len(db_sessions)
+    src_counts = defaultdict(int)
+    proj_counts = defaultdict(lambda: {"sessions": 0, "queries": 0})
+    dates = []
+    for s in db_sessions:
+        src = s.get("source", "claude")
+        src_counts[src] += 1
+        pname = s.get("project_name") or "unknown"
+        proj_counts[pname]["sessions"] += 1
+        proj_counts[pname]["queries"] += s.get("user_message_count") or 0
+        d = (s.get("date") or "")[:10]
+        if d:
+            dates.append(d)
+    dates.sort()
+
+    # Count total queries
+    all_queries_raw = _get_messages_db(args, role="user", limit=99999)
+    total_queries = len([q for q in all_queries_raw if len(q.get("text", "")) >= 3])
+
+    result["meta"] = {
+        "generated_at": datetime.now().isoformat()[:19],
+        "date_range": [dates[0], dates[-1]] if dates else [],
+        "session_count": total_sessions,
+        "query_count": total_queries,
+        "source_split": dict(src_counts),
+    }
+
+    # --- projects (top 5) ---
+    top_projects = sorted(proj_counts.items(), key=lambda x: -x[1]["sessions"])[:5]
+    result["projects"] = [
+        {"name": name, "sessions": data["sessions"],
+         "pct": round(data["sessions"] / max(total_sessions, 1) * 100),
+         "queries": data["queries"]}
+        for name, data in top_projects
+    ]
+
+    # --- correction episodes (grouped by signal cluster) ---
+    corrections = _get_corrections_raw(args)
+    cat_groups = defaultdict(list)
+    for c in corrections:
+        cat = _classify_correction(c.get("text", ""), c.get("signals", []))
+        cat_groups[cat].append(c)
+
+    episodes = []
+    for cat, items in cat_groups.items():
+        # Sub-group by first signal word
+        signal_groups = defaultdict(list)
+        for item in items:
+            key = item["signals"][0] if item.get("signals") else "general"
+            signal_groups[key].append(item)
+
+        for signal_key, group in signal_groups.items():
+            if len(group) < 1:
+                continue
+            # Pick best sample: AI-confirmed first, then longest text
+            group.sort(key=lambda x: (-int(x.get("aiConfirmed", False)), -len(x.get("text", ""))))
+            rep = group[0]
+            projects_seen = list(set(g.get("project", "") for g in group if g.get("project")))
+            episodes.append({
+                "category": cat,
+                "signal": signal_key,
+                "sample_text": rep.get("text", "")[:200],
+                "repeat_count": len(group),
+                "ai_confirmed_count": sum(1 for g in group if g.get("aiConfirmed")),
+                "projects_seen": projects_seen[:5],
+            })
+
+    episodes.sort(key=lambda e: -e["repeat_count"])
+
+    # Category totals
+    by_category = defaultdict(int)
+    by_subtype = defaultdict(int)
+    by_source = defaultdict(int)
+    for c in corrections:
+        cat = _classify_correction(c.get("text", ""), c.get("signals", []))
+        by_category[cat] += 1
+        src = c.get("source", "user")
+        kind = c.get("kind", "")
+        if src == "user":
+            by_subtype["user"] += 1
+        elif kind == "correction":
+            by_subtype["ai_correction"] += 1
+        elif kind == "insight":
+            by_subtype["ai_insight"] += 1
+
+    confirmed_count = sum(1 for c in corrections if c.get("source") == "user" and c.get("aiConfirmed"))
+    by_subtype["confirmed"] = confirmed_count
+
+    result["corrections"] = {
+        "total": len(corrections),
+        "by_subtype": dict(by_subtype),
+        "by_category": dict(by_category),
+        "correction_rate_per_100_queries": round(len(corrections) / max(total_queries, 1) * 100, 1),
+        "episodes": episodes[:15],
+    }
+
+    # --- positive signals (short user confirmations/approvals) ---
+    _confirm_re = re.compile(
+        r'^(可以的?|OK[的了]?|好[的了]?|行[的了]?|对[的了]?|没问题|就这样|嗯|'
+        r'yes|perfect|looks good|lgtm|exactly|great|approved|'
+        r'这个[方案不]?错|挺好|不错|可以|同意)',
+        re.IGNORECASE)
+    positive = []
+    for q in all_queries_raw:
+        text = q.get("text", "").strip()
+        # Affirmative messages with enough context (skip bare "可以的" / "OK")
+        if len(text) < 15 or len(text) > 60:
+            continue
+        if not _confirm_re.match(text):
+            continue
+        # Skip noise
+        if text.startswith(("<", "{", "```", "#", "/")):
+            continue
+        positive.append({
+            "user_text": text[:60],
+            "project": q.get("project_name", ""),
+            "date": (q.get("ts") or "")[:10],
+        })
+    # Deduplicate
+    seen_texts = set()
+    unique_positive = []
+    for p in positive:
+        key = p["user_text"][:20]
+        if key not in seen_texts:
+            seen_texts.add(key)
+            unique_positive.append(p)
+    result["positive_signals"] = unique_positive[:10]
+
+    # --- decisions ---
+    import copy
+    dec_args = copy.copy(args)
+    dec_args.json = True
+    dec_args.limit = 200
+    old_stdout = sys.stdout
+    sys.stdout = buf = io.StringIO()
+    try:
+        cmd_decisions(dec_args)
+    finally:
+        sys.stdout = old_stdout
+    try:
+        all_decisions = json.loads(buf.getvalue())
+    except json.JSONDecodeError:
+        all_decisions = []
+
+    result["decisions"] = {
+        "total": len(all_decisions),
+        "samples": [
+            {"text": d.get("text", "")[:200], "date": d.get("date", ""), "project": d.get("project", "")}
+            for d in all_decisions[:5]
+        ],
+    }
+
+    # --- files ---
+    file_args = copy.copy(args)
+    file_args.json = True
+    file_args.limit = 10
+    old_stdout = sys.stdout
+    sys.stdout = buf = io.StringIO()
+    try:
+        cmd_files(file_args)
+    finally:
+        sys.stdout = old_stdout
+    try:
+        all_files = json.loads(buf.getvalue())
+    except json.JSONDecodeError:
+        all_files = []
+
+    # Extension distribution
+    ext_counts = defaultdict(int)
+    for finfo in all_files:
+        ext = os.path.splitext(finfo.get("path", ""))[-1] or ".other"
+        ext_counts[ext] += finfo.get("edits", 0) + finfo.get("writes", 0)
+    total_edits = sum(ext_counts.values()) or 1
+    ext_dist = {ext: round(count / total_edits * 100) for ext, count in
+                sorted(ext_counts.items(), key=lambda x: -x[1])[:6]}
+
+    result["files"] = {
+        "top_edited": [
+            {"path": f.get("path", ""), "edits": f.get("edits", 0), "sessions": f.get("sessions", 0)}
+            for f in all_files[:8]
+        ],
+        "extension_distribution": ext_dist,
+    }
+
+    # --- errors ---
+    err_args = copy.copy(args)
+    err_args.json = True
+    err_args.limit = 5
+    old_stdout = sys.stdout
+    sys.stdout = buf = io.StringIO()
+    try:
+        cmd_errors(err_args)
+    finally:
+        sys.stdout = old_stdout
+    try:
+        all_errors = json.loads(buf.getvalue())
+    except json.JSONDecodeError:
+        all_errors = []
+
+    result["errors"] = {
+        "top": [
+            {"pattern": e.get("pattern", ""), "count": e.get("count", 0), "sessions": e.get("sessions", 0)}
+            for e in all_errors[:5]
+        ],
+    }
+
+    # --- friction hotspots (top sessions by correction count) ---
+    hl_args = copy.copy(args)
+    hl_args.json = True
+    hl_args.limit = 999
+    old_stdout = sys.stdout
+    sys.stdout = buf = io.StringIO()
+    try:
+        cmd_highlights(hl_args)
+    finally:
+        sys.stdout = old_stdout
+    try:
+        all_highlights = json.loads(buf.getvalue())
+    except json.JSONDecodeError:
+        all_highlights = []
+
+    hotspots = sorted(all_highlights, key=lambda h: -h.get("corrections", 0))
+    result["friction_hotspots"] = [
+        {"session_id": h["id"], "title": h.get("title", ""), "corrections": h.get("corrections", 0),
+         "queries": h.get("messages", 0), "project": h.get("project", ""), "date": h.get("date", "")}
+        for h in hotspots[:5] if h.get("corrections", 0) >= 2
+    ]
+
+    # --- query samples (representative user messages) ---
+    # Select diverse samples: spread across projects, varied lengths
+    valid_queries = [q for q in all_queries_raw
+                     if len(q.get("text", "")) >= 10
+                     and not q.get("text", "").strip().startswith(("<", "{", "```", "#"))]
+    # Bucket by project, pick from each
+    proj_buckets = defaultdict(list)
+    for q in valid_queries:
+        proj_buckets[q.get("project_name", "")].append(q)
+    query_samples = []
+    # Round-robin from each project
+    proj_list = sorted(proj_buckets.keys(), key=lambda p: -len(proj_buckets[p]))
+    idx = 0
+    while len(query_samples) < 20 and idx < 200:
+        for proj in proj_list:
+            bucket = proj_buckets[proj]
+            if idx < len(bucket):
+                text = bucket[idx]["text"][:200].replace("\n", " ")
+                query_samples.append({
+                    "text": text,
+                    "project": proj,
+                    "date": (bucket[idx].get("ts") or "")[:10],
+                })
+            if len(query_samples) >= 20:
+                break
+        idx += 1
+
+    result["query_samples"] = query_samples
+
+    # --- high signal sessions (top 10 by corrections + decisions) ---
+    top_sessions = sorted(all_highlights,
+                          key=lambda h: -(h.get("corrections", 0) + h.get("decisions", 0)))[:10]
+    result["high_signal_sessions"] = [
+        {"id": h["id"], "title": h.get("title", ""), "topic": h.get("topic", ""),
+         "corrections": h.get("corrections", 0), "decisions": h.get("decisions", 0),
+         "messages": h.get("messages", 0), "project": h.get("project", ""),
+         "date": h.get("date", ""), "source": h.get("source", "")}
+        for h in top_sessions
+    ]
+
+    # --- session topic distribution (keyword-based) ---
+    topic_patterns = {
+        "bugfix": re.compile(r'fix|bug|修|报错|error|broken|crash|坏了|不work|不行', re.I),
+        "feature": re.compile(r'新增|添加|实现|add|implement|create|build|写一个|做一个', re.I),
+        "ui_design": re.compile(r'UI|样式|布局|颜色|style|layout|design|CSS|前端|页面', re.I),
+        "architecture": re.compile(r'架构|方案|设计|重构|refactor|schema|migrate|迁移', re.I),
+        "research": re.compile(r'调研|分析|research|investigate|对比|compare|看看', re.I),
+        "review": re.compile(r'review|检查|验证|测试|test|verify|check', re.I),
+        "config_ops": re.compile(r'配置|deploy|部署|install|安装|setup|环境', re.I),
+    }
+    topic_dist = defaultdict(int)
+    for h in all_highlights:
+        topic_text = h.get("topic", "") + " " + h.get("title", "")
+        matched = False
+        for topic_name, pat in topic_patterns.items():
+            if pat.search(topic_text):
+                topic_dist[topic_name] += 1
+                matched = True
+                break
+        if not matched:
+            topic_dist["other"] += 1
+
+    result["session_topics"] = dict(sorted(topic_dist.items(), key=lambda x: -x[1]))
+
+    # --- collaboration patterns ---
+    collab = {"solo": 0, "multi_agent": 0, "with_codex": 0, "with_gemini": 0}
+    for s in db_sessions:
+        fp = s.get("file_path", "")
+        if not fp or not os.path.exists(fp):
+            collab["solo"] += 1
+            continue
+        has_agent = False
+        has_codex = False
+        has_gemini = False
+        try:
+            with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("type") != "assistant":
+                        continue
+                    for blk in (obj.get("message", {}).get("content", []) or []):
+                        if not isinstance(blk, dict):
+                            continue
+                        if blk.get("type") == "tool_use":
+                            if blk.get("name") == "Agent":
+                                has_agent = True
+                            inp = blk.get("input", {})
+                            cmd = inp.get("command", "")
+                            if "codex " in cmd or "codex exec" in cmd:
+                                has_codex = True
+                            if "gemini " in cmd:
+                                has_gemini = True
+        except Exception:
+            pass
+        if has_agent:
+            collab["multi_agent"] += 1
+        else:
+            collab["solo"] += 1
+        if has_codex:
+            collab["with_codex"] += 1
+        if has_gemini:
+            collab["with_gemini"] += 1
+
+    result["collaboration"] = collab
+
+    # --- communication style ---
+    zh_count = 0
+    en_count = 0
+    lengths = []
+    for q in valid_queries[:500]:
+        text = q.get("text", "")
+        lengths.append(len(text))
+        cjk = sum(1 for ch in text if '\u4e00' <= ch <= '\u9fff')
+        if cjk > len(text) * 0.1:
+            zh_count += 1
+        else:
+            en_count += 1
+    total_lang = zh_count + en_count or 1
+    lengths.sort()
+
+    # Style samples: short directive-style messages
+    style_candidates = [q for q in valid_queries
+                        if 10 <= len(q.get("text", "")) <= 80
+                        and not q.get("text", "").startswith(("#", "/", "```"))
+                        and "[Request interrupted" not in q.get("text", "")]
+    seen = set()
+    style_samples = []
+    for q in style_candidates:
+        t = q["text"].strip().replace("\n", " ")[:80]
+        if t not in seen:
+            seen.add(t)
+            style_samples.append(t)
+        if len(style_samples) >= 8:
+            break
+
+    result["communication"] = {
+        "language_mix": {"zh": round(zh_count / total_lang * 100), "en": round(en_count / total_lang * 100)},
+        "msg_length": {
+            "avg_chars": round(sum(lengths) / max(len(lengths), 1)),
+            "median_chars": lengths[len(lengths) // 2] if lengths else 0,
+        },
+        "style_samples": style_samples,
+    }
+
+    # Output
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def cmd_aggregates(args):
     """Print pre-computed aggregates from SQLite DB as JSON."""
     import db as _db
@@ -1792,6 +2194,7 @@ Examples:
     p_ew.add_argument("--ids", default="", help="Comma-separated ids/names for delete mode")
 
     sub.add_parser("aggregates", help="Print pre-computed aggregates from SQLite DB as JSON")
+    sub.add_parser("profile-digest", parents=[shared], help="Pre-computed profile digest for sub-agents (JSON)")
 
     args = parser.parse_args()
     if not args.command:
@@ -1806,6 +2209,7 @@ Examples:
         "evolve-rules": cmd_evolve_rules, "evolve-signals": cmd_evolve_signals,
         "evolve-patterns": cmd_evolve_patterns, "evolve-write": cmd_evolve_write,
         "aggregates": cmd_aggregates,
+        "profile-digest": cmd_profile_digest,
     }
 
     save_path = getattr(args, "save", "")

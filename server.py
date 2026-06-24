@@ -1500,6 +1500,21 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         except Exception:
             return ""
 
+    def _collect_profile_digest(self, source: str, date: str, project: str, cli_path: str) -> str:
+        """Run profile-digest command and return JSON string."""
+        import subprocess
+        cmd = [sys.executable, cli_path, "profile-digest",
+               "--date", date, "--source", source]
+        if project:
+            cmd.extend(["--project", project])
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return ""
+
     def _collect_aggregates(self) -> str:
         """Pre-collect trimmed aggregates (~2KB) for embedding in prompt."""
         import db as _db
@@ -1530,33 +1545,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         if project:
             cli_flags += f' --project "{project}"'
 
-        # Pre-collect stats + aggregates (small data for immediate context)
-        stats = self._collect_stats(source, date, project, cli_path)
-        aggregates = self._collect_aggregates()
-
-        # Count sessions
-        with _index_lock:
-            sessions = dict(_index.get("sessions", {}))
-        now = datetime.now()
-        days_map = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
-        max_days = days_map.get(date, 99999)
-        session_count = 0
-        for m in sessions.values():
-            if source != "all" and m.get("source", "claude") != source:
-                continue
-            if project and project not in m.get("projectName", ""):
-                continue
-            d = m.get("date", "")
-            if d and max_days < 99999:
-                try:
-                    age = (now - datetime.fromisoformat(d.replace("Z", "+00:00").replace("+00:00", "").rstrip("Z"))).days
-                    if age > max_days:
-                        continue
-                except (ValueError, TypeError):
-                    pass
-            session_count += 1
-
         write_cmd = f"python3 {cli_path} evolve-write --tab {tab}"
+
+        # For profile/memory: use pre-computed digest; for other tabs: use CLI exploration
+        use_digest = tab in ("profile", "memory")
+        digest = ""
+        if use_digest:
+            digest = self._collect_profile_digest(source, date, project, cli_path)
 
         parts = [
             "# Background",
@@ -1565,62 +1560,144 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             "It analyzes a user's past AI conversation history (from Claude Code and Codex CLI sessions)",
             "to extract insights about the user — their preferences, work patterns, recurring mistakes, and collaboration style.",
             "",
-            "The conversation data is stored as JSONL files under ~/.claude/projects/ (Claude Code) and ~/.codex/ (Codex CLI).",
-            "Each 'session' is one conversation between the user and an AI assistant. Sessions contain:",
-            "- User messages (requests, questions, feedback, corrections)",
-            "- Assistant messages (responses, code, explanations)",
-            "- Tool calls (Bash commands, file reads/edits, web searches)",
-            "",
-            "Your job: explore this conversation history using the CLI tool below, find patterns, and produce structured JSON output.",
-            "",
-            "# CLI Tool",
-            "",
-            f"  python3 {cli_path} <command> [options]",
-            "",
-            "Commands:",
-            "  stats        — Overview: session count, message count, date range, top projects",
-            "  sessions     — List sessions with titles, dates, message counts",
-            "  queries      — Extract user questions/requests across sessions",
-            "  corrections  — Find where the user corrected/rejected AI output (50+ signal words)",
-            "  highlights   — Sessions ranked by correction frequency (high corr = friction)",
-            "  decisions    — Key decisions and turning points in conversations",
-            "  files        — Most frequently touched files across sessions",
-            "  aggregates   — Pre-computed project distribution + daily activity (JSON, fast)",
-            "  read <id>    — Read full conversation of a specific session (use -s for summary)",
-            "  search <q>   — Full-text search across all sessions",
-            "",
-            f"Options: --date {date} --source {source}" + (f' --project "{project}"' if project else "") + " --limit N",
-            f"Scope: {session_count} sessions in range",
-            "",
         ]
 
-        # Embed stats + aggregates (gives immediate context, saves agent first-round)
-        if stats:
-            parts.extend(["# Pre-collected Data (do NOT re-run these)", "", "=== STATS ===", stats, ""])
-        if aggregates:
-            parts.extend(["=== AGGREGATES ===", aggregates, ""])
+        digest_cmd = f"python3 {cli_path} profile-digest --date {date} --source {source}" + (f' --project "{project}"' if project else "")
+        if use_digest and digest:
+            # Digest-based flow: main agent sees full digest, sub-agents run command to get it
+            parts.extend([
+                "# Pre-computed Profile Digest",
+                "",
+                "Below is a pre-computed overview of the user's conversation history.",
+                "Use it to understand the data landscape and decide how to split work across sub-agents.",
+                "",
+                digest,
+                "",
+                "# Execution Strategy",
+                "",
+                "Dispatch 2-3 sub-agents (via Agent tool) in parallel.",
+                "Each agent's prompt MUST include:",
+                f"  - Digest command: `{digest_cmd}` (agent runs this FIRST to get the overview)",
+                f"  - Full CLI tool: `python3 {cli_path} <command> --date {date} --source {source}" + (f' --project "{project}"' if project else "") + "`",
+                "  - Its assigned focus area, which digest sections to start from, and exploration instructions",
+                "",
+                "CLI commands available for exploration:",
+                f"  python3 {cli_path} read <id> -s   — Read a specific session (summary mode, see conversation context)",
+                f"  python3 {cli_path} search <q>     — Full-text search across sessions",
+                f"  python3 {cli_path} corrections     — Raw correction data with signal words and AI responses",
+                f"  python3 {cli_path} queries          — User messages across sessions",
+                f"  python3 {cli_path} highlights       — Sessions ranked by correction/decision density",
+                "",
+                "Each agent has a DISTINCT focus area — no overlap. Suggested split:",
+                "  - Agent 1: correction_episodes + friction_hotspots + errors → behavioral rules and pain points",
+                "  - Agent 2: query_samples + decisions + positive_signals → work patterns and preferences",
+                "  - Agent 3: files + collaboration + communication + session_topics → technical profile and style",
+                "",
+                "## Agent workflow (IMPORTANT — digest is the map, not the destination)",
+                "",
+                "Each agent MUST follow this 3-step process:",
+                "1. ORIENT: Run `profile-digest` to get the overview. Identify exploration targets from their focus sections.",
+                "   Examples: friction_hotspots session IDs, correction episode signals, high-signal sessions.",
+                "2. EXPLORE: Deep-dive into targets using CLI tools. This is the CORE step — don't skip it.",
+                "   - Read 3-5 high-signal sessions via `read <id> -s` to understand WHY patterns exist",
+                "   - Search for keywords from correction episodes to find more instances",
+                "   - Run `corrections` or `queries` to see raw data beyond the digest's summary",
+                "   - Look for context the digest can't capture: what triggered a correction, what the user wanted instead",
+                "3. SYNTHESIZE: Combine digest statistics + exploration findings → specific, evidence-backed insights.",
+                "   Bad: '用户纠正了8次' (just restating digest). Good: '用户对AI擅自扩展scope高度敏感，",
+                "   在3个不同项目中反复中断实施要求回到明确边界，触发场景是AI修bug时顺便重构相邻代码'",
+                "",
+                "After all agents return, synthesize their findings and write the result.",
+                "IMPORTANT: wait for ALL agent results before writing. Do not end your turn until evolve-write succeeds.",
+                "",
+            ])
+        else:
+            # CLI exploration flow: for rules/signals/patterns tabs
+            cli_flags = f"--date {date} --source {source}"
+            if project:
+                cli_flags += f' --project "{project}"'
 
-        claude_dir = str(Path.home() / ".claude" / "projects")
-        codex_dir = str(Path.home() / ".codex")
-        parts.extend([
-            "# Execution Strategy",
-            "",
-            "Dispatch 2-3 sub-agents (via Agent tool) in parallel. Use the stats and aggregates above to decide the split — do NOT re-run stats/aggregates in agents.",
-            "Each agent's prompt MUST include:",
-            f"  - CLI tool: python3 {cli_path} <command> {cli_flags}",
-            f"  - Data sources: conversation history ONLY — the CLI above, or files under {claude_dir} and {codex_dir}. Do NOT access any other directories or personal files.",
-            "  - Background context: briefly explain that they are analyzing AI conversation history to find user patterns/preferences.",
-            "",
-            "Efficiency rules for agents:",
-            "- Batch multiple CLI commands in one Bash call (e.g. echo '=== queries ==='; python3 ... queries --limit 80; echo '=== corrections ==='; python3 ... corrections --limit 80).",
-            "- Use `read -s <id>` to get context for interesting sessions. Use `search <keyword>` for targeted exploration.",
-            "- Do NOT run stats or aggregates — that data is already provided above.",
-            "",
-            "Each agent must have a DISTINCT focus area — no overlap. Split based on the overview data, not a fixed template.",
-            "After all agents return, synthesize their findings and write the result.",
-            "IMPORTANT: wait for ALL agent results before writing. Do not end your turn until evolve-write succeeds.",
-            "",
-        ])
+            stats = self._collect_stats(source, date, project, cli_path)
+            aggregates = self._collect_aggregates()
+
+            # Count sessions
+            with _index_lock:
+                sessions = dict(_index.get("sessions", {}))
+            now = datetime.now()
+            days_map = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
+            max_days = days_map.get(date, 99999)
+            session_count = 0
+            for m in sessions.values():
+                if source != "all" and m.get("source", "claude") != source:
+                    continue
+                if project and project not in m.get("projectName", ""):
+                    continue
+                d = m.get("date", "")
+                if d and max_days < 99999:
+                    try:
+                        age = (now - datetime.fromisoformat(d.replace("Z", "+00:00").replace("+00:00", "").rstrip("Z"))).days
+                        if age > max_days:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                session_count += 1
+
+            parts.extend([
+                "The conversation data is stored as JSONL files under ~/.claude/projects/ (Claude Code) and ~/.codex/ (Codex CLI).",
+                "Each 'session' is one conversation between the user and an AI assistant. Sessions contain:",
+                "- User messages (requests, questions, feedback, corrections)",
+                "- Assistant messages (responses, code, explanations)",
+                "- Tool calls (Bash commands, file reads/edits, web searches)",
+                "",
+                "Your job: explore this conversation history using the CLI tool below, find patterns, and produce structured JSON output.",
+                "",
+                "# CLI Tool",
+                "",
+                f"  python3 {cli_path} <command> [options]",
+                "",
+                "Commands:",
+                "  stats        — Overview: session count, message count, date range, top projects",
+                "  sessions     — List sessions with titles, dates, message counts",
+                "  queries      — Extract user questions/requests across sessions",
+                "  corrections  — Find where the user corrected/rejected AI output (50+ signal words)",
+                "  highlights   — Sessions ranked by correction frequency (high corr = friction)",
+                "  decisions    — Key decisions and turning points in conversations",
+                "  files        — Most frequently touched files across sessions",
+                "  aggregates   — Pre-computed project distribution + daily activity (JSON, fast)",
+                "  read <id>    — Read full conversation of a specific session (use -s for summary)",
+                "  search <q>   — Full-text search across all sessions",
+                "",
+                f"Options: --date {date} --source {source}" + (f' --project "{project}"' if project else "") + " --limit N",
+                f"Scope: {session_count} sessions in range",
+                "",
+            ])
+
+            if stats:
+                parts.extend(["# Pre-collected Data (do NOT re-run these)", "", "=== STATS ===", stats, ""])
+            if aggregates:
+                parts.extend(["=== AGGREGATES ===", aggregates, ""])
+
+            claude_dir = str(Path.home() / ".claude" / "projects")
+            codex_dir = str(Path.home() / ".codex")
+            parts.extend([
+                "# Execution Strategy",
+                "",
+                "Dispatch 2-3 sub-agents (via Agent tool) in parallel. Use the stats and aggregates above to decide the split — do NOT re-run stats/aggregates in agents.",
+                "Each agent's prompt MUST include:",
+                f"  - CLI tool: python3 {cli_path} <command> {cli_flags}",
+                f"  - Data sources: conversation history ONLY — the CLI above, or files under {claude_dir} and {codex_dir}. Do NOT access any other directories or personal files.",
+                "  - Background context: briefly explain that they are analyzing AI conversation history to find user patterns/preferences.",
+                "",
+                "Efficiency rules for agents:",
+                "- Batch multiple CLI commands in one Bash call (e.g. echo '=== queries ==='; python3 ... queries --limit 80; echo '=== corrections ==='; python3 ... corrections --limit 80).",
+                "- Use `read -s <id>` to get context for interesting sessions. Use `search <keyword>` for targeted exploration.",
+                "- Do NOT run stats or aggregates — that data is already provided above.",
+                "",
+                "Each agent must have a DISTINCT focus area — no overlap. Split based on the overview data, not a fixed template.",
+                "After all agents return, synthesize their findings and write the result.",
+                "IMPORTANT: wait for ALL agent results before writing. Do not end your turn until evolve-write succeeds.",
+                "",
+            ])
 
         if tab == "profile":
             parts.extend([
@@ -1643,19 +1720,42 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             ])
         elif tab == "memory":
             parts.extend([
-                "TASK: Extract user preferences and habits as a memory network.",
+                "TASK: Extract EXECUTABLE behavioral preferences as a memory network.",
+                "",
+                "Memory answers: 'What should the next AI agent do differently?'",
+                "Memory is NOT Profile — do NOT include: project descriptions, tech stack facts, domain interests, communication style observations.",
+                "Only include items that can be written as: 'When [trigger], do [instruction]' — with optional 'avoid [what not to do]'.",
                 "",
                 f"Write result via: {write_cmd} --mode replace <<'EVOLVE_EOF'",
                 "JSON schema:",
-                '{"nodes": [{"id": "m1", "label": "偏好简述", "type": "偏好|工作流|工具|设计|沟通", "frequency": N, "confidence": "high|medium|low"}],',
-                ' "links": [{"source": "m1", "target": "m2", "strength": 0.0-1.0}],',
-                ' "cards": [{"id": "m1", "content": "完整描述", "firstSeen": "YYYY-MM-DD", "lastSeen": "YYYY-MM-DD", "evidence": "用户原话引用"}]}',
+                "",
+                "```json",
+                '{"nodes": [{"id": "m1", "label": "短标签(4-8字)", "type": "preference|workflow|tooling|design|communication",',
+                '  "frequency": N, "confidence": "high|medium|low", "priority": "P0|P1|P2",',
+                '  "status": "active", "scope": "coding|review|design|research|all"}],',
+                ' "links": [{"source": "m1", "target": "m2", "strength": 0.0-1.0, "relation": "supports|conflicts|refines"}],',
+                ' "cards": [{"id": "m1",',
+                '  "trigger": "什么场景触发这条记忆",',
+                '  "instruction": "AI 应该怎么做",',
+                '  "avoid": "AI 不应该做什么(可为空字符串)",',
+                '  "content": "完整描述(向后兼容,可从trigger+instruction生成)",',
+                '  "firstSeen": "YYYY-MM-DD", "lastSeen": "YYYY-MM-DD",',
+                '  "evidence": [{"quote": "用户原话", "sessionId": "session-id", "date": "YYYY-MM-DD"}],',
+                '  "conflictsWith": ["m6"]}]}',
+                "```",
                 "",
                 "质量要求：",
-                "- 每条记忆要具体可操作，描述清楚行为模式",
-                "- 示例：✗「用户喜欢简洁」 ✓「对 AI 过度精简和过度设计都敏感，偏好适度详细」",
-                "- nodes 和 cards 的 id 必须一一对应",
-                "- 所有内容用中文，evidence 简述依据即可，不需要引用原话",
+                "- 10-15 条 memory, 每条必须有明确的 trigger + instruction",
+                "- avoid 字段可选：有需要就填，没有可为空字符串",
+                "- type 必须用英文：preference / workflow / tooling / design / communication",
+                "- evidence 必须是数组，每条含 quote + sessionId + date",
+                "- 准入门槛：如果不能写成 'When X, do Y' 的指令，它属于 Profile 而非 Memory",
+                "  ✗ Memory: '使用Python全栈开发' → 归 Profile",
+                "  ✗ Memory: '主力项目是对话历史可视化工具' → 归 Profile",
+                "  ✓ Memory: trigger='AI修bug时准备顺便改相邻代码', instruction='仅做请求的改动，不扩展范围'",
+                "- 矛盾处理：发现两条 memory 表面冲突时，用 trigger 区分适用场景，用 conflictsWith 标注关联",
+                "  例：'先方案后执行' 和 '端到端自主授权' 不冲突——前者适用于开放设计任务，后者适用于用户明确授权时",
+                "- 所有描述用中文",
             ])
         elif tab == "rules":
             # Same prompt as the "规则生成" preset in app.js
@@ -2549,6 +2649,8 @@ def _evolve_sync_memory_execute(mem_data: dict) -> dict:
     for nid, node in nodes.items():
         if node.get("confidence") == "low":
             continue
+        if node.get("status") == "stale":
+            continue
 
         card = cards.get(nid, {})
         label = node.get("label", "")
@@ -2558,7 +2660,18 @@ def _evolve_sync_memory_execute(mem_data: dict) -> dict:
 
         is_update = fpath.exists()
 
-        # Build frontmatter
+        # Build content: prefer trigger/instruction format, fall back to v1 content
+        trigger = card.get("trigger", "")
+        instruction = card.get("instruction", "")
+        avoid = card.get("avoid", "")
+
+        if trigger and instruction:
+            body = f"When: {trigger}\nDo: {instruction}"
+            if avoid:
+                body += f"\nAvoid: {avoid}"
+        else:
+            body = card.get("content", label)
+
         content_lines = [
             "---",
             f"name: {name_kebab}",
@@ -2567,11 +2680,22 @@ def _evolve_sync_memory_execute(mem_data: dict) -> dict:
             "source: evolve-sync",
             "---",
             "",
-            card.get("content", label),
+            body,
         ]
 
+        # Evidence
         evidence = card.get("evidence", "")
-        if evidence:
+        if isinstance(evidence, list) and evidence:
+            content_lines.extend(["", "**Evidence:**"])
+            for ev in evidence[:3]:
+                if isinstance(ev, dict):
+                    q = ev.get("quote", "")
+                    sid = ev.get("sessionId", "")
+                    d = ev.get("date", "")
+                    content_lines.append(f'- "{q}" ({sid}, {d})')
+                else:
+                    content_lines.append(f"- {ev}")
+        elif isinstance(evidence, str) and evidence:
             content_lines.extend(["", f"**Evidence:** {evidence}"])
 
         meta_parts = []
@@ -2581,6 +2705,8 @@ def _evolve_sync_memory_execute(mem_data: dict) -> dict:
             meta_parts.append(f"**Last seen:** {card['lastSeen']}")
         if node.get("frequency"):
             meta_parts.append(f"**Frequency:** {node['frequency']}")
+        if node.get("priority"):
+            meta_parts.append(f"**Priority:** {node['priority']}")
         if meta_parts:
             content_lines.append(" | ".join(meta_parts))
 
