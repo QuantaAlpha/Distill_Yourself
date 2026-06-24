@@ -25,6 +25,7 @@ from datetime import datetime
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 CACHE_DIR = Path(__file__).resolve().parent / ".cache"
 INDEX_CACHE = CACHE_DIR / "index.json"
+INDEX_SCHEMA_VERSION = 2  # bump when extract_metadata logic changes, to invalidate stale caches
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 PORT = int(os.environ.get("PORT", 5757))
 MAX_SEARCH_WORKERS = 8
@@ -82,6 +83,7 @@ def pretty_project_name(dirname: str) -> str:
 def extract_metadata(filepath: str) :
     """Quick scan of a JSONL file to extract session metadata."""
     title = None
+    custom_title = None
     session_id = None
     first_ts = None
     last_ts = None
@@ -102,6 +104,16 @@ def extract_metadata(filepath: str) :
                 if msg_type == "ai-title":
                     title = obj.get("aiTitle", "")
                     session_id = obj.get("sessionId", "")
+                    continue
+
+                # User-given session name (set via Claude Code). Written multiple
+                # times per session; the last occurrence is the most recent name.
+                if msg_type == "custom-title":
+                    ct = obj.get("customTitle", "")
+                    if ct:
+                        custom_title = ct
+                    if not session_id:
+                        session_id = obj.get("sessionId", "")
                     continue
 
                 if msg_type == "user" and not obj.get("toolUseResult"):
@@ -149,8 +161,10 @@ def extract_metadata(filepath: str) :
     if not session_id:
         session_id = Path(filepath).stem
 
-    # Fallback title: first user text (76% of sessions lack ai-title)
-    if not title and user_texts:
+    # Title priority: user-given custom-title > ai-title > first user text.
+    if custom_title:
+        title = custom_title
+    elif not title and user_texts:
         title = user_texts[0]["text"][:80]
 
     return {
@@ -524,6 +538,9 @@ def build_index(force: bool = False) -> dict:
         try:
             with open(INDEX_CACHE, "r") as f:
                 cached = json.load(f)
+            # Discard cache built by an older metadata schema (e.g. pre custom-title)
+            if cached.get("_schema_version") != INDEX_SCHEMA_VERSION:
+                cached = {}
         except Exception:
             cached = {}
 
@@ -642,6 +659,7 @@ def build_index(force: bool = False) -> dict:
         projects[pname]["sessionCount"] += 1
 
     index = {
+        "_schema_version": INDEX_SCHEMA_VERSION,
         "projects": projects,
         "sessions": sessions,
         "_file_mtimes": current_files,
