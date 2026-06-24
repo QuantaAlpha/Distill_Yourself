@@ -5,7 +5,11 @@
 .knowhow/
 .superpowers/
 skills/
-docs/
+docs/specs/
+docs/plans/
+docs/research/
+docs/decisions/
+docs/reference/
 DESIGN.md
 *.jsonl
 __pycache__/
