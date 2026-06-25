@@ -85,6 +85,145 @@ def init_db():
             value      TEXT,
             updated_at TEXT
         );
+
+        -- =================================================================
+        -- Cognitive Model tables (Digital Twin 4-layer pipeline)
+        -- =================================================================
+
+        -- L1: Episodes — structured events from conversations
+        CREATE TABLE IF NOT EXISTS episodes (
+            id          TEXT PRIMARY KEY,
+            session_id  TEXT,
+            event_index INTEGER,
+            task_type   TEXT,
+            ai_action   TEXT,
+            user_reaction TEXT,
+            resolution  TEXT,
+            lesson      TEXT,
+            signal_type TEXT,
+            signal_intensity REAL,
+            domain      TEXT,
+            created_at  TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id),
+            UNIQUE(session_id, event_index)
+        );
+        CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);
+        CREATE INDEX IF NOT EXISTS idx_episodes_domain  ON episodes(domain);
+        CREATE INDEX IF NOT EXISTS idx_episodes_signal  ON episodes(signal_type);
+
+        -- L1→L2 refs: which episodes support which cognitive model items
+        CREATE TABLE IF NOT EXISTS episode_refs (
+            episode_id  TEXT,
+            target_type TEXT,
+            target_id   TEXT,
+            PRIMARY KEY (episode_id, target_type, target_id),
+            FOREIGN KEY (episode_id) REFERENCES episodes(id)
+        );
+
+        -- L2 Dim1: Value tensions
+        CREATE TABLE IF NOT EXISTS cm_tensions (
+            id          TEXT PRIMARY KEY,
+            value_a     TEXT,
+            value_b     TEXT,
+            default_resolution TEXT,
+            context_overrides  TEXT,
+            confidence  REAL,
+            episode_count INTEGER DEFAULT 0,
+            status      TEXT DEFAULT 'hypothesis',
+            updated_at  TEXT
+        );
+
+        -- L2 Dim2: Causal principles
+        CREATE TABLE IF NOT EXISTS cm_principles (
+            id          TEXT PRIMARY KEY,
+            statement   TEXT,
+            cause       TEXT,
+            effect      TEXT,
+            domain      TEXT,
+            tension_ids TEXT,
+            confidence  REAL,
+            status      TEXT DEFAULT 'hypothesis',
+            episode_count INTEGER DEFAULT 0,
+            updated_at  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_principles_domain ON cm_principles(domain);
+        CREATE INDEX IF NOT EXISTS idx_principles_status ON cm_principles(status);
+
+        -- L2 Dim3: Tradeoff matrix
+        CREATE TABLE IF NOT EXISTS cm_tradeoffs (
+            id          TEXT PRIMARY KEY,
+            context     TEXT,
+            protect     TEXT,
+            sacrifice   TEXT,
+            strategy    TEXT,
+            confidence  REAL,
+            episode_count INTEGER DEFAULT 0,
+            updated_at  TEXT
+        );
+
+        -- L2 Dim4: Reasoning style
+        CREATE TABLE IF NOT EXISTS cm_reasoning (
+            id          TEXT PRIMARY KEY,
+            dimension   TEXT,
+            description TEXT,
+            evidence    TEXT,
+            confidence  REAL,
+            updated_at  TEXT
+        );
+
+        -- L2 Dim5: Communication contract
+        CREATE TABLE IF NOT EXISTS cm_communication (
+            id          TEXT PRIMARY KEY,
+            category    TEXT,
+            description TEXT,
+            domain      TEXT DEFAULT 'all',
+            confidence  REAL,
+            episode_count INTEGER DEFAULT 0,
+            updated_at  TEXT
+        );
+
+        -- L2 Dim6: Role modes
+        CREATE TABLE IF NOT EXISTS cm_roles (
+            id          TEXT PRIMARY KEY,
+            role        TEXT,
+            behavior_profile TEXT,
+            key_preferences  TEXT,
+            autonomy_level   TEXT,
+            confidence  REAL,
+            episode_count INTEGER DEFAULT 0,
+            updated_at  TEXT
+        );
+
+        -- L2 Dim7: Domain expertise
+        CREATE TABLE IF NOT EXISTS cm_expertise (
+            id          TEXT PRIMARY KEY,
+            domain      TEXT,
+            depth       TEXT,
+            session_count INTEGER DEFAULT 0,
+            key_patterns TEXT,
+            autonomy_boundary TEXT,
+            confidence  REAL,
+            updated_at  TEXT
+        );
+
+        -- L3: Policies — compiled from L2 dimensions
+        CREATE TABLE IF NOT EXISTS cm_policies (
+            id          TEXT PRIMARY KEY,
+            condition   TEXT,
+            action      TEXT,
+            exception   TEXT,
+            rationale   TEXT,
+            source_type TEXT,
+            source_id   TEXT,
+            domain      TEXT,
+            role_mode   TEXT,
+            confidence  REAL,
+            status      TEXT DEFAULT 'active',
+            evidence_summary TEXT,
+            updated_at  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_policies_status ON cm_policies(status);
+        CREATE INDEX IF NOT EXISTS idx_policies_source ON cm_policies(source_type, source_id);
     """)
     conn.commit()
 
@@ -347,3 +486,156 @@ def refresh_aggregates():
         ORDER BY message_count DESC
     """).fetchall()
     set_aggregate("topic_by_project", json.dumps([dict(r) for r in rows]))
+
+
+# ---------------------------------------------------------------------------
+# Cognitive Model — CRUD helpers
+# ---------------------------------------------------------------------------
+
+# Table registry: name → columns (excluding id, updated_at which are auto-managed)
+_CM_TABLES = {
+    "episodes": ["session_id", "event_index", "task_type", "ai_action",
+                 "user_reaction", "resolution", "lesson", "signal_type",
+                 "signal_intensity", "domain", "created_at"],
+    "episode_refs": ["episode_id", "target_type", "target_id"],
+    "cm_tensions": ["value_a", "value_b", "default_resolution",
+                    "context_overrides", "confidence", "episode_count", "status"],
+    "cm_principles": ["statement", "cause", "effect", "domain",
+                      "tension_ids", "confidence", "status", "episode_count"],
+    "cm_tradeoffs": ["context", "protect", "sacrifice", "strategy",
+                     "confidence", "episode_count"],
+    "cm_reasoning": ["dimension", "description", "evidence", "confidence"],
+    "cm_communication": ["category", "description", "domain",
+                         "confidence", "episode_count"],
+    "cm_roles": ["role", "behavior_profile", "key_preferences",
+                 "autonomy_level", "confidence", "episode_count"],
+    "cm_expertise": ["domain", "depth", "session_count", "key_patterns",
+                     "autonomy_boundary", "confidence"],
+    "cm_policies": ["condition", "action", "exception", "rationale",
+                    "source_type", "source_id", "domain", "role_mode",
+                    "confidence", "status", "evidence_summary"],
+}
+
+
+def cm_upsert(table: str, item_id: str, data: dict):
+    """Insert or update a cognitive model row."""
+    conn = get_conn()
+    cols = _CM_TABLES.get(table)
+    if not cols:
+        raise ValueError(f"Unknown CM table: {table}")
+
+    now = datetime.utcnow().isoformat()
+    has_updated = table not in ("episodes", "episode_refs")
+
+    all_cols = ["id"] + [c for c in cols if c in data]
+    if has_updated:
+        all_cols.append("updated_at")
+
+    vals = [item_id] + [data.get(c) for c in cols if c in data]
+    if has_updated:
+        vals.append(now)
+
+    placeholders = ",".join("?" * len(all_cols))
+    col_str = ",".join(all_cols)
+    conn.execute(
+        f"INSERT OR REPLACE INTO {table} ({col_str}) VALUES ({placeholders})",
+        vals,
+    )
+    conn.commit()
+
+
+def cm_get(table: str, item_id: str) -> Optional[dict]:
+    """Get a single row by id."""
+    conn = get_conn()
+    row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (item_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def cm_get_all(table: str, where: str = "", params: tuple = (), order: str = "",
+               limit: int = 500) -> list:
+    """Get all rows from a CM table with optional filters."""
+    conn = get_conn()
+    sql = f"SELECT * FROM {table}"
+    if where:
+        sql += f" WHERE {where}"
+    if order:
+        sql += f" ORDER BY {order}"
+    sql += f" LIMIT {limit}"
+    rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def cm_delete(table: str, item_id: str):
+    """Delete a single row by id."""
+    conn = get_conn()
+    conn.execute(f"DELETE FROM {table} WHERE id=?", (item_id,))
+    conn.commit()
+
+
+def cm_count(table: str, where: str = "", params: tuple = ()) -> int:
+    """Count rows in a CM table."""
+    conn = get_conn()
+    sql = f"SELECT COUNT(*) FROM {table}"
+    if where:
+        sql += f" WHERE {where}"
+    return conn.execute(sql, params).fetchone()[0]
+
+
+def cm_add_ref(episode_id: str, target_type: str, target_id: str):
+    """Add an episode → target reference."""
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR IGNORE INTO episode_refs (episode_id, target_type, target_id) "
+        "VALUES (?,?,?)",
+        (episode_id, target_type, target_id),
+    )
+    conn.commit()
+
+
+def cm_get_refs_for_target(target_type: str, target_id: str) -> list:
+    """Get all episodes linked to a cognitive model item."""
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT e.* FROM episodes e
+           JOIN episode_refs r ON e.id = r.episode_id
+           WHERE r.target_type=? AND r.target_id=?
+           ORDER BY e.created_at DESC""",
+        (target_type, target_id),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_twin_stats() -> dict:
+    """Return cognitive model statistics."""
+    conn = get_conn()
+    stats = {}
+    for table in _CM_TABLES:
+        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        stats[table] = {"count": count}
+        # confidence distribution for tables that have it
+        if table not in ("episodes", "episode_refs"):
+            try:
+                rows = conn.execute(
+                    f"SELECT AVG(confidence) as avg_conf, "
+                    f"MIN(confidence) as min_conf, MAX(confidence) as max_conf "
+                    f"FROM {table} WHERE confidence IS NOT NULL"
+                ).fetchone()
+                if rows and rows["avg_conf"] is not None:
+                    stats[table]["confidence"] = {
+                        "avg": round(rows["avg_conf"], 2),
+                        "min": round(rows["min_conf"], 2),
+                        "max": round(rows["max_conf"], 2),
+                    }
+            except sqlite3.OperationalError:
+                pass
+        # last updated
+        if table not in ("episodes", "episode_refs"):
+            try:
+                row = conn.execute(
+                    f"SELECT MAX(updated_at) as last FROM {table}"
+                ).fetchone()
+                if row and row["last"]:
+                    stats[table]["last_updated"] = row["last"]
+            except sqlite3.OperationalError:
+                pass
+    return stats
