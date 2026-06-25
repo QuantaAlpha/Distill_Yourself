@@ -518,7 +518,8 @@ _CM_TABLES = {
 
 
 def cm_upsert(table: str, item_id: str, data: dict):
-    """Insert or update a cognitive model row."""
+    """Insert or update a cognitive model row. Partial updates are safe — existing
+    fields are preserved when not provided in data."""
     conn = get_conn()
     cols = _CM_TABLES.get(table)
     if not cols:
@@ -527,13 +528,22 @@ def cm_upsert(table: str, item_id: str, data: dict):
     now = datetime.utcnow().isoformat()
     has_updated = table not in ("episodes", "episode_refs")
 
-    all_cols = ["id"] + [c for c in cols if c in data]
-    if has_updated:
-        all_cols.append("updated_at")
-
-    vals = [item_id] + [data.get(c) for c in cols if c in data]
-    if has_updated:
-        vals.append(now)
+    # Check if row exists — if so, merge with existing data to avoid dropping fields
+    existing = conn.execute(f"SELECT * FROM {table} WHERE id=?", (item_id,)).fetchone()
+    if existing:
+        merged = dict(existing)
+        merged.update({k: v for k, v in data.items() if v is not None})
+        if has_updated:
+            merged["updated_at"] = now
+        all_cols = [c for c in ["id"] + cols + (["updated_at"] if has_updated else []) if c in merged]
+        vals = [merged[c] for c in all_cols]
+    else:
+        all_cols = ["id"] + [c for c in cols if c in data]
+        if has_updated:
+            all_cols.append("updated_at")
+        vals = [item_id] + [data.get(c) for c in cols if c in data]
+        if has_updated:
+            vals.append(now)
 
     placeholders = ",".join("?" * len(all_cols))
     col_str = ",".join(all_cols)

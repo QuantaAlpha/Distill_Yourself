@@ -157,7 +157,7 @@
 
     fetch(`/api/twin/dimension/${dimKey}?limit=200`)
       .then((r) => r.json())
-      .then((items) => renderDimension(dim, items))
+      .then((data) => renderDimension(dim, data.items || data))
       .catch((e) => console.error("Failed to load dimension:", e));
   }
 
@@ -307,7 +307,7 @@
   function loadPolicies() {
     fetch("/api/twin/policies?status=active&limit=200")
       .then((r) => r.json())
-      .then((items) => renderPolicies(items))
+      .then((data) => renderPolicies(data.policies || data))
       .catch((e) => console.error("Failed to load policies:", e));
   }
 

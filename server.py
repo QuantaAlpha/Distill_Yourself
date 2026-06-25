@@ -1349,16 +1349,19 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 self._error(400, f"Unknown dimension: {dim_name}")
             else:
                 table = _TWIN_DIM_TABLE[dim_name]
+                # Tables that have status/domain columns
+                _HAS_STATUS = {"cm_tensions", "cm_principles"}
+                _HAS_DOMAIN = {"cm_principles", "cm_communication"}
                 status = params.get("status", [None])[0]
                 domain = params.get("domain", [None])[0]
                 sort = params.get("sort", ["confidence"])[0]
                 limit = int(params.get("limit", ["500"])[0])
                 where_parts = []
                 where_params = []
-                if status:
+                if status and table in _HAS_STATUS:
                     where_parts.append("status=?")
                     where_params.append(status)
-                if domain:
+                if domain and table in _HAS_DOMAIN:
                     where_parts.append("domain=?")
                     where_params.append(domain)
                 where = " AND ".join(where_parts)
@@ -1405,7 +1408,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 where_parts.append("domain=?")
                 where_params.append(domain)
             if role:
-                where_parts.append("role=?")
+                where_parts.append("role_mode=?")
                 where_params.append(role)
             where = " AND ".join(where_parts)
             policies = _db.cm_get_all("cm_policies", where=where, params=tuple(where_params),

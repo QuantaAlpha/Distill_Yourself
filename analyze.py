@@ -2357,19 +2357,27 @@ def cmd_twin_write(args):
             print(f"  WARN: {err}", file=sys.stderr)
 
 
+def _deterministic_policy_id(source_type: str, source_id: str) -> str:
+    """Generate a deterministic policy ID from its source, so re-compiles don't churn IDs."""
+    import hashlib
+    h = hashlib.md5(f"{source_type}:{source_id}".encode()).hexdigest()[:8]
+    return f"pol_{source_type[:3]}_{h}"
+
+
 def cmd_twin_compile(args):
-    """Compile L3 policies from L2 dimension data."""
+    """Compile L3 policies from ALL 7 L2 dimensions."""
     import db as _db
     _db.init_db()
 
     new_policies = []
+    source_types = []
 
-    # From principles
+    # 1. From principles (confirmed/emerging)
     principles = _db.cm_get_all("cm_principles",
                                 where="status IN ('confirmed','emerging')")
     for p in principles:
         new_policies.append({
-            "id": "pol_" + uuid.uuid4().hex[:8],
+            "id": _deterministic_policy_id("principle", p["id"]),
             "data": {
                 "condition": p.get("cause") or "",
                 "action": p.get("effect") or "",
@@ -2383,7 +2391,7 @@ def cmd_twin_compile(args):
             },
         })
 
-    # From tensions
+    # 2. From tensions
     tensions = _db.cm_get_all("cm_tensions")
     for t in tensions:
         overrides = t.get("context_overrides") or ""
@@ -2396,7 +2404,7 @@ def cmd_twin_compile(args):
             except (json.JSONDecodeError, TypeError):
                 first_override = str(overrides)[:100]
         new_policies.append({
-            "id": "pol_" + uuid.uuid4().hex[:8],
+            "id": _deterministic_policy_id("tension", t["id"]),
             "data": {
                 "condition": f"面临 {t.get('value_a','')} vs {t.get('value_b','')} 的权衡",
                 "action": t.get("default_resolution") or "",
@@ -2410,16 +2418,44 @@ def cmd_twin_compile(args):
             },
         })
 
-    # From communication
+    # 3. From tradeoffs
+    tradeoffs = _db.cm_get_all("cm_tradeoffs")
+    for tr in tradeoffs:
+        protect = tr.get("protect") or ""
+        sacrifice = tr.get("sacrifice") or ""
+        try:
+            protect_str = ", ".join(json.loads(protect)) if protect.startswith("[") else protect
+        except Exception:
+            protect_str = protect
+        try:
+            sacrifice_str = ", ".join(json.loads(sacrifice)) if sacrifice.startswith("[") else sacrifice
+        except Exception:
+            sacrifice_str = sacrifice
+        new_policies.append({
+            "id": _deterministic_policy_id("tradeoff", tr["id"]),
+            "data": {
+                "condition": tr.get("context") or "",
+                "action": f"保护 {protect_str}，可牺牲 {sacrifice_str}",
+                "exception": "",
+                "rationale": tr.get("strategy") or "",
+                "source_type": "tradeoff",
+                "source_id": tr["id"],
+                "domain": "",
+                "confidence": tr.get("confidence"),
+                "status": "active",
+            },
+        })
+
+    # 4. From communication
     comms = _db.cm_get_all("cm_communication")
     for c in comms:
         new_policies.append({
-            "id": "pol_" + uuid.uuid4().hex[:8],
+            "id": _deterministic_policy_id("communication", c["id"]),
             "data": {
-                "condition": f"AI 进行 {c.get('domain','')} 领域工作时",
+                "condition": f"AI 进行 {c.get('domain','all')} 领域工作时",
                 "action": c.get("description") or "",
                 "exception": "",
-                "rationale": "",
+                "rationale": f"沟通契约: {c.get('category', '')}",
                 "source_type": "communication",
                 "source_id": c["id"],
                 "domain": c.get("domain") or "",
@@ -2428,10 +2464,66 @@ def cmd_twin_compile(args):
             },
         })
 
-    # Delete old compiled policies
+    # 5. From roles
+    roles = _db.cm_get_all("cm_roles")
+    for r in roles:
+        new_policies.append({
+            "id": _deterministic_policy_id("role", r["id"]),
+            "data": {
+                "condition": f"用户处于 {r.get('role','')} 角色模式时",
+                "action": r.get("behavior_profile") or "",
+                "exception": "",
+                "rationale": f"自主性级别: {r.get('autonomy_level', 'medium')}",
+                "source_type": "role",
+                "source_id": r["id"],
+                "role_mode": r.get("role") or "",
+                "domain": "",
+                "confidence": r.get("confidence"),
+                "status": "active",
+            },
+        })
+
+    # 6. From expertise
+    expertise = _db.cm_get_all("cm_expertise")
+    for e in expertise:
+        new_policies.append({
+            "id": _deterministic_policy_id("expertise", e["id"]),
+            "data": {
+                "condition": f"涉及 {e.get('domain','')} 领域时",
+                "action": f"用户熟练度: {e.get('depth', 'unknown')}。{e.get('autonomy_boundary') or ''}",
+                "exception": "",
+                "rationale": "",
+                "source_type": "expertise",
+                "source_id": e["id"],
+                "domain": e.get("domain") or "",
+                "confidence": e.get("confidence"),
+                "status": "active",
+            },
+        })
+
+    # 7. From reasoning — these are style descriptions, compile as meta-policies
+    reasoning = _db.cm_get_all("cm_reasoning")
+    for rs in reasoning:
+        new_policies.append({
+            "id": _deterministic_policy_id("reasoning", rs["id"]),
+            "data": {
+                "condition": f"推理风格维度: {rs.get('dimension','')}",
+                "action": rs.get("description") or "",
+                "exception": "",
+                "rationale": "",
+                "source_type": "reasoning",
+                "source_id": rs["id"],
+                "domain": "",
+                "confidence": rs.get("confidence"),
+                "status": "active",
+            },
+        })
+
+    # Delete old compiled policies (all source types)
     conn = _db.get_conn()
     conn.execute(
-        "DELETE FROM cm_policies WHERE source_type IN ('principle','tension','communication')"
+        "DELETE FROM cm_policies WHERE source_type IN "
+        "('principle','tension','tradeoff','communication','role','expertise','reasoning')"
     )
     conn.commit()
 
@@ -2439,11 +2531,13 @@ def cmd_twin_compile(args):
     for pol in new_policies:
         _db.cm_upsert("cm_policies", pol["id"], pol["data"])
 
-    n_p = sum(1 for p in new_policies if p["data"]["source_type"] == "principle")
-    n_t = sum(1 for p in new_policies if p["data"]["source_type"] == "tension")
-    n_c = sum(1 for p in new_policies if p["data"]["source_type"] == "communication")
-    print(f"Compiled {len(new_policies)} policies: "
-          f"{n_p} from principles, {n_t} from tensions, {n_c} from communication")
+    # Summary by source type
+    counts = {}
+    for p in new_policies:
+        st = p["data"]["source_type"]
+        counts[st] = counts.get(st, 0) + 1
+    parts = [f"{v} from {k}" for k, v in sorted(counts.items())]
+    print(f"Compiled {len(new_policies)} policies: {', '.join(parts)}")
 
 
 # ---------------------------------------------------------------------------
