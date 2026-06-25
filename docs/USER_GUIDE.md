@@ -17,15 +17,12 @@ ConvoLab 是一个本地运行的 AI 会话分析工具。它会读取你与 Cla
 ConvoLab 要做的，是把这座矿脉变成能持续复用的资产。它分三层推进——先把对话**汇集**起来看得见，再从中**洞察**出规律，最后让 AI 据此**进化**，并形成闭环：
 
 ```mermaid
-%%{init:{'theme':'base','themeVariables':{'fontSize':'18px','fontFamily':'PingFang SC, Microsoft YaHei, sans-serif'},'flowchart':{'curve':'basis','nodeSpacing':30,'rankSpacing':46,'padding':12,'useMaxWidth':false}}}%%
 flowchart LR
-    A(["对话记录"]):::src --> B(["浏览检索"]):::s1 --> C(["洞察分析"]):::s2 --> D(["进化引擎"]):::s3 --> E(["写回配置"]):::s4
-    E -. "下次对话自动受益" .-> A
-    classDef src fill:#eef2ff,stroke:#818cf8,stroke-width:2px,color:#3730a3;
-    classDef s1 fill:#eff6ff,stroke:#60a5fa,stroke-width:2px,color:#1e40af;
-    classDef s2 fill:#ecfdf5,stroke:#34d399,stroke-width:2px,color:#065f46;
-    classDef s3 fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#9a3412;
-    classDef s4 fill:#fdf2f8,stroke:#f472b6,stroke-width:2px,color:#9d174e;
+    A[对话记录] --> B[浏览检索]
+    B --> C[洞察分析]
+    C --> D[进化引擎]
+    D --> E[写回配置]
+    E -.->|下次对话自动受益| A
 ```
 
 ![首页概览：会话与项目规模，以及通往各分析视图的入口](images/user-guide/01-home.png)
@@ -108,14 +105,11 @@ python3 server.py
 这是 ConvoLab 区别于一般「只读」工具的根本所在：分析出的结论不止于展示，还能回写到 AI 的配置，下次启动即生效。
 
 ```mermaid
-%%{init:{'theme':'base','themeVariables':{'fontSize':'18px','fontFamily':'PingFang SC, Microsoft YaHei, sans-serif'},'flowchart':{'curve':'basis','nodeSpacing':30,'rankSpacing':46,'padding':12,'useMaxWidth':false}}}%%
 flowchart LR
-    A(["反复纠正某点"]):::a --> B(["归纳成规则"]):::b --> C(["写回配置"]):::c --> D(["下次自动遵循"]):::d
-    D -. "越用越准" .-> A
-    classDef a fill:#eff6ff,stroke:#60a5fa,stroke-width:2px,color:#1e40af;
-    classDef b fill:#ecfdf5,stroke:#34d399,stroke-width:2px,color:#065f46;
-    classDef c fill:#fdf2f8,stroke:#f472b6,stroke-width:2px,color:#9d174e;
-    classDef d fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#9a3412;
+    A[反复纠正某点] --> B[归纳成规则]
+    B --> C[写回配置]
+    C --> D[下次自动遵循]
+    D -.->|越用越准| A
 ```
 
 - **只回写画像与记忆两类**。Profile 写入 AI 的全局配置文件，Memory 写入它的记忆目录；Rules、Signals、Patterns 仅供查看参考，不会自动回写。
