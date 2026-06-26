@@ -12,6 +12,7 @@ docs/decisions/
 docs/reference/
 docs/superpowers/
 docs/DEV_NOTES.md
+docs/technical-report*.md
 .planning/
 AGENTS.md
 DESIGN.md
