@@ -6,9 +6,12 @@
   --bg: #f6f7f9;
   --bg-surface: #ffffff;
   --bg-surface2: #f0f1f4;
+  --bg-primary: #ffffff;
+  --bg-tertiary: #e5e7eb;
   --bg-hover: #eaeaee;
   --bg-active: #e0e0e5;
   --text: #1d1d1f;
+  --text-primary: #1d1d1f;
   --text-secondary: #475569;
   --text-muted: #8a94a6;
   --border: #d2d2d7;
@@ -49,6 +52,42 @@
   --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
 }
 
+:root[data-theme="dark"] {
+  --bg: #0f1117;
+  --bg-surface: #171a23;
+  --bg-surface2: #202431;
+  --bg-primary: #171a23;
+  --bg-tertiary: #2b3040;
+  --bg-hover: #252a38;
+  --bg-active: #30364a;
+  --text: #f4f7fb;
+  --text-primary: #f4f7fb;
+  --text-secondary: #c7d0df;
+  --text-muted: #8792a4;
+  --border: #374151;
+  --border-light: #252b38;
+  --accent: #8b8cff;
+  --accent-dim: rgba(139, 140, 255, 0.14);
+  --accent-light: rgba(139, 140, 255, 0.22);
+  --user-bg: #10213f;
+  --user-border: #1d4ed8;
+  --user-accent: #60a5fa;
+  --user-text: #dbeafe;
+  --reply-bg: #2a2112;
+  --reply-border: #7c4d12;
+  --reply-accent: #f59e0b;
+  --bash-bg: #11251b; --bash-border: #166534; --bash-accent: #4ade80; --bash-text: #dcfce7;
+  --read-bg: #2a2112; --read-border: #854d0e; --read-accent: #fbbf24; --read-text: #fef3c7;
+  --edit-bg: #2b1c12; --edit-border: #9a3412; --edit-accent: #fb923c; --edit-text: #ffedd5;
+  --grep-bg: #13253f; --grep-border: #1d4ed8; --grep-accent: #60a5fa; --grep-text: #dbeafe;
+  --write-bg: #2b1518; --write-border: #991b1b; --write-accent: #f87171; --write-text: #fee2e2;
+  --agent-bg: #241a35; --agent-border: #6d28d9; --agent-accent: #c084fc; --agent-text: #f3e8ff;
+  --result-bg: #0f2a26; --result-border: #0f766e; --result-accent: #2dd4bf; --result-text: #ccfbf1;
+  --thinking-bg: #241a35; --thinking-border: #6d28d9; --thinking-accent: #c084fc; --thinking-text: #f3e8ff;
+  --shadow-sm: 0 2px 10px rgba(0,0,0,0.24);
+  --shadow-md: 0 12px 30px rgba(0,0,0,0.32);
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -61,6 +100,63 @@ body {
 }
 
 .hidden { display: none !important; }
+
+.icon-btn,
+.theme-toggle {
+  border: 1px solid var(--border-light);
+  background: var(--bg-surface2);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.icon-btn:hover,
+.theme-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.top-icon-btn {
+  display: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.top-icon-btn span {
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-toggle-icon { font-size: 14px; line-height: 1; }
+
+#sidebar-backdrop {
+  position: fixed;
+  inset: var(--header-height) 0 0 0;
+  z-index: 11;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
 
 /* ---- Top Bar ---- */
 #top-bar {
@@ -1794,12 +1890,146 @@ body {
 }
 
 /* ---- Responsive ---- */
+@media (max-width: 1080px) {
+  #right-panel {
+    width: 320px;
+    min-width: 280px;
+  }
+
+  #conv-body #messages-container {
+    padding: 20px 24px;
+  }
+}
+
 @media (max-width: 768px) {
-  #sidebar { width: 100%; max-width: none; position: absolute; z-index: 5; left: -100%; transition: left 0.3s; }
-  #sidebar.open { left: 0; }
+  #top-bar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  .top-icon-btn {
+    display: inline-flex;
+  }
+
+  #logo span {
+    display: none;
+  }
+
+  .search-wrapper {
+    max-width: none;
+    min-width: 0;
+    padding: 0 8px;
+  }
+
+  .search-stats,
+  .kbd-hint,
+  .theme-toggle-label {
+    display: none;
+  }
+
+  .theme-toggle {
+    width: 36px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  #sidebar {
+    width: min(86vw, 340px);
+    min-width: 0;
+    max-width: none;
+    position: fixed;
+    top: var(--header-height);
+    bottom: 0;
+    left: 0;
+    z-index: 12;
+    transform: translateX(-105%);
+    transition: transform 0.24s ease;
+    box-shadow: var(--shadow-md);
+  }
+
+  #sidebar.open {
+    transform: translateX(0);
+  }
+
+  #main-layout {
+    position: relative;
+  }
+
+  #content {
+    width: 100%;
+  }
+
+  #conv-body {
+    flex-direction: column;
+  }
+
+  #conv-body #messages-container {
+    padding: 16px;
+  }
+
+  #right-panel {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 38vh;
+    border-left: 0;
+    border-top: 1px solid var(--border-light);
+  }
+
+  #conv-header,
+  #twin-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  #conv-actions,
+  #twin-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  #ai-scope-bar,
+  .evolve-scope-bar {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  #twin-body {
+    padding: 14px;
+  }
+
+  .twin-pipeline {
+    padding-left: 28px;
+  }
+
+  .twin-pipeline::before {
+    left: 12px;
+  }
+
+  .twin-stage-marker {
+    left: -30px;
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .twin-pipeline-header {
+    margin-left: -28px;
+  }
+
   .msg { max-width: 100%; }
   .msg.assistant-turn { margin-left: 0; }
-  #outline-panel { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .memory-card-body { margin: 6px 0 4px 0; font-size: 0.88em; color: var(--text-primary); line-height: 1.5; }
@@ -2073,3 +2303,18 @@ body {
 .twin-stream-container .text-block { padding: 8px 4px; font-size: 13px; line-height: 1.6; color: var(--text); }
 .twin-stream-container .text-block pre { white-space: pre-wrap; font-size: 12px; color: var(--text-muted); margin: 0; }
 .twin-stream-error { color: #ef4444; padding: 8px 4px; font-size: 13px; }
+
+@media (max-width: 768px) {
+  #twin-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+
+  #twin-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

@@ -283,6 +283,113 @@ class TwinIntegrityTests(unittest.TestCase):
 
         self.assertEqual(dummy.events, [{"type": "error", "message": "No AI engine"}])
 
+    def test_evolve_stream_timeout_does_not_emit_stale_cache(self):
+        db.evolve_upsert(
+            "profile",
+            "all",
+            "7d",
+            "",
+            "auto",
+            json.dumps({"categories": [{"title": "stale"}]}),
+        )
+
+        old_stream = server._run_ai_engine_stream
+
+        def fake_stream(*args, **kwargs):
+            yield {"type": "timeout", "message": "Timeout", "content": "partial"}
+
+        class DummyHandler:
+            def __init__(self):
+                self.events = []
+
+            def _start_sse(self):
+                self.started = True
+
+            def _sse_event(self, evt):
+                self.events.append(evt)
+
+            def _build_evolve_prompt(self, *args, **kwargs):
+                return "prompt"
+
+        dummy = DummyHandler()
+        try:
+            server._run_ai_engine_stream = fake_stream
+            server.ChatViewerHandler._handle_evolve_stream(dummy, "profile", "all", "7d", "", "auto")
+        finally:
+            server._run_ai_engine_stream = old_stream
+
+        self.assertEqual(dummy.events, [{"type": "timeout", "message": "Timeout", "content": "partial"}])
+
+    def test_evolve_ai_nonzero_exit_does_not_return_stale_cache(self):
+        db.evolve_upsert(
+            "profile",
+            "all",
+            "7d",
+            "",
+            "auto",
+            json.dumps({"categories": [{"title": "stale"}]}),
+        )
+
+        old_run = server._run_ai_engine
+
+        def fake_run(*args, **kwargs):
+            return "", "engine failed", 1
+
+        class DummyHandler:
+            def _build_evolve_prompt(self, *args, **kwargs):
+                return "prompt"
+
+            def _evolve_fallback(self, tab, reason):
+                return server.ChatViewerHandler._evolve_fallback(self, tab, reason)
+
+        try:
+            server._run_ai_engine = fake_run
+            data = server.ChatViewerHandler._evolve_via_ai(DummyHandler(), "profile", "all", "7d", "", "auto")
+        finally:
+            server._run_ai_engine = old_run
+
+        self.assertEqual(data["categories"], [])
+        self.assertIn("engine failed", data["_error"])
+
+    def test_twin_ai_stage_timeout_fails_without_stage_done(self):
+        old_stream = server._run_ai_engine_stream
+
+        def fake_stream(*args, **kwargs):
+            yield {"type": "timeout", "message": "Timeout", "content": "partial"}
+
+        class DummyHandler:
+            def __init__(self):
+                self.events = []
+                self.state = {"run_id": "run_timeout"}
+                self.persisted = []
+
+            def _set_twin_run_state(self, **updates):
+                self.state.update(updates)
+
+            def _get_twin_run_state(self):
+                return self.state
+
+            def _persist_twin_stage(self, *args, **kwargs):
+                self.persisted.append((args, kwargs))
+
+            def _sse_event(self, evt):
+                self.events.append(evt)
+
+            def _stage_counts(self, stage_num):
+                return {}
+
+        dummy = DummyHandler()
+        try:
+            server._run_ai_engine_stream = fake_stream
+            ok = server.ChatViewerHandler._run_twin_ai_stage(dummy, "prompt", "Stage 2", "run_timeout", 2, "auto")
+        finally:
+            server._run_ai_engine_stream = old_stream
+
+        self.assertFalse(ok)
+        self.assertEqual(dummy.state["status"], "timeout")
+        self.assertTrue(any(evt.get("type") == "timeout" for evt in dummy.events))
+        self.assertFalse(any(evt.get("type") == "stage_done" for evt in dummy.events))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,8 @@
   let currentView = "sessions"; // sessions|conversation|search|insights|ai
   let viewHistory = []; // for back navigation
   let currentSidebarPanel = "sessions";
+  let sidebarScrollHandler = null;
+  let themeMediaQuery = null;
 
   // Chat state — dual surface: session AI (right panel) + global AI (standalone view)
   let globalChatHistory = []; // [{id, title, messages:[{role,content}]}]
@@ -78,6 +80,7 @@
 
   // ── Init ───────────────────────────────────────────────────────
   async function init() {
+    initTheme();
     bindEvents();
     // Show loading state immediately
     sessionList.innerHTML = '<li class="loading-placeholder"><div class="skeleton-line" style="width:70%"></div><div class="skeleton-line short"></div></li>'.repeat(8);
@@ -121,6 +124,13 @@
 
   // ── Event Bindings ─────────────────────────────────────────────
   function bindEvents() {
+    const sidebarToggle = $("#sidebar-toggle");
+    const sidebarBackdrop = $("#sidebar-backdrop");
+    if (sidebarToggle) sidebarToggle.addEventListener("click", () => setSidebarOpen(!(sidebar && sidebar.classList.contains("open"))));
+    if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", () => setSidebarOpen(false));
+    const themeToggle = $("#theme-toggle");
+    if (themeToggle) themeToggle.addEventListener("click", cycleThemeMode);
+
     // Filter button + popover
     const filterBtn = $("#filter-btn");
     const filterPopover = $("#filter-popover");
@@ -187,6 +197,7 @@
         else if (view === "insights") { openInsights(); }
         else if (view === "ai") { showView("ai"); initAiPage(); }
         else if (view === "twin") { showView("twin"); }
+        setSidebarOpen(false);
       });
     });
 
@@ -310,6 +321,103 @@
     // Load persisted chat history
     loadChatFromStorage();
 
+  }
+
+  function setSidebarOpen(open) {
+    if (!sidebar) return;
+    const backdrop = $("#sidebar-backdrop");
+    sidebar.classList.toggle("open", open);
+    if (backdrop) backdrop.classList.toggle("hidden", !open);
+    const btn = $("#sidebar-toggle");
+    if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function initTheme() {
+    themeMediaQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    applyThemeMode(localStorage.getItem("convolab-theme") || "system");
+    if (themeMediaQuery) {
+      const onChange = () => {
+        if ((localStorage.getItem("convolab-theme") || "system") === "system") applyThemeMode("system");
+      };
+      if (themeMediaQuery.addEventListener) themeMediaQuery.addEventListener("change", onChange);
+      else if (themeMediaQuery.addListener) themeMediaQuery.addListener(onChange);
+    }
+  }
+
+  function cycleThemeMode() {
+    const current = localStorage.getItem("convolab-theme") || "system";
+    const next = current === "system" ? "light" : current === "light" ? "dark" : "system";
+    localStorage.setItem("convolab-theme", next);
+    applyThemeMode(next);
+  }
+
+  function applyThemeMode(mode) {
+    const normalized = ["system", "light", "dark"].includes(mode) ? mode : "system";
+    const resolved = normalized === "system"
+      ? (themeMediaQuery && themeMediaQuery.matches ? "dark" : "light")
+      : normalized;
+    document.documentElement.dataset.themeMode = normalized;
+    document.documentElement.dataset.theme = resolved;
+    const btn = $("#theme-toggle");
+    if (btn) {
+      const label = normalized === "system" ? "System" : normalized === "dark" ? "Dark" : "Light";
+      const icon = normalized === "system" ? "◐" : normalized === "dark" ? "☾" : "☀";
+      btn.dataset.themeMode = normalized;
+      btn.title = `Theme: ${label}`;
+      btn.setAttribute("aria-label", `Theme: ${label}`);
+      const iconEl = btn.querySelector(".theme-toggle-icon");
+      const labelEl = btn.querySelector(".theme-toggle-label");
+      if (iconEl) iconEl.textContent = icon;
+      if (labelEl) labelEl.textContent = label;
+    }
+  }
+
+  async function readSseStream(response, onEvent) {
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = (await response.text()).trim();
+      } catch (e) {
+        detail = "";
+      }
+      throw new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
+    }
+    if (!response.body) throw new Error("Streaming response is unavailable");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    function dispatchLine(line) {
+      const trimmed = line.replace(/\r$/, "");
+      if (!trimmed.startsWith("data:")) return;
+      const raw = trimmed.slice(5).trimStart();
+      if (!raw) return;
+      try {
+        onEvent(JSON.parse(raw));
+      } catch (e) { /* skip malformed SSE data */ }
+    }
+
+    function flush(final) {
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() || "";
+      parts.forEach(part => part.split(/\r?\n/).forEach(dispatchLine));
+      const lines = buffer.split(/\r?\n/);
+      const tail = lines.pop() || "";
+      lines.forEach(dispatchLine);
+      buffer = final ? "" : tail;
+      if (final && tail) dispatchLine(tail);
+    }
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        flush(true);
+        return;
+      }
+      buffer += decoder.decode(value, {stream: true});
+      flush(false);
+    }
   }
 
   // ── View Switching ─────────────────────────────────────────────
@@ -478,6 +586,11 @@
   function renderSessions(sessions) {
     // Apply source filter, then date filter
     const filtered = filterSessionList(sessions);
+    const sidebarContent = document.getElementById("sidebar-content");
+    if (sidebarContent && sidebarScrollHandler) {
+      sidebarContent.removeEventListener("scroll", sidebarScrollHandler);
+      sidebarScrollHandler = null;
+    }
     sessionList.innerHTML = "";
     sessionCount.textContent = filtered.length;
 
@@ -533,14 +646,13 @@
       };
       sentinel.addEventListener("click", loadMore);
       // Also auto-load when scrolling near bottom
-      const sidebarContent = document.getElementById("sidebar-content");
       if (sidebarContent) {
-        const scrollHandler = () => {
+        sidebarScrollHandler = () => {
           if (sidebarContent.scrollTop + sidebarContent.clientHeight >= sidebarContent.scrollHeight - 100) {
             if (renderedCount < filtered.length) loadMore();
           }
         };
-        sidebarContent.addEventListener("scroll", scrollHandler, { passive: true });
+        sidebarContent.addEventListener("scroll", sidebarScrollHandler, { passive: true });
       }
     }
   }
@@ -2038,34 +2150,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body),
       signal: controller.signal,
-    }).then(response => {
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      function pump() {
-        return reader.read().then(({done, value}) => {
-          if (done) return;
-          buffer += decoder.decode(value, {stream: true});
-          // Parse SSE events (data: ...\n\n)
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop(); // keep incomplete part
-          for (const part of parts) {
-            const lines = part.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const evt = JSON.parse(line.slice(6));
-                  _handleStreamEvent(evt, callbacks, state);
-                } catch (e) { /* skip malformed */ }
-              }
-            }
-          }
-          return pump();
-        });
-      }
-      return pump();
-    }).catch(err => {
+    }).then(response => readSseStream(response, evt => _handleStreamEvent(evt, callbacks, state))).catch(err => {
       if (err.name === "AbortError") {
         if (callbacks.abort) callbacks.abort(state.text);
       } else if (callbacks.error) {
@@ -2743,6 +2828,7 @@
   // ── Expose globals for evolve.js ──────────────────────────────
   window.esc = esc;
   window.renderMarkdownSimple = renderMarkdownSimple;
+  window.readSseStream = readSseStream;
   // allSessions is kept in sync via loadSessions; expose getter
   Object.defineProperty(window, "allSessions", { get: () => allSessions });
 

@@ -332,48 +332,7 @@
     _setEvolveRefreshButton();
 
     return fetch(`/api/evolve/${tab}?${params}`, { signal: abortCtrl.signal })
-      .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        if (!response.body) throw new Error("Streaming response is unavailable");
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        function dispatchLine(line) {
-          if (!line.startsWith("data: ")) return;
-          try {
-            const evt = JSON.parse(line.slice(6));
-            _handleEvolveStreamEvent(evt, tab, streamState);
-          } catch (e) { /* skip */ }
-        }
-
-        function flushBuffer(final) {
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-          for (const part of parts) {
-            part.split("\n").forEach(dispatchLine);
-          }
-          const singleLines = buffer.split("\n");
-          const remainder = singleLines.pop() || "";
-          buffer = final ? "" : remainder;
-          singleLines.forEach(dispatchLine);
-          if (final && remainder) dispatchLine(remainder);
-        }
-
-        function pump() {
-          return reader.read().then(({done, value}) => {
-            if (done) {
-              buffer += decoder.decode();
-              flushBuffer(true);
-              return;
-            }
-            buffer += decoder.decode(value, {stream: true});
-            flushBuffer(false);
-            return pump();
-          });
-        }
-        return pump();
-      })
+      .then(response => window.readSseStream(response, evt => _handleEvolveStreamEvent(evt, tab, streamState)))
       .finally(() => { delete evolveStreamAborts[tab]; _setEvolveRefreshButton(); });
   }
 
@@ -413,6 +372,32 @@
     if (scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 80) {
       scrollEl.scrollTop = scrollEl.scrollHeight;
     }
+  }
+
+  function _renderEvolveMarkdownInto(el, text) {
+    const esc = window.esc || String;
+    el.innerHTML = window.renderMarkdownSimple
+      ? window.renderMarkdownSimple(text)
+      : `<pre>${esc(text)}</pre>`;
+  }
+
+  function _scheduleEvolveMarkdownRender(state, el, text) {
+    el._pendingMarkdownText = text;
+    if (el._markdownRenderTimer) return;
+    const schedule = window.requestAnimationFrame || ((fn) => setTimeout(fn, 50));
+    el._markdownRenderTimer = schedule(() => {
+      el._markdownRenderTimer = null;
+      _renderEvolveMarkdownInto(el, el._pendingMarkdownText || "");
+      _evolveShowThinking(el.parentElement, state);
+      _evolveAutoScroll();
+    });
+  }
+
+  function _cancelEvolveMarkdownRender(el) {
+    if (!el || !el._markdownRenderTimer) return;
+    const cancel = window.cancelAnimationFrame || clearTimeout;
+    cancel(el._markdownRenderTimer);
+    el._markdownRenderTimer = null;
   }
 
   /** Create a new tool-group container */
@@ -532,29 +517,24 @@
           state.textBlock.className = "text-block";
           container.appendChild(state.textBlock);
         }
-        state.textBlock.innerHTML = window.renderMarkdownSimple
-          ? window.renderMarkdownSimple(state.blockText)
-          : `<pre>${esc(state.blockText)}</pre>`;
-        // Show a thinking indicator after text — tool generation can take 60s+
-        _evolveShowThinking(container, state);
-        if (isActiveTab) _evolveAutoScroll();
+        _scheduleEvolveMarkdownRender(state, state.textBlock, state.blockText);
         break;
       case "result":
         _finalizeToolGroup(state);
         _evolveHideThinking(container);
+        _cancelEvolveMarkdownRender(state.textBlock);
         state.blockText = evt.content;
         if (!state.textBlock) {
           state.textBlock = document.createElement("div");
           state.textBlock.className = "text-block";
           container.appendChild(state.textBlock);
         }
-        state.textBlock.innerHTML = window.renderMarkdownSimple
-          ? window.renderMarkdownSimple(evt.content)
-          : `<pre>${esc(evt.content)}</pre>`;
+        _renderEvolveMarkdownInto(state.textBlock, evt.content);
         if (isActiveTab) _evolveAutoScroll();
         break;
       case "evolve_result": {
         _finalizeToolGroup(state);
+        _cancelEvolveMarkdownRender(state.textBlock);
         const normalized = normalizeEvolveData(tab, evt.data);
         setCachedTab(tab, normalized, state.requestScope);
         if (isCurrentScopeKey(tab, state.requestCacheKey)) {
@@ -568,15 +548,28 @@
       case "done":
         _finalizeToolGroup(state);
         _evolveHideThinking(container);
+        _cancelEvolveMarkdownRender(state.textBlock);
         if (isCurrentScopeKey(tab, state.requestCacheKey) && isActiveTab && updatedEl) { updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`; updatedEl.classList.remove("loading"); }
         break;
       case "error":
         _finalizeToolGroup(state);
         _evolveHideThinking(container);
+        _cancelEvolveMarkdownRender(state.textBlock);
         if (isCurrentScopeKey(tab, state.requestCacheKey)) {
           if (isActiveTab && updatedEl) { updatedEl.textContent = `Error: ${evt.message}`; updatedEl.classList.remove("loading"); }
           const panel2 = _ensureTabPanel(tab);
           if (panel2) panel2.innerHTML = `<div class="evolve-empty-state"><p>分析失败：${esc(evt.message)}</p></div>`;
+        }
+        break;
+      case "timeout":
+        _finalizeToolGroup(state);
+        _evolveHideThinking(container);
+        _cancelEvolveMarkdownRender(state.textBlock);
+        if (isCurrentScopeKey(tab, state.requestCacheKey)) {
+          const message = evt.message || "分析超时";
+          if (isActiveTab && updatedEl) { updatedEl.textContent = `Timeout: ${message}`; updatedEl.classList.remove("loading"); }
+          const panel3 = _ensureTabPanel(tab);
+          if (panel3) panel3.innerHTML = `<div class="evolve-empty-state"><p>分析超时：${esc(message)}</p></div>`;
         }
         break;
     }

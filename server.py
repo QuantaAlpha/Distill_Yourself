@@ -1412,6 +1412,11 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_callback
     yield {"type": "done", "content": accumulated_text}
 
 
+def _fresh_evolve_row(row: dict, started_at: str) -> bool:
+    """Return true when an evolve_cache row was written by this AI run."""
+    return bool(row and row.get("updated_at") and row["updated_at"] >= started_at)
+
+
 def _parse_stream_event(engine: str, line: str) -> dict:
     """Parse a JSONL line from Codex or Claude into a normalized event."""
     try:
@@ -1891,9 +1896,15 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         import db as _db
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
         prompt = self._build_evolve_prompt(tab, source, date, project, cli_path, engine)
+        started_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
         try:
-            _run_ai_engine(prompt, allow_write=True, timeout=600, engine_override=engine)
+            stdout, stderr, returncode = _run_ai_engine(
+                prompt,
+                allow_write=True,
+                timeout=600,
+                engine_override=engine,
+            )
         except FileNotFoundError as e:
             return self._evolve_fallback(tab, str(e))
         except subprocess.TimeoutExpired:
@@ -1901,9 +1912,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             return self._evolve_fallback(tab, str(e))
 
+        if returncode != 0:
+            message = (stderr or stdout or f"AI engine exited with {returncode}").strip()
+            return self._evolve_fallback(tab, message[:500])
+
         # AI wrote to SQLite via evolve-write CLI — read it back
         row = _db.evolve_get(tab, source, date, project, engine)
-        if row:
+        if _fresh_evolve_row(row, started_at):
             return row["data"]
 
         engine_name = _detect_ai_engine() or "AI"
@@ -1923,11 +1938,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
         self._start_sse()
         stream_failed = False
+        started_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         stream = _run_ai_engine_stream(prompt, allow_write=True, timeout=600, engine_override=engine)
         try:
             for evt in stream:
                 self._sse_event(evt)
-                if evt.get("type") == "error":
+                if evt.get("type") in ("error", "timeout", "cancelled"):
                     stream_failed = True
         except BrokenPipeError:
             return
@@ -1946,7 +1962,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         # AI wrote to SQLite via evolve-write CLI — read it back
         try:
             row = _db.evolve_get(tab, source, date, project, engine)
-            if row:
+            if _fresh_evolve_row(row, started_at):
                 self._sse_event({"type": "evolve_result", "data": row["data"]})
             else:
                 self._sse_event({"type": "error", "message": "AI did not write result to database"})
@@ -3287,17 +3303,24 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 cancel_callback=_cancelled,
             )
             for evt in stream:
-                if evt.get("type") == "error":
+                if evt.get("type") in ("error", "timeout"):
                     evt = dict(evt)
                     evt["stage"] = stage_label
                     evt["stage_num"] = stage_num
+                    evt["run_id"] = run_id
                     evt["elapsed_seconds"] = round(time.time() - started, 1)
-                    if evt.get("message") == "Timeout":
+                    if evt.get("type") == "timeout":
                         evt["message"] = f"{stage_label} timed out after 600s"
                         status = "timeout"
                     else:
                         status = "error"
-                    self._persist_twin_stage(run_id, stage_num, status, evt["elapsed_seconds"], evt.get("message", ""))
+                    self._persist_twin_stage(
+                        run_id,
+                        stage_num,
+                        status,
+                        evt["elapsed_seconds"],
+                        evt.get("message", ""),
+                    )
                 if evt.get("type") == "cancelled":
                     evt = dict(evt)
                     evt["stage"] = stage_label
@@ -3305,11 +3328,18 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                     evt["run_id"] = run_id
                     evt["elapsed_seconds"] = round(time.time() - started, 1)
                     self._set_twin_run_state(status="cancelled", process=None)
-                    self._persist_twin_stage(run_id, stage_num, "cancelled", evt["elapsed_seconds"], "Cancelled by user", finished=True)
+                    self._persist_twin_stage(
+                        run_id,
+                        stage_num,
+                        "cancelled",
+                        evt["elapsed_seconds"],
+                        "Cancelled by user",
+                        finished=True,
+                    )
                 self._sse_event(evt)
                 if evt.get("type") == "cancelled":
                     return False
-                if evt.get("type") == "error":
+                if evt.get("type") in ("error", "timeout"):
                     self._set_twin_run_state(status=status, process=None)
                     return False
             self._set_twin_run_state(status="stage_done", process=None)

@@ -212,11 +212,23 @@ Data sources:
 | `GET` | `/api/snippets` | Extracted code snippets |
 | `GET` | `/api/file-evolution` | Cross-session edit timeline for a file |
 | `GET` | `/api/evolve/:tab` | Evolve data for profile, memory, rules, signals, or patterns |
+| `GET` | `/api/twin/overview` | Cognitive handbook overview and runtime pack summary |
+| `GET` | `/api/twin/events` | Evidence events distilled from scoped sessions |
+| `GET` | `/api/twin/cards` | Judgment cards linked to evidence events |
+| `GET` | `/api/twin/traits` | Cognitive traits linked to judgment cards |
+| `GET` | `/api/twin/runtime-preview` | Preview of the compiled Twin runtime pack |
+| `GET` | `/api/twin/stats` | Twin table counts and latest analysis metadata |
+| `GET` | `/api/twin/card/:id` | Judgment card details with supporting evidence |
+| `GET` | `/api/twin/trait/:id` | Trait details with supporting cards |
 | `GET` | `/api/stats` | Global statistics |
 | `GET` | `/api/refresh` | Rebuild the session index |
 | `POST` | `/api/chat` | AI chat |
 | `POST` | `/api/chat/stream` | Streaming AI chat |
 | `POST` | `/api/evolve/sync` | Sync Evolve results to Claude Code |
+| `POST` | `/api/twin/analyze` | Start a scoped, resumable Twin distillation run |
+| `POST` | `/api/twin/resume` | Resume a previous Twin run from a selected stage |
+| `POST` | `/api/twin/cancel` | Request cancellation of the current Twin run |
+| `POST` | `/api/twin/sync` | Sync Twin runtime output to Claude Code |
 
 </details>
 
@@ -247,9 +259,24 @@ python3 analyze.py evolve-patterns
 
 # Pre-computed aggregates used by Evolve AI
 python3 analyze.py aggregates
+
+# Scope-aware profile digest injected into AI Evolve and Twin prompts
+python3 analyze.py profile-digest --source codex --date 7d --project my-app
+
+# Twin read APIs
+python3 analyze.py twin-overview
+python3 analyze.py twin-events --limit 20
+python3 analyze.py twin-cards --limit 20
+python3 analyze.py twin-traits
+python3 analyze.py twin-runtime
+
+# Twin internal write/compile commands used by the server's AI pipeline
+python3 analyze.py twin-candidates < candidates.json
+python3 analyze.py twin-batch < operations.json
+python3 analyze.py twin-compile
 ```
 
-Most commands support `--json` and filters such as `--source`, `--date`, `--project`, and `--limit`.
+Most read commands support filters such as `--source`, `--date`, `--project`, and `--limit`. `--project` currently performs substring matching for history search/listing, while Evolve/Twin scoped writes use the exact project value supplied by the UI. `--json` is intended for machine-readable read commands; internal write commands such as `evolve-write`, `twin-candidates`, and `twin-batch` consume JSON from `stdin` and print their own structured result.
 
 ---
 
@@ -257,4 +284,4 @@ Most commands support `--json` and filters such as `--source`, `--date`, `--proj
 
 ConvoLab 的会话索引、搜索、分析和配置回写都在本地完成。你的 Claude Code 与 Codex 对话数据只从本机目录读取，索引保存在本地 SQLite 中，不会被上传到 ConvoLab 的外部服务。
 
-当前前端会从 D3 官方 CDN 加载可视化库；这不会上传你的会话内容。如果你需要完全离线运行，可以后续把 D3 文件 vendored 到 `static/` 并改为本地引用。
+当前前端会从 D3 官方 CDN 加载可视化库；这不会上传你的会话内容，所有会话索引、搜索和 AI 写回仍在本机完成。如果你需要完全离线运行，可以把 D3 文件 vendored 到 `static/` 并把 `static/index.html` 中的 D3 `<script>` 改为本地引用。

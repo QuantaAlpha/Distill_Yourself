@@ -11,6 +11,9 @@
   <div id="app">
     <!-- Top Bar: Logo + Search -->
     <header id="top-bar">
+      <button id="sidebar-toggle" class="icon-btn top-icon-btn" title="Open navigation" aria-label="Open navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
       <a id="logo" href="#" title="Home">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span>Chat Viewer</span>
@@ -23,9 +26,14 @@
         <span id="search-stats" class="search-stats"></span>
         <kbd class="kbd-hint">/</kbd>
       </div>
+      <button id="theme-toggle" class="theme-toggle" type="button" title="Theme: system" aria-label="Theme: system" data-theme-mode="system">
+        <span class="theme-toggle-icon">◐</span>
+        <span class="theme-toggle-label">System</span>
+      </button>
     </header>
 
     <div id="main-layout">
+      <div id="sidebar-backdrop" class="hidden"></div>
       <!-- Left Sidebar (ChatGPT-style) -->
       <aside id="sidebar">
         <!-- Navigation -->

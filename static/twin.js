@@ -948,47 +948,8 @@
       signal: abortCtrl.signal,
     })
       .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        if (!response.body) throw new Error("Streaming response is unavailable");
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        function dispatchLine(line) {
-          if (!line.startsWith("data: ")) return;
-          try {
-            const evt = JSON.parse(line.slice(6));
-            _handleStreamEvent(evt, streamState);
-          } catch (e) { /* skip */ }
-        }
-
-        function flushBuffer(final) {
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-          for (const part of parts) {
-            part.split("\n").forEach(dispatchLine);
-          }
-          const singleLines = buffer.split("\n");
-          const remainder = singleLines.pop() || "";
-          buffer = final ? "" : remainder;
-          singleLines.forEach(dispatchLine);
-          if (final && remainder) dispatchLine(remainder);
-        }
-
-        function pump() {
-          return reader.read().then(({ done, value }) => {
-            if (done) {
-              buffer += decoder.decode();
-              flushBuffer(true);
-              _finishAnalysis(streamState, streamState.failed);
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            flushBuffer(false);
-            return pump();
-          });
-        }
-        return pump();
+        return window.readSseStream(response, evt => _handleStreamEvent(evt, streamState))
+          .then(() => _finishAnalysis(streamState, streamState.failed));
       })
       .catch((e) => {
         if (e.name === "AbortError") {
@@ -1232,6 +1193,7 @@
         break;
 
       case "error":
+      case "timeout":
         state.failed = true;
         state.runId = evt.run_id || state.runId;
         state.currentStage = evt.stage_num || state.currentStage;
@@ -1239,10 +1201,10 @@
         _hideThinking(container);
         const errDiv = document.createElement("div");
         errDiv.className = "twin-stream-error";
-        errDiv.innerHTML = `❌ ${esc(evt.message || "Unknown error")}`;
+        errDiv.innerHTML = `❌ ${esc(evt.message || (evt.type === "timeout" ? "Timeout" : "Unknown error"))}`;
         container.appendChild(errDiv);
         if (updatedEl) {
-          updatedEl.textContent = `Error: ${evt.message || ""}`;
+          updatedEl.textContent = `${evt.type === "timeout" ? "Timeout" : "Error"}: ${evt.message || ""}`;
           updatedEl.classList.remove("loading");
         }
         _renderRecoveryActions(evt, state);

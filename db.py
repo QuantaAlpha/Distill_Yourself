@@ -931,7 +931,7 @@ def evolve_upsert(tab: str, source: str, date_range: str, project: str,
                   engine: str, data_json: str):
     """Insert or replace evolve tab data for a given scope."""
     conn = get_conn()
-    now = datetime.now().isoformat()
+    now = _utc_now().isoformat()
     conn.execute("""
         INSERT INTO evolve_cache (tab, source, date_range, project, engine,
                                   data, created_at, updated_at)
