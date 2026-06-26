@@ -1959,9 +1959,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         prompt = self._build_evolve_prompt(tab, source, date, project, cli_path, cache_key)
 
         self._start_sse()
+        stream_failed = False
         try:
             for evt in _run_ai_engine_stream(prompt, allow_write=True, timeout=600, engine_override=engine):
                 self._sse_event(evt)
+                if evt.get("type") == "error":
+                    stream_failed = True
         except BrokenPipeError:
             return
         except Exception as e:
@@ -1969,6 +1972,9 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 self._sse_event({"type": "error", "message": str(e)})
             except BrokenPipeError:
                 return
+            return
+
+        if stream_failed:
             return
 
         # After streaming completes, read the cache file the AI wrote

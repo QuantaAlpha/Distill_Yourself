@@ -16,12 +16,14 @@ class TwinIntegrityTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_cache_dir = db.CACHE_DIR
         self.old_db_path = db.DB_PATH
+        self.old_server_cache_dir = server.CACHE_DIR
         self.old_conn = getattr(db._local, "conn", None)
         if self.old_conn is not None:
             self.old_conn.close()
             db._local.conn = None
         db.CACHE_DIR = Path(self.tmp.name)
         db.DB_PATH = db.CACHE_DIR / "sessions.db"
+        server.CACHE_DIR = Path(self.tmp.name)
         db.init_db()
 
     def tearDown(self):
@@ -31,6 +33,7 @@ class TwinIntegrityTests(unittest.TestCase):
             db._local.conn = None
         db.CACHE_DIR = self.old_cache_dir
         db.DB_PATH = self.old_db_path
+        server.CACHE_DIR = self.old_server_cache_dir
         if self.old_conn is not None:
             db._local.conn = None
         self.tmp.cleanup()
@@ -242,6 +245,38 @@ class TwinIntegrityTests(unittest.TestCase):
         self.assertEqual(snap["source"], "codex")
         self.assertEqual(snap["project"], "Demo")
         self.assertEqual(len(snap["session_ids_hash"]), 16)
+
+    def test_evolve_stream_error_event_does_not_emit_stale_cache(self):
+        cache_path = server._evolve_cache_path("profile", "all", "7d", "", "auto")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps({"categories": [{"title": "stale"}]}), encoding="utf-8")
+
+        old_stream = server._run_ai_engine_stream
+
+        def fake_stream(*args, **kwargs):
+            yield {"type": "error", "message": "No AI engine"}
+
+        class DummyHandler:
+            def __init__(self):
+                self.events = []
+
+            def _start_sse(self):
+                self.started = True
+
+            def _sse_event(self, evt):
+                self.events.append(evt)
+
+            def _build_evolve_prompt(self, *args, **kwargs):
+                return "prompt"
+
+        dummy = DummyHandler()
+        try:
+            server._run_ai_engine_stream = fake_stream
+            server.ChatViewerHandler._handle_evolve_stream(dummy, "profile", "all", "7d", "", "auto")
+        finally:
+            server._run_ai_engine_stream = old_stream
+
+        self.assertEqual(dummy.events, [{"type": "error", "message": "No AI engine"}])
 
 
 if __name__ == "__main__":
