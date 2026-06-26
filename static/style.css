@@ -141,6 +141,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
   min-height: 34px;
   padding: 0 10px;
   flex-shrink: 0;
