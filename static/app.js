@@ -1208,39 +1208,7 @@
   }
 
   function renderMarkdown(text) {
-    if (!text) return "";
-    // Extract code blocks BEFORE escaping to preserve raw content
-    const codeBlocks = [];
-    let s = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      const idx = codeBlocks.length;
-      codeBlocks.push(`<pre class="md-pre"><code>${esc(code)}</code></pre>`);
-      return `\x00CB${idx}\x00`;
-    });
-    // Extract inline code before escaping
-    const inlineCode = [];
-    s = s.replace(/`([^`]+)`/g, (_, code) => {
-      const idx = inlineCode.length;
-      inlineCode.push(`<code class="md-code">${esc(code)}</code>`);
-      return `\x00IC${idx}\x00`;
-    });
-    // Now escape the rest
-    s = esc(s);
-    // Bold
-    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Headings
-    s = s.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-    s = s.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-    s = s.replace(/^# (.+)$/gm, '<h2>$1</h2>');
-    // List items
-    s = s.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
-    s = s.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-    s = s.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-    // Line breaks
-    s = s.replace(/\n/g, '<br>');
-    // Restore code blocks and inline code
-    s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[+i]);
-    s = s.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCode[+i]);
-    return s;
+    return renderMarkdownSimple(text);
   }
 
   // ── Keyboard Navigation (F5) ────────────────────────────────────
@@ -1716,50 +1684,218 @@
     el.style.height = Math.min(el.scrollHeight, parseInt(getComputedStyle(el).maxHeight) || 120) + "px";
   }
 
-  /** Markdown renderer — handles code blocks, headings, lists, bold, inline code */
-  function renderMarkdownSimple(text) {
-    // Extract code blocks BEFORE escaping to preserve raw content
-    const codeBlocks = [];
-    let s = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      const idx = codeBlocks.length;
-      codeBlocks.push(`<pre><code>${esc(code)}</code></pre>`);
-      return `\x00CB${idx}\x00`;
-    });
-    // Extract inline code before escaping
+  function renderMarkdownInline(text) {
+    if (!text) return "";
     const inlineCode = [];
-    s = s.replace(/`([^`]+)`/g, (_, code) => {
+    let s = String(text).replace(/`([^`\n]+)`/g, (_, code) => {
       const idx = inlineCode.length;
-      inlineCode.push(`<code>${esc(code)}</code>`);
+      inlineCode.push(`<code class="md-code">${esc(code)}</code>`);
       return `\x00IC${idx}\x00`;
     });
-    // Now escape the rest
+
     s = esc(s);
-    // Bold
-    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Headings (### → h4, ## → h3, # → h2)
-    s = s.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-    s = s.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-    s = s.replace(/^# (.+)$/gm, '<h2>$1</h2>');
-    // Horizontal rule
-    s = s.replace(/^---$/gm, '<hr>');
-    // Unordered list items
-    s = s.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
-    // Numbered list items
-    s = s.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-    // Wrap consecutive <li> in <ul>
-    s = s.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-    // Paragraphs
-    s = s.replace(/\n{2,}/g, '</p><p>');
-    s = s.replace(/\n/g, '<br>');
-    s = '<p>' + s + '</p>';
-    // Clean up empty paragraphs and misplaced wraps
-    s = s.replace(/<p>\s*<(h[234]|pre|ul|hr)/g, '<$1');
-    s = s.replace(/<\/(h[234]|pre|ul|hr)>\s*<\/p>/g, '</$1>');
-    s = s.replace(/<p>\s*<\/p>/g, '');
-    // Restore code blocks and inline code
-    s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[+i]);
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+|#[^)\s]+)\)/g, (_, label, url) => {
+      const safeUrl = esc(url);
+      const external = /^https?:\/\//.test(url) ? ' target="_blank" rel="noopener noreferrer"' : "";
+      return `<a href="${safeUrl}"${external}>${label}</a>`;
+    });
+    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/__(.+?)__/g, "<strong>$1</strong>");
+    s = s.replace(/~~(.+?)~~/g, "<del>$1</del>");
+    s = s.replace(/(^|[\s([>])\*([^\*\n]+)\*(?=$|[\s.,;:!?)<])/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[\s([>])_([^_\n]+)_(?=$|[\s.,;:!?)<])/g, "$1<em>$2</em>");
     s = s.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCode[+i]);
     return s;
+  }
+
+  function renderTable(lines) {
+    const splitRow = (line) => {
+      let trimmed = line.trim();
+      if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+      if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+      return trimmed.split("|").map(cell => cell.trim());
+    };
+    const headers = splitRow(lines[0]);
+    const bodyRows = lines.slice(2).map(splitRow);
+    let html = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+    headers.forEach(h => { html += `<th>${renderMarkdownInline(h)}</th>`; });
+    html += "</tr></thead><tbody>";
+    bodyRows.forEach(row => {
+      html += "<tr>";
+      headers.forEach((_, i) => { html += `<td>${renderMarkdownInline(row[i] || "")}</td>`; });
+      html += "</tr>";
+    });
+    html += "</tbody></table></div>";
+    return html;
+  }
+
+  function getListLine(line) {
+    const normalized = String(line).replace(/\t/g, "  ");
+    const match = normalized.match(/^(\s*)((?:\d+[.)])|[-*+])\s+(.+)$/);
+    if (!match) return null;
+    return {
+      indent: match[1].length,
+      type: /^\d/.test(match[2]) ? "ol" : "ul",
+      text: match[3],
+    };
+  }
+
+  function renderListBlock(lines) {
+    let idx = 0;
+
+    function parseLevel(indent) {
+      let html = "";
+      let currentType = null;
+
+      while (idx < lines.length) {
+        const item = getListLine(lines[idx]);
+        if (!item || item.indent < indent) break;
+        if (item.indent > indent) break;
+
+        if (!currentType) {
+          currentType = item.type;
+          html += `<${currentType}>`;
+        } else if (currentType !== item.type) {
+          html += `</${currentType}><${item.type}>`;
+          currentType = item.type;
+        }
+
+        idx++;
+        let itemText = item.text;
+        const task = itemText.match(/^\[( |x|X)\]\s+(.+)$/);
+        const checkbox = task ? `<input type="checkbox" disabled${task[1].trim() ? " checked" : ""}> ` : "";
+        if (task) itemText = task[2];
+
+        let itemHtml = checkbox + renderMarkdownInline(itemText);
+
+        while (idx < lines.length) {
+          const next = getListLine(lines[idx]);
+          if (next && next.indent <= indent) break;
+          if (next && next.indent > indent) {
+            itemHtml += parseLevel(next.indent);
+            continue;
+          }
+          const continuation = lines[idx].trim();
+          if (continuation) itemHtml += `<br>${renderMarkdownInline(continuation)}`;
+          idx++;
+        }
+
+        html += `<li>${itemHtml}</li>`;
+      }
+
+      if (currentType) html += `</${currentType}>`;
+      return html;
+    }
+
+    const first = getListLine(lines[0]);
+    return first ? parseLevel(first.indent) : "";
+  }
+
+  /** Markdown renderer for AI output: block parser first, inline formatting second. */
+  function renderMarkdownSimple(text) {
+    if (!text) return "";
+    const codeBlocks = [];
+    let s = String(text).replace(/\r\n?/g, "\n");
+    s = s.replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+      const idx = codeBlocks.length;
+      const langLabel = lang && lang.trim() ? ` data-lang="${esc(lang.trim())}"` : "";
+      codeBlocks.push(`<pre class="md-pre"${langLabel}><code>${esc(code.replace(/\n$/, ""))}</code></pre>`);
+      return `\x00CB${idx}\x00`;
+    });
+
+    const lines = s.split("\n");
+    const out = [];
+    let paragraph = [];
+    let quoteLines = [];
+
+    function flushParagraph() {
+      if (!paragraph.length) return;
+      out.push(`<p>${paragraph.map(renderMarkdownInline).join("<br>")}</p>`);
+      paragraph = [];
+    }
+
+    function flushQuote() {
+      if (!quoteLines.length) return;
+      out.push(`<blockquote>${renderMarkdownSimple(quoteLines.join("\n"))}</blockquote>`);
+      quoteLines = [];
+    }
+
+    function flushAll() {
+      flushParagraph();
+      flushQuote();
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        flushAll();
+        continue;
+      }
+
+      const codeMatch = trimmed.match(/^\x00CB(\d+)\x00$/);
+      if (codeMatch) {
+        flushAll();
+        out.push(codeBlocks[+codeMatch[1]]);
+        continue;
+      }
+
+      if (/^\|?.+\|.+$/.test(trimmed) && i + 1 < lines.length && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(lines[i + 1].trim())) {
+        flushAll();
+        const tableLines = [line, lines[i + 1]];
+        i += 2;
+        while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        i--;
+        out.push(renderTable(tableLines));
+        continue;
+      }
+
+      const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (heading) {
+        flushAll();
+        const level = Math.min(6, heading[1].length + 1);
+        out.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+        continue;
+      }
+
+      if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+        flushAll();
+        out.push("<hr>");
+        continue;
+      }
+
+      const quote = line.match(/^\s{0,3}>\s?(.*)$/);
+      if (quote) {
+        flushParagraph();
+        quoteLines.push(quote[1]);
+        continue;
+      }
+
+      if (getListLine(line)) {
+        flushParagraph();
+        flushQuote();
+        const listLines = [line];
+        while (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          if (!nextLine.trim()) break;
+          if (!getListLine(nextLine) && !/^\s{2,}\S/.test(nextLine)) break;
+          listLines.push(nextLine);
+          i++;
+        }
+        out.push(renderListBlock(listLines));
+        continue;
+      }
+
+      flushQuote();
+      paragraph.push(line);
+    }
+
+    flushAll();
+    return out.join("");
   }
 
   /** Append a chat message bubble to a container */

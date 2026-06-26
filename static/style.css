@@ -884,6 +884,74 @@ body {
   background: var(--bg-surface2); padding: 8px 12px; border-radius: 6px;
   overflow-x: auto; margin: 8px 0; font-size: 12px; font-family: var(--font-mono);
 }
+.chat-bubble p, .text-block p, .msg-text p, .msg-modal-body p, .evolve-raw-result p {
+  margin: 0 0 10px;
+}
+.chat-bubble p:last-child, .text-block p:last-child, .msg-text p:last-child, .msg-modal-body p:last-child, .evolve-raw-result p:last-child {
+  margin-bottom: 0;
+}
+.chat-bubble h2, .text-block h2, .msg-text h2, .msg-modal-body h2, .evolve-raw-result h2 {
+  font-size: 17px; line-height: 1.35; margin: 16px 0 8px; font-weight: 700;
+}
+.chat-bubble h3, .text-block h3, .msg-text h3, .msg-modal-body h3, .evolve-raw-result h3 {
+  font-size: 15px; line-height: 1.4; margin: 14px 0 7px; font-weight: 700;
+}
+.chat-bubble h4, .chat-bubble h5, .chat-bubble h6,
+.text-block h4, .text-block h5, .text-block h6,
+.msg-text h4, .msg-text h5, .msg-text h6,
+.msg-modal-body h4, .msg-modal-body h5, .msg-modal-body h6,
+.evolve-raw-result h4, .evolve-raw-result h5, .evolve-raw-result h6 {
+  font-size: 13px; line-height: 1.45; margin: 12px 0 6px; font-weight: 700;
+}
+.chat-bubble ul, .chat-bubble ol, .text-block ul, .text-block ol,
+.msg-text ul, .msg-text ol, .msg-modal-body ul, .msg-modal-body ol,
+.evolve-raw-result ul, .evolve-raw-result ol {
+  padding-left: 22px; margin: 8px 0 12px;
+}
+.chat-bubble ol, .text-block ol, .msg-text ol, .msg-modal-body ol, .evolve-raw-result ol {
+  list-style: decimal;
+}
+.chat-bubble ul, .text-block ul, .msg-text ul, .msg-modal-body ul, .evolve-raw-result ul {
+  list-style: disc;
+}
+.chat-bubble li, .text-block li, .msg-text li, .msg-modal-body li, .evolve-raw-result li {
+  margin: 4px 0; padding-left: 2px;
+}
+.chat-bubble blockquote, .text-block blockquote, .msg-text blockquote, .msg-modal-body blockquote, .evolve-raw-result blockquote {
+  margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--accent);
+  background: var(--bg-surface2); color: var(--text-secondary);
+}
+.chat-bubble hr, .text-block hr, .msg-text hr, .msg-modal-body hr, .evolve-raw-result hr {
+  border: none; border-top: 1px solid var(--border-light); margin: 14px 0;
+}
+.chat-bubble a, .text-block a, .msg-text a, .msg-modal-body a, .evolve-raw-result a {
+  color: var(--accent); text-decoration: none;
+}
+.chat-bubble a:hover, .text-block a:hover, .msg-text a:hover, .msg-modal-body a:hover, .evolve-raw-result a:hover {
+  text-decoration: underline;
+}
+.md-table-wrap {
+  overflow-x: auto; margin: 10px 0 12px; border: 1px solid var(--border-light);
+  border-radius: 6px;
+}
+.md-table {
+  width: 100%; border-collapse: collapse; min-width: 360px; font-size: 12px;
+}
+.md-table th, .md-table td {
+  padding: 7px 9px; border-bottom: 1px solid var(--border-light);
+  text-align: left; vertical-align: top;
+}
+.md-table th {
+  background: var(--bg-surface2); font-weight: 700; color: var(--text);
+}
+.md-table tr:last-child td { border-bottom: none; }
+.md-pre code {
+  display: block; white-space: pre; font-family: var(--font-mono);
+}
+.md-code {
+  background: var(--bg-surface2); padding: 1px 5px; border-radius: 4px;
+  font-size: 0.92em; font-family: var(--font-mono);
+}
 .chat-loading {
   display: flex; align-items: center; gap: 6px; padding: 10px 14px;
   font-size: 12px; color: var(--text-muted);
