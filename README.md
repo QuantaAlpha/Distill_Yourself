@@ -13,13 +13,15 @@
 [![SQLite](https://img.shields.io/badge/Storage-SQLite_FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
 [![D3.js](https://img.shields.io/badge/Viz-D3.js-F9A03C?style=flat-square&logo=d3dotjs&logoColor=white)](https://d3js.org)
 
+</div>
+
 ---
 
-每天，全球 51% 的开发者都在和 AI 编程助手对话——产出数千轮包含架构决策、调试洞察、偏好信号的丰富交互——但终端一关，这些信息就沉入无人翻阅的 JSONL 日志文件。市面上 6 个以上的开源工具能浏览这些历史，但全部止步于「只读」——没有分析、没有模式提取、没有反馈闭环。ConvoLab 更进一步：它将你的 Claude Code 和 Codex 会话索引为可搜索、可分析的知识库，再通过 **Evolve AI** 引擎从五个维度挖掘智能——开发者画像、记忆图谱、纠正规则、行为信号、反复出现的问题模式——全部以交互式 D3.js 图表可视化。**Distill Yourself** 进一步把这些信号蒸馏成可同步回 AI 的 Cognitive Handbook：证据事件、判断卡、认知特质和 Runtime Pack。真正的突破在于闭环：Evolve 和 Distill 将发现同步回你的 `CLAUDE.md` 和记忆文件，AI 在下次启动时自动读取——更少的纠正、更少的上下文重建、一个越用越懂你的搭档。在开发者对 AI 输出的信任度从 40% 跌至 29%、团队每个冲刺仅重建上下文就浪费 2-3 个工程日的当下，ConvoLab 把一次性的对话变成持续积累的智能资产。零依赖、完全本地、数据不出机器。
+Every day, **51% of developers worldwide** talk to AI coding assistants — generating thousands of rich exchanges full of architecture decisions, debugging insights, and preference signals. Then the terminal closes and all of it sinks into JSONL log files nobody ever reopens. A half-dozen open-source tools let you *browse* that history, but they stop there: no analysis, no pattern extraction, no feedback loop.
 
-**[📖 Read the full vision →](docs/vision.html)**
+ConvoLab goes further. It indexes your Claude Code and Codex sessions into a searchable, analyzable knowledge base, then mines five dimensions of intelligence with its **Evolve AI** engine — developer profile, memory graph, correction rules, behavioral signals, and recurring problem patterns — all rendered as interactive D3.js charts. **Distill Yourself** then turns those signals into a Cognitive Handbook: Evidence Events, Judgment Cards, Cognitive Traits, and a Runtime Pack that can guide future AI sessions. The real breakthrough is the closed loop: Evolve and Distill write their findings back into your `CLAUDE.md` and memory files, which your AI picks up on its next launch — fewer corrections, less context to rebuild, a partner that fits you a little better every week. At a time when developer trust in AI output has slipped from 40% to 29% and teams burn 2–3 engineer-days per sprint just rebuilding context, ConvoLab turns throwaway conversations into a compounding asset. Zero dependencies, fully local, your data never leaves your machine.
 
-</div>
+**[📖 Read the user guide →](docs/USER_GUIDE.md)**
 
 <br>
 
@@ -39,6 +41,8 @@ Open **http://localhost:5757** — that's it. No `pip install`, no `npm`, no Doc
 
 ## ✦ Features
 
+ConvoLab works in three layers — it **collects** every conversation so you can always find it again, **surfaces** the patterns hiding across hundreds of them, and helps your AI **evolve**: it distills what it learns about you and writes those lessons straight back into your AI's config, so the next session starts smarter.
+
 ### 🗂 Sessions — Browse & Search
 
 ChatGPT-style interface for your entire Claude Code and Codex history.
@@ -48,6 +52,9 @@ ChatGPT-style interface for your entire Claude Code and Codex history.
 - **Smart filters** — filter by source (Claude/Codex), date range, and project; active filters display as inline chips
 - **Session outline** — jump between user messages within a long conversation
 - **Keyboard-driven** — `j/k` to navigate, `/` to search, `Enter` to open, `Esc` to go back
+
+<p align="center"><img src="docs/images/user-guide/02-session.jpg" alt="Session detail view" width="820"></p>
+<p align="center"><sub><i>Verbose tool calls stay collapsed by default, so you follow the conversation's main thread instead of scrolling through noise. The right rail holds an outline, an auto-summary, and a chat box for asking about <b>this</b> session.</i></sub></p>
 
 ### 📊 Insights — Understand Patterns
 
@@ -61,19 +68,28 @@ Five analytical tabs aggregating patterns across your entire session history.
 | **Project Health** | Per-project activity scores, session counts, and trend arrows |
 | **Snippets** | Extracted code blocks with language tags and applied/suggested status |
 
+<p align="center"><img src="docs/images/user-guide/05-heatmap.jpg" alt="Tool usage heatmap" width="820"></p>
+<p align="center"><sub><i>The tool heatmap compresses hundreds of sessions into a day-by-day fingerprint of how you work — at a glance you can tell whether you've lately been reading code or rewriting it. Everything here is computed locally; no AI engine required.</i></sub></p>
+
 ### 🧬 Evolve AI — Self-Evolution Engine
 
 The core differentiator. Five D3.js-powered interactive visualizations that mine your conversation history for actionable intelligence — then **sync it back** to make your AI smarter.
 
 | Tab | What it answers | Visualization |
 |-----|----------------|---------------|
-| **Profile** | *Who are you as a developer?* | Radar chart — autonomy, complexity, tool diversity, debugging style |
+| **Profile** | *Who are you as a developer?* | Profile card + radar chart over capability dimensions the engine derives itself (so they vary per developer) |
 | **Memory** | *What do you care about?* | Force-directed graph of preferences, habits, and their relationships |
 | **Rules** | *What have you corrected?* | Priority-ranked rule cards (P0/P1/P2) with user-quote evidence |
 | **Signals** | *Are corrections trending up or down?* | Stacked timeline of style/scope/accuracy/workflow corrections |
 | **Patterns** | *What keeps going wrong?* | Bubble chart of recurring issues with improvement suggestions |
 
-**The closed loop:** Evolve builds your Profile and Memory → syncs Profile to `~/.claude/CLAUDE.md` and Memory nodes to `~/.claude/memory/` → Claude Code reads these on next startup → generates better output → fewer corrections needed. Rules and Signals are generated for review and reference.
+**The closed loop:** Evolve builds your Profile and Memory → syncs Profile to `~/.claude/CLAUDE.md` and Memory nodes to `~/.claude/memory/` → Claude Code reads these on next startup → generates better output → fewer corrections needed. Because sync edits your global config, it always shows a preview first — what it will create, update, or skip — and writes nothing until you confirm. Rules, Signals, and Patterns are generated for review and reference (never synced).
+
+<p align="center"><img src="docs/images/user-guide/06-profile-radar.png" alt="Profile capability radar" width="820"></p>
+<p align="center"><sub><i><b>Profile</b> never asks you to fill in a form — it reads your actual behavior from the transcripts and scores you on dimensions it derives on its own, so everyone's radar comes out a little different. It's often the first time you see yourself the way your AI does.</i></sub></p>
+
+<p align="center"><img src="docs/images/user-guide/04-evolve-memory.jpg" alt="Memory preference graph and cards" width="820"></p>
+<p align="center"><sub><i><b>Memory</b> distills your preferences into actionable "when X, do Y / avoid Z" cards and links them into a graph. Every card traces back to the exact conversation that justifies it — nothing is invented.</i></sub></p>
 
 ### 🧠 Distill Yourself — Cognitive Handbook
 
@@ -127,7 +143,8 @@ ConvoLab/
 ├── analyze.py           # CLI analytics tool — standalone analysis, Evolve generators, Twin tools
 ├── start.sh             # Quick launcher
 ├── docs/
-│   └── vision.html      # Product vision & narrative
+│   ├── USER_GUIDE.md    # Full walkthrough with screenshots
+│   └── images/          # Screenshots used in the docs
 └── static/
     ├── index.html       # SPA shell — sidebar nav + multi-view layout
     ├── app.js           # Core application logic (vanilla JS)
@@ -157,7 +174,7 @@ ConvoLab/
 ### REST API
 
 <details>
-<summary><b>Core endpoints</b> — click to expand</summary>
+<summary><b>Core REST endpoints</b> — click to expand</summary>
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -254,7 +271,7 @@ Most analysis commands support `--json` for machine-readable output and filters:
 |-------|-----------|
 | Server | Python 3.8+ stdlib (`http.server`, `json`, `threading`, `sqlite3`) |
 | Database | SQLite with WAL mode + FTS5 full-text search |
-| Frontend | Vanilla JavaScript (~4K lines), HTML5, CSS3 |
+| Frontend | Vanilla JavaScript (~5K lines), HTML5, CSS3 |
 | Visualizations | [D3.js v7](https://d3js.org) — radar charts, force graphs, timelines, bubble packs |
 | AI Integration | [Codex CLI](https://github.com/openai/codex) or [Claude Code](https://claude.ai/code) (optional, locally installed) |
 | Storage | `.cache/sessions.db` (SQLite sessions, Cognitive Handbook, `twin_runs`) + localStorage (UI state) |
@@ -263,7 +280,7 @@ Most analysis commands support `--json` for machine-readable output and filters:
 
 ## ✦ Roadmap
 
-ConvoLab is actively developed. See the [full vision document](docs/vision.html) for the product narrative and future directions.
+ConvoLab is actively developed. See the [user guide](docs/USER_GUIDE.md) for a full walkthrough.
 
 - [ ] **Cross-tool support** — Cursor, Aider, Windsurf session import
 - [ ] **Team dashboard** — Anonymized team-level Evolve analytics
