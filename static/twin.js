@@ -699,6 +699,7 @@
       toolGroupRunning: 0,
       toolGroupTotal: 0,
       toolGroupCollapseTimer: null,
+      failed: false,
     };
 
     // Abort previous if any
@@ -715,7 +716,7 @@
         function pump() {
           return reader.read().then(({ done, value }) => {
             if (done) {
-              _finishAnalysis(streamState);
+              _finishAnalysis(streamState, streamState.failed);
               return;
             }
             buffer += decoder.decode(value, { stream: true });
@@ -756,21 +757,23 @@
           errDiv.textContent = `❌ ${String(e)}`;
           container.appendChild(errDiv);
         }
-        _finishAnalysis(streamState);
+        _finishAnalysis(streamState, true);
       })
       .finally(() => { analysisAbort = null; });
   }
 
-  function _finishAnalysis(state) {
+  function _finishAnalysis(state, failed = false) {
     analysisRunning = false;
     _finalizeToolGroup(state);
     _updateAnalyzeButton();
     const updatedEl = document.getElementById("twin-last-analyzed");
-    if (updatedEl) { updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`; }
+    if (updatedEl && !failed) { updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`; }
     // If user is still watching the analysis, switch to overview
-    if (currentView === "analyzing") {
+    if (currentView === "analyzing" && !failed) {
       setBreadcrumb([{ label: "分析完成 ✅" }]);
       setTimeout(() => loadOverview(), 1500);
+    } else if (currentView === "analyzing" && failed) {
+      setBreadcrumb([{ label: "分析失败，请检查错误并重试" }]);
     }
   }
 
@@ -914,6 +917,7 @@
         break;
 
       case "error":
+        state.failed = true;
         _finalizeToolGroup(state);
         _hideThinking(container);
         const errDiv = document.createElement("div");
