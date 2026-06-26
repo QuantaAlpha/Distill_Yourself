@@ -10,6 +10,10 @@ docs/plans/
 docs/research/
 docs/decisions/
 docs/reference/
+docs/superpowers/
+docs/DEV_NOTES.md
+.planning/
+AGENTS.md
 DESIGN.md
 *.jsonl
 __pycache__/

@@ -1212,11 +1212,12 @@ def _get_errors_raw(args):
         return []
 
 
-def _write_evolve_cache(tab, data):
+def _write_evolve_cache(tab, data, cache_key=""):
     """Write evolve data to .cache/evolve/<tab>.json."""
     cache_dir = Path(__file__).resolve().parent / ".cache" / "evolve"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    out_path = cache_dir / f"{tab}.json"
+    suffix = f".{cache_key}" if cache_key else ""
+    out_path = cache_dir / f"{tab}{suffix}.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return str(out_path)
@@ -1565,9 +1566,10 @@ def _check_item(path, item, spec):
     return errors
 
 
-def _read_evolve_cache(tab):
+def _read_evolve_cache(tab, cache_key=""):
     """Read existing cache for a tab, or return empty dict."""
-    cache_path = Path(__file__).resolve().parent / ".cache" / "evolve" / f"{tab}.json"
+    suffix = f".{cache_key}" if cache_key else ""
+    cache_path = Path(__file__).resolve().parent / ".cache" / "evolve" / f"{tab}{suffix}.json"
     if cache_path.exists():
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
@@ -2077,6 +2079,7 @@ def cmd_evolve_write(args):
     """
     tab = args.tab
     mode = args.mode
+    cache_key = getattr(args, "cache_key", "") or ""
 
     if tab not in _EVOLVE_SCHEMAS:
         print(f"ERROR: invalid tab '{tab}'. Valid: {', '.join(_EVOLVE_SCHEMAS.keys())}", file=sys.stderr)
@@ -2087,12 +2090,12 @@ def cmd_evolve_write(args):
         if not ids:
             print("ERROR: --ids required for delete mode (comma-separated)", file=sys.stderr)
             sys.exit(1)
-        existing = _read_evolve_cache(tab)
+        existing = _read_evolve_cache(tab, cache_key)
         if not existing:
             print("ERROR: no existing data to delete from", file=sys.stderr)
             sys.exit(1)
         result = _delete_evolve_data(tab, existing, ids)
-        out_path = _write_evolve_cache(tab, result)
+        out_path = _write_evolve_cache(tab, result, cache_key)
         print(f"OK: deleted {len(ids)} item(s) from {tab} → {out_path}")
         return
 
@@ -2115,12 +2118,12 @@ def cmd_evolve_write(args):
         sys.exit(1)
 
     if mode == "merge":
-        existing = _read_evolve_cache(tab)
+        existing = _read_evolve_cache(tab, cache_key)
         result = _merge_evolve_data(tab, existing, data) if existing else data
     else:
         result = data
 
-    out_path = _write_evolve_cache(tab, result)
+    out_path = _write_evolve_cache(tab, result, cache_key)
     print(f"OK: {mode} {tab} → {out_path}")
 
 
@@ -2742,6 +2745,7 @@ Examples:
     p_ew.add_argument("--mode", default="replace", choices=["replace", "merge", "delete"],
                        help="Write mode: replace (full), merge (add/update), delete (remove by id)")
     p_ew.add_argument("--ids", default="", help="Comma-separated ids/names for delete mode")
+    p_ew.add_argument("--cache-key", default="", help="Optional scoped cache key")
 
     sub.add_parser("aggregates", help="Print pre-computed aggregates from SQLite DB as JSON")
     sub.add_parser("profile-digest", parents=[shared], help="Pre-computed profile digest for sub-agents (JSON)")

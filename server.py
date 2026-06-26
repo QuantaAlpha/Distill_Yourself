@@ -1035,7 +1035,7 @@ def _parse_content(content) -> list:
 # ---------------------------------------------------------------------------
 def _tokenize_query(query: str) -> list:
     """Split query into tokens by whitespace and punctuation for fuzzy matching."""
-    tokens = re.split(r'[\s，。、！？；：""''（）【】《》,.!?;:()\[\]<>\-—…·]+', query)
+    tokens = re.split(r"""[\s，。、！？；：""''（）【】《》,.!?;:()\[\]<>\-—…·]+""", query)
     return [t for t in tokens if len(t) >= 2]
 
 
@@ -1139,6 +1139,48 @@ def _normalize_error(msg: str) -> str:
 _ai_engine_cache = None  # "codex" | "claude" | ""
 
 
+def _normalize_ai_engine(engine: str) -> str:
+    """Normalize and validate the requested local AI CLI."""
+    engine = (engine or "auto").strip().lower()
+    if engine not in {"auto", "codex", "claude"}:
+        raise ValueError(f"Invalid AI engine: {engine}")
+    return engine
+
+
+def _evolve_cache_key(tab: str, source: str, date: str, project: str, engine: str) -> str:
+    """Stable short cache key for a specific Evolve tab and analysis scope."""
+    raw = json.dumps(
+        {
+            "tab": tab,
+            "source": source or "all",
+            "date": date or "7d",
+            "project": project or "",
+            "engine": _normalize_ai_engine(engine),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _evolve_cache_path(tab: str, source: str, date: str, project: str, engine: str) -> Path:
+    key = _evolve_cache_key(tab, source, date, project, engine)
+    return CACHE_DIR / "evolve" / f"{tab}.{key}.json"
+
+
+def _latest_evolve_cache_path(tab: str) -> Path:
+    """Return newest scoped Evolve cache for Twin context, falling back to legacy."""
+    cache_dir = CACHE_DIR / "evolve"
+    scoped = sorted(
+        cache_dir.glob(f"{tab}.*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    ) if cache_dir.exists() else []
+    if scoped:
+        return scoped[0]
+    return cache_dir / f"{tab}.json"
+
+
 def _detect_ai_engine():
     """Auto-detect available AI CLI: Claude Code first, then Codex."""
     global _ai_engine_cache
@@ -1160,7 +1202,8 @@ def _run_ai_engine(prompt, allow_write=False, timeout=300, engine_override="auto
     """Execute prompt via detected AI engine. Returns (stdout, stderr, returncode).
     Raises FileNotFoundError if no engine available.
     Auto-falls back from codex to claude on codex errors."""
-    engine = engine_override if engine_override and engine_override != "auto" else _detect_ai_engine()
+    engine_override = _normalize_ai_engine(engine_override)
+    engine = engine_override if engine_override != "auto" else _detect_ai_engine()
     if engine == "codex":
         sandbox = "workspace-write" if allow_write else "read-only"
         r = subprocess.run(
@@ -1198,7 +1241,8 @@ def _run_ai_engine_stream(prompt, allow_write=False, timeout=300, engine_overrid
 
     Auto-falls back from codex to claude on codex errors (e.g. usage limits).
     """
-    engine = engine_override if engine_override and engine_override != "auto" else _detect_ai_engine()
+    engine_override = _normalize_ai_engine(engine_override)
+    engine = engine_override if engine_override != "auto" else _detect_ai_engine()
     if not engine:
         yield {"type": "error", "message": "No AI engine found"}
         return
@@ -1717,7 +1761,11 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
     def _get_evolve_tab(self, tab: str, refresh: bool, source: str, date: str, project: str, engine: str = "auto") -> dict:
         """Get evolve tab data: serve cache or run analyze.py / AI engine to generate."""
-        cache_path = CACHE_DIR / "evolve" / f"{tab}.json"
+        try:
+            engine = _normalize_ai_engine(engine)
+        except ValueError as e:
+            return self._evolve_fallback(tab, str(e))
+        cache_path = _evolve_cache_path(tab, source, date, project, engine)
 
         # If not refreshing and cache exists, serve it
         if not refresh and cache_path.exists():
@@ -1759,7 +1807,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
     def _evolve_via_ai(self, tab: str, source: str, date: str, project: str, cache_path: Path, engine: str = "auto") -> dict:
         """Run AI engine to analyze conversations and write results via evolve-write."""
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
-        prompt = self._build_evolve_prompt(tab, source, date, project, cli_path)
+        cache_key = _evolve_cache_key(tab, source, date, project, engine)
+        prompt = self._build_evolve_prompt(tab, source, date, project, cli_path, cache_key)
 
         try:
             _run_ai_engine(prompt, allow_write=True, timeout=300, engine_override=engine)
@@ -1783,9 +1832,16 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
     def _handle_evolve_stream(self, tab: str, source: str, date: str, project: str, engine: str = "auto"):
         """SSE streaming for AI evolve tabs (profile/memory)."""
-        cache_path = CACHE_DIR / "evolve" / f"{tab}.json"
+        try:
+            engine = _normalize_ai_engine(engine)
+        except ValueError as e:
+            self._start_sse()
+            self._sse_event({"type": "error", "message": str(e)})
+            return
+        cache_path = _evolve_cache_path(tab, source, date, project, engine)
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
-        prompt = self._build_evolve_prompt(tab, source, date, project, cli_path)
+        cache_key = _evolve_cache_key(tab, source, date, project, engine)
+        prompt = self._build_evolve_prompt(tab, source, date, project, cli_path, cache_key)
 
         self._start_sse()
         try:
@@ -1798,6 +1854,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 self._sse_event({"type": "error", "message": str(e)})
             except BrokenPipeError:
                 return
+            return
 
         # After streaming completes, read the cache file the AI wrote
         try:
@@ -1874,13 +1931,15 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         except Exception:
             return ""
 
-    def _build_evolve_prompt(self, tab: str, source: str, date: str, project: str, cli_path: str) -> str:
+    def _build_evolve_prompt(self, tab: str, source: str, date: str, project: str, cli_path: str, cache_key: str = "") -> str:
         """Build a prompt that instructs the AI to progressively explore data via CLI tools."""
         cli_flags = f"--date {date} --source {source}"
         if project:
             cli_flags += f' --project "{project}"'
 
         write_cmd = f"python3 {cli_path} evolve-write --tab {tab}"
+        if cache_key:
+            write_cmd += f" --cache-key {cache_key}"
 
         # For profile/memory: use pre-computed digest; for other tabs: use CLI exploration
         use_digest = tab in ("profile", "memory")
@@ -2724,6 +2783,15 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
         action = data.get("action", "preview")
         targets = data.get("targets", [])
+        scope = data.get("scope") if isinstance(data.get("scope"), dict) else {}
+        source = scope.get("source", "all")
+        date = scope.get("date", "7d")
+        project = scope.get("project", "")
+        try:
+            engine = _normalize_ai_engine(scope.get("engine", "auto"))
+        except ValueError as e:
+            self._error(400, str(e))
+            return
 
         if action not in ("preview", "execute"):
             self._error(400, "Invalid action")
@@ -2732,7 +2800,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         result = {}
 
         if "memory" in targets:
-            memory_cache = CACHE_DIR / "evolve" / "memory.json"
+            memory_cache = _evolve_cache_path("memory", source, date, project, engine)
             if memory_cache.exists():
                 try:
                     mem_data = json.loads(memory_cache.read_text(encoding="utf-8"))
@@ -2746,7 +2814,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 result["memory"] = {"error": "Memory cache not found — run Refresh first"}
 
         if "claude_md" in targets:
-            profile_cache = CACHE_DIR / "evolve" / "profile.json"
+            profile_cache = _evolve_cache_path("profile", source, date, project, engine)
             if profile_cache.exists():
                 try:
                     prof_data = json.loads(profile_cache.read_text(encoding="utf-8"))
@@ -2762,6 +2830,20 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         result["ok"] = all("error" not in v for v in result.values() if isinstance(v, dict))
         self._json_response(result)
 
+    def _run_twin_ai_stage(self, prompt: str, stage_label: str) -> bool:
+        """Stream a Twin AI stage and stop on either exception or SSE error event."""
+        try:
+            for evt in _run_ai_engine_stream(prompt, allow_write=True, timeout=600):
+                self._sse_event(evt)
+                if evt.get("type") == "error":
+                    return False
+            return True
+        except BrokenPipeError:
+            raise
+        except Exception as e:
+            self._sse_event({"type": "error", "message": f"{stage_label} failed: {e}"})
+            return False
+
     def _handle_twin_analyze(self):
         """POST /api/twin/analyze — run 4-stage cognitive handbook extraction via AI."""
         import db as _db
@@ -2774,45 +2856,30 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
         stage1_prompt = self._build_twin_stage1_prompt(cli_path)
         try:
-            for evt in _run_ai_engine_stream(stage1_prompt, allow_write=True, timeout=600):
-                self._sse_event(evt)
+            if not self._run_twin_ai_stage(stage1_prompt, "Stage 1"):
+                return
         except BrokenPipeError:
             return
-        except Exception as e:
-            try:
-                self._sse_event({"type": "error", "message": f"Stage 1 failed: {e}"})
-            except BrokenPipeError:
-                return
 
         # Stage 2: Judgment card distillation
         self._sse_event({"type": "text", "content": "\n\nStage 2/4: 从事件中蒸馏判断卡 (Judgment Cards)...\n"})
 
         stage2_prompt = self._build_twin_stage2_prompt(cli_path)
         try:
-            for evt in _run_ai_engine_stream(stage2_prompt, allow_write=True, timeout=600):
-                self._sse_event(evt)
+            if not self._run_twin_ai_stage(stage2_prompt, "Stage 2"):
+                return
         except BrokenPipeError:
             return
-        except Exception as e:
-            try:
-                self._sse_event({"type": "error", "message": f"Stage 2 failed: {e}"})
-            except BrokenPipeError:
-                return
 
         # Stage 3: Cognitive trait inference
         self._sse_event({"type": "text", "content": "\n\nStage 3/4: 从判断卡归纳认知特质 (Cognitive Traits)...\n"})
 
         stage3_prompt = self._build_twin_stage3_prompt(cli_path)
         try:
-            for evt in _run_ai_engine_stream(stage3_prompt, allow_write=True, timeout=600):
-                self._sse_event(evt)
+            if not self._run_twin_ai_stage(stage3_prompt, "Stage 3"):
+                return
         except BrokenPipeError:
             return
-        except Exception as e:
-            try:
-                self._sse_event({"type": "error", "message": f"Stage 3 failed: {e}"})
-            except BrokenPipeError:
-                return
 
         # Stage 4: Compile Runtime Pack (pure Python, no AI)
         self._sse_event({"type": "text", "content": "\n\nStage 4/4: 编译 Runtime Pack (twin-compile)...\n"})
@@ -2822,10 +2889,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 capture_output=True, text=True, timeout=30,
             )
             self._sse_event({"type": "text", "content": r.stdout or "(no output)"})
-            if r.returncode != 0 and r.stderr:
-                self._sse_event({"type": "text", "content": f"\nWarning: {r.stderr[:200]}"})
+            if r.returncode != 0:
+                msg = (r.stderr or r.stdout or "unknown error")[:500]
+                self._sse_event({"type": "error", "message": f"Stage 4 failed: {msg}"})
+                return
         except Exception as e:
-            self._sse_event({"type": "text", "content": f"\ntwin-compile error: {e}"})
+            self._sse_event({"type": "error", "message": f"Stage 4 failed: {e}"})
+            return
 
         # Summary
         _db.init_db()
@@ -2939,9 +3009,9 @@ Quality requirements:
         events = _db.cm_get_all("evidence_events", order="created_at DESC", limit=100)
         events_json = json.dumps([dict(e) for e in events], ensure_ascii=False, default=str)
 
-        # Get existing Profile/Memory as supplementary input
-        profile_cache = CACHE_DIR / "evolve" / "profile.json"
-        memory_cache = CACHE_DIR / "evolve" / "memory.json"
+        # Get latest Profile/Memory as supplementary input, preferring scoped caches.
+        profile_cache = _latest_evolve_cache_path("profile")
+        memory_cache = _latest_evolve_cache_path("memory")
         profile_summary = ""
         memory_summary = ""
         try:

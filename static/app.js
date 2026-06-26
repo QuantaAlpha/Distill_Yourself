@@ -2208,15 +2208,19 @@
 
   /** Initialize AI page — scope bar + Evolve + chat */
   function initAiPage() {
-    renderAiScopeBar();
-    populateGlobalAiPresets();
-    restoreAiChatMessages();
-    // Initialize Evolve visualizations
-    if (window.initEvolveView) window.initEvolveView();
     // Override getEvolveScope to read from shared global scope
     window.getEvolveScope = function() {
       return { source: globalScopeSource, date: globalScopeDate, project: globalScopeProject, engine: globalScopeEngine };
     };
+    renderAiScopeBar();
+    populateGlobalAiPresets();
+    restoreAiChatMessages();
+    // Initialize Evolve visualizations after the shared scope getter exists.
+    if (window.initEvolveView) window.initEvolveView();
+  }
+
+  function notifyEvolveScopeChanged() {
+    if (window.initEvolveView) window.initEvolveView();
   }
 
   function renderAiScopeBar() {
@@ -2245,7 +2249,7 @@
       btn.addEventListener("click", () => {
         globalScopeSource = s.key;
         renderAiScopeBar();
-        if (window.initEvolveView) window.initEvolveView();
+        notifyEvolveScopeChanged();
       });
       srcTabs.appendChild(btn);
     });
@@ -2272,7 +2276,7 @@
       btn.addEventListener("click", () => {
         globalScopeDate = d.key;
         renderAiScopeBar();
-        if (window.initEvolveView) window.initEvolveView();
+        notifyEvolveScopeChanged();
       });
       dateTabs.appendChild(btn);
     });
@@ -2294,10 +2298,14 @@
       opt.textContent = `${name} (${count})`;
       projSelect.appendChild(opt);
     });
+    if (globalScopeProject && !Object.prototype.hasOwnProperty.call(projCounts, globalScopeProject)) {
+      globalScopeProject = "";
+    }
     projSelect.value = globalScopeProject;
     projSelect.onchange = () => {
       globalScopeProject = projSelect.value;
       renderAiScopeBar();
+      notifyEvolveScopeChanged();
     };
     bar.appendChild(projSelect);
 
@@ -2320,7 +2328,10 @@
       engineSelect.appendChild(opt);
     });
     engineSelect.value = globalScopeEngine;
-    engineSelect.onchange = () => { globalScopeEngine = engineSelect.value; };
+    engineSelect.onchange = () => {
+      globalScopeEngine = engineSelect.value;
+      notifyEvolveScopeChanged();
+    };
     bar.appendChild(engineSelect);
 
     // Scope stats
@@ -2382,6 +2393,7 @@
       project: globalScopeProject,
       date: globalScopeDate,
       source: globalScopeSource,
+      engine: globalScopeEngine,
     };
 
     // Add user message

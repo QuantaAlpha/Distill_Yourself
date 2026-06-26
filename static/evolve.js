@@ -7,13 +7,14 @@
 
   // ── State ──
   let evolveActiveTab = "profile";
-  let evolveCache = {}; // {tab: {updatedAt, data}}
+  let evolveCache = {}; // {scopeKey: {updatedAt, scope, data}}
   let evolveLoadingTabs = {}; // {tab: true} — per-tab loading state
   let activeSimulation = null;
   let evolveStreamAborts = {}; // {tab: AbortController} — per-tab stream abort
   let evolveScopeSource = "all";
   let evolveScopeDate = "7d";
   let evolveScopeProject = "";
+  let evolveScopeEngine = "auto";
 
   // ── DOM refs ──
   const $ = (sel) => document.querySelector(sel);
@@ -28,6 +29,7 @@
     if (scope.source) evolveScopeSource = scope.source;
     if (scope.date) evolveScopeDate = scope.date;
     if (scope.project !== undefined) evolveScopeProject = scope.project;
+    if (scope.engine) evolveScopeEngine = scope.engine;
     // Clear initial HTML — per-tab panels will be created on demand
     const body = $("#evolve-tab-body");
     if (body) body.innerHTML = "";
@@ -121,19 +123,48 @@
     } catch (e) { /* quota */ }
   }
 
+  function getScopeCacheKey(tab) {
+    const scope = getEvolveScope();
+    return [
+      tab,
+      scope.source || "all",
+      scope.date || "7d",
+      scope.project || "",
+      scope.engine || "auto",
+    ].join("::");
+  }
+
   function getCachedTab(tab) {
-    return evolveCache[tab] || null;
+    return evolveCache[getScopeCacheKey(tab)] || null;
   }
 
   function setCachedTab(tab, data) {
-    evolveCache[tab] = { updatedAt: new Date().toISOString(), data };
+    evolveCache[getScopeCacheKey(tab)] = {
+      updatedAt: new Date().toISOString(),
+      scope: getEvolveScope(),
+      data,
+    };
     saveEvolveCache();
     updateSyncButtonState();
   }
 
   // ── Scope (reads from shared global state set by initAiPage in app.js) ──
   function getEvolveScope() {
-    return { source: evolveScopeSource, date: evolveScopeDate, project: evolveScopeProject };
+    if (typeof window.getEvolveScope === "function" && window.getEvolveScope !== getEvolveScope) {
+      const scope = window.getEvolveScope() || {};
+      return {
+        source: scope.source || "all",
+        date: scope.date || "7d",
+        project: scope.project || "",
+        engine: scope.engine || "auto",
+      };
+    }
+    return {
+      source: evolveScopeSource,
+      date: evolveScopeDate,
+      project: evolveScopeProject,
+      engine: evolveScopeEngine,
+    };
   }
 
   // ── Overview bar ──
@@ -1326,7 +1357,7 @@
     fetch("/api/evolve/sync", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({action: "preview", targets})
+      body: JSON.stringify({action: "preview", targets, scope: getEvolveScope()})
     })
       .then(r => r.json())
       .then(data => renderSyncPanel(panel, data, targets))
@@ -1405,7 +1436,7 @@
     fetch("/api/evolve/sync", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({action: "execute", targets})
+      body: JSON.stringify({action: "execute", targets, scope: getEvolveScope()})
     })
       .then(r => r.json())
       .then(data => {
