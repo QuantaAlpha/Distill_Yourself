@@ -87,14 +87,68 @@ def init_db():
         );
 
         -- =================================================================
-        -- Cognitive Model tables (Digital Twin 4-layer pipeline)
+        -- Insights pre-aggregated tables (incremental via file_mtime)
         -- =================================================================
 
-        -- L1: Episodes — structured events from conversations
-        CREATE TABLE IF NOT EXISTS episodes (
+        -- Tool usage: one row per (session, day, tool)
+        CREATE TABLE IF NOT EXISTS insight_tool_usage (
+            session_id  TEXT NOT NULL,
+            day         TEXT NOT NULL,
+            tool_name   TEXT NOT NULL,
+            count       INTEGER DEFAULT 1,
+            PRIMARY KEY (session_id, day, tool_name),
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_tool_usage_day ON insight_tool_usage(day);
+
+        -- File references: one row per (session, file_path)
+        CREATE TABLE IF NOT EXISTS insight_file_refs (
+            session_id  TEXT NOT NULL,
+            file_path   TEXT NOT NULL,
+            count       INTEGER DEFAULT 1,
+            project     TEXT,
+            PRIMARY KEY (session_id, file_path),
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_file_refs_path ON insight_file_refs(file_path);
+
+        -- Error occurrences: one row per (session, normalized_error)
+        CREATE TABLE IF NOT EXISTS insight_errors (
+            session_id  TEXT NOT NULL,
+            error_key   TEXT NOT NULL,
+            day         TEXT,
+            project     TEXT,
+            count       INTEGER DEFAULT 1,
+            PRIMARY KEY (session_id, error_key),
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_errors_key ON insight_errors(error_key);
+
+        -- Snippets: one row per code block
+        CREATE TABLE IF NOT EXISTS insight_snippets (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT NOT NULL,
+            language    TEXT,
+            code        TEXT,
+            context     TEXT,
+            date        TEXT,
+            applied     INTEGER DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_snippets_session ON insight_snippets(session_id);
+
+        -- =================================================================
+        -- Cognitive Handbook tables (Digital Twin 4-layer pipeline)
+        -- L1: evidence_events  L2: judgment_cards + card_relations
+        -- L3: cognitive_traits  L4: runtime pack (computed, not stored)
+        -- =================================================================
+
+        -- L1: Evidence Events — structured decision events from conversations
+        CREATE TABLE IF NOT EXISTS evidence_events (
             id          TEXT PRIMARY KEY,
             session_id  TEXT,
             event_index INTEGER,
+            card_id     TEXT,
             task_type   TEXT,
             ai_action   TEXT,
             user_reaction TEXT,
@@ -105,125 +159,55 @@ def init_db():
             domain      TEXT,
             created_at  TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id),
+            FOREIGN KEY (card_id) REFERENCES judgment_cards(id) ON DELETE SET NULL,
             UNIQUE(session_id, event_index)
         );
-        CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);
-        CREATE INDEX IF NOT EXISTS idx_episodes_domain  ON episodes(domain);
-        CREATE INDEX IF NOT EXISTS idx_episodes_signal  ON episodes(signal_type);
+        CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_events(session_id);
+        CREATE INDEX IF NOT EXISTS idx_evidence_domain  ON evidence_events(domain);
+        CREATE INDEX IF NOT EXISTS idx_evidence_signal  ON evidence_events(signal_type);
+        CREATE INDEX IF NOT EXISTS idx_evidence_card    ON evidence_events(card_id);
 
-        -- L1→L2 refs: which episodes support which cognitive model items
-        CREATE TABLE IF NOT EXISTS episode_refs (
-            episode_id  TEXT,
-            target_type TEXT,
-            target_id   TEXT,
-            PRIMARY KEY (episode_id, target_type, target_id),
-            FOREIGN KEY (episode_id) REFERENCES episodes(id)
+        -- L2: Judgment Cards — situation-specific judgment patterns
+        CREATE TABLE IF NOT EXISTS judgment_cards (
+            id              TEXT PRIMARY KEY,
+            applies_when    TEXT,
+            judgment        TEXT,
+            agent_action    TEXT,
+            exceptions      TEXT,
+            tags            TEXT,
+            confidence      REAL,
+            status          TEXT DEFAULT 'hypothesis',
+            evidence_count  INTEGER DEFAULT 0,
+            created_at      TEXT,
+            updated_at      TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_cards_status ON judgment_cards(status);
+        CREATE INDEX IF NOT EXISTS idx_cards_confidence ON judgment_cards(confidence);
+
+        -- L2: Card Relations — lightweight relationship tracking between cards
+        CREATE TABLE IF NOT EXISTS card_relations (
+            from_id     TEXT,
+            to_id       TEXT,
+            relation    TEXT,
+            PRIMARY KEY (from_id, to_id, relation),
+            FOREIGN KEY (from_id) REFERENCES judgment_cards(id),
+            FOREIGN KEY (to_id) REFERENCES judgment_cards(id)
         );
 
-        -- L2 Dim1: Value tensions
-        CREATE TABLE IF NOT EXISTS cm_tensions (
-            id          TEXT PRIMARY KEY,
-            value_a     TEXT,
-            value_b     TEXT,
-            default_resolution TEXT,
-            context_overrides  TEXT,
-            confidence  REAL,
-            episode_count INTEGER DEFAULT 0,
-            status      TEXT DEFAULT 'hypothesis',
-            updated_at  TEXT
+        -- L3: Cognitive Traits — personality/cognitive characteristics inferred from cards
+        CREATE TABLE IF NOT EXISTS cognitive_traits (
+            id                  TEXT PRIMARY KEY,
+            name                TEXT,
+            category            TEXT,
+            description         TEXT,
+            strength            REAL,
+            supporting_card_ids TEXT,
+            status              TEXT DEFAULT 'hypothesis',
+            evidence_count      INTEGER DEFAULT 0,
+            updated_at          TEXT
         );
-
-        -- L2 Dim2: Causal principles
-        CREATE TABLE IF NOT EXISTS cm_principles (
-            id          TEXT PRIMARY KEY,
-            statement   TEXT,
-            cause       TEXT,
-            effect      TEXT,
-            domain      TEXT,
-            tension_ids TEXT,
-            confidence  REAL,
-            status      TEXT DEFAULT 'hypothesis',
-            episode_count INTEGER DEFAULT 0,
-            updated_at  TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_principles_domain ON cm_principles(domain);
-        CREATE INDEX IF NOT EXISTS idx_principles_status ON cm_principles(status);
-
-        -- L2 Dim3: Tradeoff matrix
-        CREATE TABLE IF NOT EXISTS cm_tradeoffs (
-            id          TEXT PRIMARY KEY,
-            context     TEXT,
-            protect     TEXT,
-            sacrifice   TEXT,
-            strategy    TEXT,
-            confidence  REAL,
-            episode_count INTEGER DEFAULT 0,
-            updated_at  TEXT
-        );
-
-        -- L2 Dim4: Reasoning style
-        CREATE TABLE IF NOT EXISTS cm_reasoning (
-            id          TEXT PRIMARY KEY,
-            dimension   TEXT,
-            description TEXT,
-            evidence    TEXT,
-            confidence  REAL,
-            updated_at  TEXT
-        );
-
-        -- L2 Dim5: Communication contract
-        CREATE TABLE IF NOT EXISTS cm_communication (
-            id          TEXT PRIMARY KEY,
-            category    TEXT,
-            description TEXT,
-            domain      TEXT DEFAULT 'all',
-            confidence  REAL,
-            episode_count INTEGER DEFAULT 0,
-            updated_at  TEXT
-        );
-
-        -- L2 Dim6: Role modes
-        CREATE TABLE IF NOT EXISTS cm_roles (
-            id          TEXT PRIMARY KEY,
-            role        TEXT,
-            behavior_profile TEXT,
-            key_preferences  TEXT,
-            autonomy_level   TEXT,
-            confidence  REAL,
-            episode_count INTEGER DEFAULT 0,
-            updated_at  TEXT
-        );
-
-        -- L2 Dim7: Domain expertise
-        CREATE TABLE IF NOT EXISTS cm_expertise (
-            id          TEXT PRIMARY KEY,
-            domain      TEXT,
-            depth       TEXT,
-            session_count INTEGER DEFAULT 0,
-            key_patterns TEXT,
-            autonomy_boundary TEXT,
-            confidence  REAL,
-            updated_at  TEXT
-        );
-
-        -- L3: Policies — compiled from L2 dimensions
-        CREATE TABLE IF NOT EXISTS cm_policies (
-            id          TEXT PRIMARY KEY,
-            condition   TEXT,
-            action      TEXT,
-            exception   TEXT,
-            rationale   TEXT,
-            source_type TEXT,
-            source_id   TEXT,
-            domain      TEXT,
-            role_mode   TEXT,
-            confidence  REAL,
-            status      TEXT DEFAULT 'active',
-            evidence_summary TEXT,
-            updated_at  TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_policies_status ON cm_policies(status);
-        CREATE INDEX IF NOT EXISTS idx_policies_source ON cm_policies(source_type, source_id);
+        CREATE INDEX IF NOT EXISTS idx_traits_category ON cognitive_traits(category);
+        CREATE INDEX IF NOT EXISTS idx_traits_status ON cognitive_traits(status);
     """)
     conn.commit()
 
@@ -489,31 +473,139 @@ def refresh_aggregates():
 
 
 # ---------------------------------------------------------------------------
+# Insight tables — CRUD helpers
+# ---------------------------------------------------------------------------
+def clear_session_insights(session_id: str):
+    """Delete all insight rows for a session (before re-extraction)."""
+    conn = get_conn()
+    for table in ("insight_tool_usage", "insight_file_refs", "insight_errors", "insight_snippets"):
+        conn.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
+    conn.commit()
+
+
+def bulk_insert_tool_usage(rows: list):
+    """Insert rows: [(session_id, day, tool_name, count), ...]"""
+    if not rows:
+        return
+    conn = get_conn()
+    conn.executemany(
+        "INSERT OR REPLACE INTO insight_tool_usage (session_id, day, tool_name, count) VALUES (?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+
+
+def bulk_insert_file_refs(rows: list):
+    """Insert rows: [(session_id, file_path, count, project), ...]"""
+    if not rows:
+        return
+    conn = get_conn()
+    conn.executemany(
+        "INSERT OR REPLACE INTO insight_file_refs (session_id, file_path, count, project) VALUES (?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+
+
+def bulk_insert_errors(rows: list):
+    """Insert rows: [(session_id, error_key, day, project, count), ...]"""
+    if not rows:
+        return
+    conn = get_conn()
+    conn.executemany(
+        "INSERT OR REPLACE INTO insight_errors (session_id, error_key, day, project, count) VALUES (?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+
+
+def bulk_insert_snippets(rows: list):
+    """Insert rows: [(session_id, language, code, context, date, applied), ...]"""
+    if not rows:
+        return
+    conn = get_conn()
+    conn.executemany(
+        "INSERT INTO insight_snippets (session_id, language, code, context, date, applied) VALUES (?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+
+
+def query_tool_heatmap():
+    """Return tool usage aggregated by day (last 30 days) for heatmap."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT day, tool_name, SUM(count) as total
+        FROM insight_tool_usage
+        WHERE day >= date('now', '-30 days')
+        GROUP BY day, tool_name
+        ORDER BY day DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def query_file_hotspots(limit=50):
+    """Return top files by access count across all sessions."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT file_path,
+               SUM(count) as total_count,
+               COUNT(DISTINCT session_id) as session_count,
+               GROUP_CONCAT(DISTINCT project) as projects
+        FROM insight_file_refs
+        GROUP BY file_path
+        ORDER BY total_count DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def query_error_patterns(limit=30):
+    """Return top error patterns aggregated across sessions."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT error_key,
+               SUM(count) as total_count,
+               COUNT(DISTINCT session_id) as session_count,
+               GROUP_CONCAT(DISTINCT project) as projects,
+               MIN(day) as first_seen,
+               MAX(day) as last_seen
+        FROM insight_errors
+        GROUP BY error_key
+        ORDER BY total_count DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def query_snippets(limit=150):
+    """Return code snippets sorted by applied first, then newest."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT s.session_id, ses.title as session_title, ses.project_name as project,
+               s.language, s.code, s.context, s.date, s.applied
+        FROM insight_snippets s
+        LEFT JOIN sessions ses ON ses.id = s.session_id
+        ORDER BY s.applied DESC, s.date DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
 # Cognitive Model — CRUD helpers
 # ---------------------------------------------------------------------------
 
 # Table registry: name → columns (excluding id, updated_at which are auto-managed)
 _CM_TABLES = {
-    "episodes": ["session_id", "event_index", "task_type", "ai_action",
-                 "user_reaction", "resolution", "lesson", "signal_type",
-                 "signal_intensity", "domain", "created_at"],
-    "episode_refs": ["episode_id", "target_type", "target_id"],
-    "cm_tensions": ["value_a", "value_b", "default_resolution",
-                    "context_overrides", "confidence", "episode_count", "status"],
-    "cm_principles": ["statement", "cause", "effect", "domain",
-                      "tension_ids", "confidence", "status", "episode_count"],
-    "cm_tradeoffs": ["context", "protect", "sacrifice", "strategy",
-                     "confidence", "episode_count"],
-    "cm_reasoning": ["dimension", "description", "evidence", "confidence"],
-    "cm_communication": ["category", "description", "domain",
-                         "confidence", "episode_count"],
-    "cm_roles": ["role", "behavior_profile", "key_preferences",
-                 "autonomy_level", "confidence", "episode_count"],
-    "cm_expertise": ["domain", "depth", "session_count", "key_patterns",
-                     "autonomy_boundary", "confidence"],
-    "cm_policies": ["condition", "action", "exception", "rationale",
-                    "source_type", "source_id", "domain", "role_mode",
-                    "confidence", "status", "evidence_summary"],
+    "evidence_events": ["session_id", "event_index", "card_id", "task_type",
+                        "ai_action", "user_reaction", "resolution", "lesson",
+                        "signal_type", "signal_intensity", "domain", "created_at"],
+    "judgment_cards": ["applies_when", "judgment", "agent_action", "exceptions",
+                       "tags", "confidence", "status", "evidence_count", "created_at"],
+    "card_relations": ["from_id", "to_id", "relation"],
+    "cognitive_traits": ["name", "category", "description", "strength",
+                         "supporting_card_ids", "status", "evidence_count"],
 }
 
 
@@ -526,7 +618,11 @@ def cm_upsert(table: str, item_id: str, data: dict):
         raise ValueError(f"Unknown CM table: {table}")
 
     now = datetime.utcnow().isoformat()
-    has_updated = table not in ("episodes", "episode_refs")
+    has_updated = table not in ("evidence_events", "card_relations")
+
+    # Auto-fill created_at on insert for tables that have it
+    if "created_at" in cols and "created_at" not in data:
+        data = {**data, "created_at": now}
 
     # Check if row exists — if so, merge with existing data to avoid dropping fields
     existing = conn.execute(f"SELECT * FROM {table} WHERE id=?", (item_id,)).fetchone()
@@ -591,44 +687,53 @@ def cm_count(table: str, where: str = "", params: tuple = ()) -> int:
     return conn.execute(sql, params).fetchone()[0]
 
 
-def cm_add_ref(episode_id: str, target_type: str, target_id: str):
-    """Add an episode → target reference."""
+def cm_add_card_relation(from_id: str, to_id: str, relation: str):
+    """Add a relation between two judgment cards."""
     conn = get_conn()
     conn.execute(
-        "INSERT OR IGNORE INTO episode_refs (episode_id, target_type, target_id) "
+        "INSERT OR IGNORE INTO card_relations (from_id, to_id, relation) "
         "VALUES (?,?,?)",
-        (episode_id, target_type, target_id),
+        (from_id, to_id, relation),
     )
     conn.commit()
 
 
-def cm_get_refs_for_target(target_type: str, target_id: str) -> list:
-    """Get all episodes linked to a cognitive model item."""
+def cm_get_evidence_for_card(card_id: str) -> list:
+    """Get all evidence events linked to a judgment card."""
     conn = get_conn()
     rows = conn.execute(
-        """SELECT e.* FROM episodes e
-           JOIN episode_refs r ON e.id = r.episode_id
-           WHERE r.target_type=? AND r.target_id=?
-           ORDER BY e.created_at DESC""",
-        (target_type, target_id),
+        "SELECT * FROM evidence_events WHERE card_id=? ORDER BY created_at DESC",
+        (card_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def cm_get_card_relations(card_id: str) -> list:
+    """Get all relations involving a card (as source or target)."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM card_relations WHERE from_id=? OR to_id=?",
+        (card_id, card_id),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_twin_stats() -> dict:
-    """Return cognitive model statistics."""
+    """Return cognitive handbook statistics."""
     conn = get_conn()
     stats = {}
+    _CONF_TABLES = {"judgment_cards", "cognitive_traits"}
+    _UPDATED_TABLES = {"judgment_cards", "cognitive_traits"}
     for table in _CM_TABLES:
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         stats[table] = {"count": count}
-        # confidence distribution for tables that have it
-        if table not in ("episodes", "episode_refs"):
+        if table in _CONF_TABLES:
             try:
+                conf_col = "confidence" if table == "judgment_cards" else "strength"
                 rows = conn.execute(
-                    f"SELECT AVG(confidence) as avg_conf, "
-                    f"MIN(confidence) as min_conf, MAX(confidence) as max_conf "
-                    f"FROM {table} WHERE confidence IS NOT NULL"
+                    f"SELECT AVG({conf_col}) as avg_conf, "
+                    f"MIN({conf_col}) as min_conf, MAX({conf_col}) as max_conf "
+                    f"FROM {table} WHERE {conf_col} IS NOT NULL"
                 ).fetchone()
                 if rows and rows["avg_conf"] is not None:
                     stats[table]["confidence"] = {
@@ -638,8 +743,7 @@ def get_twin_stats() -> dict:
                     }
             except sqlite3.OperationalError:
                 pass
-        # last updated
-        if table not in ("episodes", "episode_refs"):
+        if table in _UPDATED_TABLES:
             try:
                 row = conn.execute(
                     f"SELECT MAX(updated_at) as last FROM {table}"

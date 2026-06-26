@@ -2129,23 +2129,20 @@ def cmd_evolve_write(args):
 # ---------------------------------------------------------------------------
 
 _CM_VALID_TABLES = {
-    "episodes", "episode_refs", "cm_tensions", "cm_principles", "cm_tradeoffs",
-    "cm_reasoning", "cm_communication", "cm_roles", "cm_expertise", "cm_policies",
+    "evidence_events", "judgment_cards", "card_relations", "cognitive_traits",
 }
 
-_DIMENSION_TABLE_MAP = {
-    "tensions": "cm_tensions",
-    "principles": "cm_principles",
-    "tradeoffs": "cm_tradeoffs",
-    "reasoning": "cm_reasoning",
-    "communication": "cm_communication",
-    "roles": "cm_roles",
-    "expertise": "cm_expertise",
+# Maps CLI-friendly names to actual table names
+_TWIN_TABLE_MAP = {
+    "cards": "judgment_cards",
+    "traits": "cognitive_traits",
+    "events": "evidence_events",
+    "relations": "card_relations",
 }
 
 
 def cmd_twin_stats(args):
-    """Show Cognitive Model statistics."""
+    """Show Cognitive Handbook statistics."""
     import db as _db
     _db.init_db()
     stats = _db.get_twin_stats()
@@ -2154,7 +2151,7 @@ def cmd_twin_stats(args):
         print(json.dumps(stats, ensure_ascii=False, indent=2))
         return
 
-    print("=== Cognitive Model (Digital Twin) Stats ===\n")
+    print("=== Cognitive Handbook (Digital Twin) Stats ===\n")
     fmt = "  {:<20s} {:>6s}  {:<20s}  {}"
     print(fmt.format("Table", "Count", "Confidence (avg/min/max)", "Last Updated"))
     print("  " + "-" * 70)
@@ -2168,8 +2165,35 @@ def cmd_twin_stats(args):
         print(fmt.format(table, str(count), conf_str, last))
 
 
-def cmd_twin_episodes(args):
-    """List episodes from the episodes table."""
+_TWIN_MAX_OUTPUT_CHARS = 320_000  # ~80K tokens — leave room for prompt + reasoning
+
+
+def _twin_truncated_json(rows: list, table: str, total: int, limit: int):
+    """Output JSON with truncation by char budget, not just row count."""
+    # First apply row limit
+    if len(rows) > limit:
+        rows = rows[:limit]
+    # Then apply char budget: serialize incrementally and cut when over budget
+    included = []
+    char_count = 0
+    for r in rows:
+        item_json = json.dumps(r, ensure_ascii=False, default=str)
+        if char_count + len(item_json) > _TWIN_MAX_OUTPUT_CHARS and included:
+            break
+        included.append(r)
+        char_count += len(item_json)
+
+    result: dict = {"items": included, "count": len(included), "total": total}
+    if len(included) < total:
+        result["truncated"] = True
+        result["shown_chars"] = char_count
+        result["hint"] = (f"Showing {len(included)} of {total} (char budget {_TWIN_MAX_OUTPUT_CHARS:,}). "
+                          f"Use twin-search {table} --q '...' or --domain/--tag to filter.")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_twin_events(args):
+    """List evidence events from the evidence_events table."""
     import db as _db
     _db.init_db()
 
@@ -2185,14 +2209,15 @@ def cmd_twin_episodes(args):
         params.append(f"%{args.session}%")
 
     where = " AND ".join(where_parts) if where_parts else ""
-    rows = _db.cm_get_all("episodes", where=where, params=tuple(params),
+    total = _db.cm_count("evidence_events", where=where, params=tuple(params))
+    rows = _db.cm_get_all("evidence_events", where=where, params=tuple(params),
                           order="created_at DESC", limit=args.limit)
 
     if getattr(args, "json", False):
-        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        _twin_truncated_json(rows, "events", total, args.limit)
         return
 
-    print(f"=== Episodes ({len(rows)}) ===\n")
+    print(f"=== Evidence Events ({len(rows)}/{total}) ===\n")
     fmt = "  {:<16s}  {:<14s}  {:<16s}  {:<12s}  {}"
     print(fmt.format("ID", "Session", "Task Type", "Signal", "Lesson"))
     print("  " + "-" * 80)
@@ -2206,66 +2231,52 @@ def cmd_twin_episodes(args):
             (r.get("signal_type") or "")[:12],
             lesson,
         ))
+    if total > args.limit:
+        print(f"\n  (showing {args.limit} of {total} — use --limit N or twin-search events --q '...')")
 
 
-def cmd_twin_dimensions(args):
-    """List items from any L2 dimension table."""
+def cmd_twin_cards(args):
+    """List judgment cards."""
     import db as _db
     _db.init_db()
-
-    table = _DIMENSION_TABLE_MAP[args.dimension]
 
     where_parts, params = [], []
     if getattr(args, "status", ""):
         where_parts.append("status=?")
         params.append(args.status)
-    if getattr(args, "domain", ""):
-        where_parts.append("domain=?")
-        params.append(args.domain)
+    if getattr(args, "tag", ""):
+        where_parts.append("tags LIKE ?")
+        params.append(f"%{args.tag}%")
     min_conf = getattr(args, "min_confidence", None)
     if min_conf is not None:
         where_parts.append("confidence>=?")
         params.append(min_conf)
 
     where = " AND ".join(where_parts) if where_parts else ""
-    rows = _db.cm_get_all(table, where=where, params=tuple(params),
-                          order="confidence DESC", limit=getattr(args, "limit", 50))
+    limit = getattr(args, "limit", 50)
+    total = _db.cm_count("judgment_cards", where=where, params=tuple(params))
+    rows = _db.cm_get_all("judgment_cards", where=where, params=tuple(params),
+                          order="confidence DESC", limit=limit)
 
     if getattr(args, "json", False):
-        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        _twin_truncated_json(rows, "cards", total, limit)
         return
 
-    print(f"=== {table} ({len(rows)}) ===\n")
+    print(f"=== Judgment Cards ({len(rows)}/{total}) ===\n")
     for r in rows:
         rid = r.get("id", "")
         conf = r.get("confidence")
         conf_str = f"  conf={conf:.2f}" if conf is not None else ""
         status = r.get("status", "")
         status_str = f"  [{status}]" if status else ""
-        # Print a brief summary line per row
-        if table == "cm_principles":
-            summary = (r.get("statement") or "")[:80]
-        elif table == "cm_tensions":
-            summary = f"{r.get('value_a','')} vs {r.get('value_b','')}: {(r.get('default_resolution') or '')[:50]}"
-        elif table == "cm_policies":
-            summary = f"{(r.get('condition') or '')[:40]} → {(r.get('action') or '')[:40]}"
-        elif table == "cm_roles":
-            summary = (r.get("role") or "")[:60]
-        elif table == "cm_expertise":
-            summary = f"{r.get('domain','')} (depth={r.get('depth','')})"
-        elif table == "cm_communication":
-            summary = (r.get("description") or "")[:70]
-        elif table == "cm_reasoning":
-            summary = f"{r.get('dimension','')}: {(r.get('description') or '')[:50]}"
-        elif table == "cm_tradeoffs":
-            summary = f"protect={r.get('protect','')} sacrifice={r.get('sacrifice','')}"
-        else:
-            summary = str(r)[:80]
-        print(f"  [{rid}]{status_str}{conf_str}  {summary}")
+        when = (r.get("applies_when") or "")[:60]
+        print(f"  [{rid}]{status_str}{conf_str}  {when}")
+    if total > limit:
+        print(f"\n  (showing {limit} of {total} — use --limit N or twin-search cards --q '...')")
 
 
-def cmd_twin_policies(args):
-    """List policies from cm_policies."""
+def cmd_twin_traits(args):
+    """List cognitive traits."""
     import db as _db
     _db.init_db()
 
@@ -2273,36 +2284,33 @@ def cmd_twin_policies(args):
     if getattr(args, "status", ""):
         where_parts.append("status=?")
         params.append(args.status)
-    if getattr(args, "role", ""):
-        where_parts.append("role_mode=?")
-        params.append(args.role)
-    if getattr(args, "domain", ""):
-        where_parts.append("domain=?")
-        params.append(args.domain)
+    if getattr(args, "category", ""):
+        where_parts.append("category=?")
+        params.append(args.category)
 
     where = " AND ".join(where_parts) if where_parts else ""
-    rows = _db.cm_get_all("cm_policies", where=where, params=tuple(params),
-                          order="confidence DESC", limit=args.limit)
+    total = _db.cm_count("cognitive_traits", where=where, params=tuple(params))
+    rows = _db.cm_get_all("cognitive_traits", where=where, params=tuple(params),
+                          order="strength DESC", limit=args.limit)
 
     if getattr(args, "json", False):
-        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        _twin_truncated_json(rows, "traits", total, args.limit)
         return
 
-    print(f"=== Policies ({len(rows)}) ===\n")
+    print(f"=== Cognitive Traits ({len(rows)}/{total}) ===\n")
     for r in rows:
         rid = r.get("id", "")
-        conf = r.get("confidence")
-        conf_str = f"{conf:.2f}" if conf is not None else "  -"
+        strength = r.get("strength")
+        str_str = f"{strength:.2f}" if strength is not None else "  -"
         status = r.get("status") or ""
-        condition = (r.get("condition") or "")[:50]
-        action = (r.get("action") or "")[:50]
-        rationale = (r.get("rationale") or "")[:40]
-        print(f"  [{rid}] [{status}] conf={conf_str}")
-        print(f"    IF:  {condition}")
-        print(f"    DO:  {action}")
-        if rationale:
-            print(f"    WHY: {rationale}")
+        category = r.get("category") or ""
+        name = (r.get("name") or "")[:30]
+        desc = (r.get("description") or "")[:50]
+        print(f"  [{rid}] [{status}] strength={str_str}  [{category}] {name}")
+        print(f"    {desc}")
         print()
+    if total > args.limit:
+        print(f"  (showing {args.limit} of {total} — use --limit N or twin-search traits --q '...')")
 
 
 def cmd_twin_write(args):
@@ -2329,13 +2337,20 @@ def cmd_twin_write(args):
     for op in operations:
         action = op.get("action", "")
         try:
-            if table == "episode_refs":
+            if table == "card_relations":
                 if action == "insert":
                     d = op.get("data", {})
-                    _db.cm_add_ref(d["episode_id"], d["target_type"], d["target_id"])
+                    _db.cm_add_card_relation(d["from_id"], d["to_id"], d["relation"])
                     inserted += 1
+                elif action == "delete":
+                    conn = _db.get_conn()
+                    d = op.get("data", {})
+                    conn.execute("DELETE FROM card_relations WHERE from_id=? AND to_id=? AND relation=?",
+                                 (d.get("from_id",""), d.get("to_id",""), d.get("relation","")))
+                    conn.commit()
+                    deleted += 1
                 else:
-                    errors.append(f"episode_refs only supports insert, got: {action}")
+                    errors.append(f"card_relations supports insert/delete, got: {action}")
             elif action in ("insert", "update"):
                 item_id = op.get("id") or ("p_" + uuid.uuid4().hex[:8])
                 _db.cm_upsert(table, item_id, op.get("data", {}))
@@ -2357,187 +2372,305 @@ def cmd_twin_write(args):
             print(f"  WARN: {err}", file=sys.stderr)
 
 
-def _deterministic_policy_id(source_type: str, source_id: str) -> str:
-    """Generate a deterministic policy ID from its source, so re-compiles don't churn IDs."""
-    import hashlib
-    h = hashlib.md5(f"{source_type}:{source_id}".encode()).hexdigest()[:8]
-    return f"pol_{source_type[:3]}_{h}"
-
-
 def cmd_twin_compile(args):
-    """Compile L3 policies from ALL 7 L2 dimensions."""
+    """Compile Runtime Pack from judgment cards + cognitive traits → NL text."""
     import db as _db
     _db.init_db()
 
-    new_policies = []
-    source_types = []
+    # Select top cards by confidence × status weight
+    cards = _db.cm_get_all("judgment_cards",
+                           where="status IN ('confirmed','emerging')",
+                           order="confidence DESC", limit=25)
+    traits = _db.cm_get_all("cognitive_traits",
+                            where="status IN ('confirmed','emerging')",
+                            order="strength DESC", limit=15)
 
-    # 1. From principles (confirmed/emerging)
-    principles = _db.cm_get_all("cm_principles",
-                                where="status IN ('confirmed','emerging')")
-    for p in principles:
-        new_policies.append({
-            "id": _deterministic_policy_id("principle", p["id"]),
-            "data": {
-                "condition": p.get("cause") or "",
-                "action": p.get("effect") or "",
-                "exception": "",
-                "rationale": p.get("statement") or "",
-                "source_type": "principle",
-                "source_id": p["id"],
-                "domain": p.get("domain") or "",
-                "confidence": p.get("confidence"),
-                "status": "active",
-            },
+    if not cards and not traits:
+        print("No confirmed/emerging cards or traits to compile.")
+        return
+
+    # Render traits section
+    lines = []
+    if traits:
+        lines.append("关于这位用户")
+        for t in traits:
+            name = t.get("name") or ""
+            desc = t.get("description") or ""
+            lines.append(f"{name}。{desc}")
+        lines.append("")
+
+    # Render cards section
+    if cards:
+        lines.append("场景判断")
+        for c in cards:
+            when = c.get("applies_when") or ""
+            judgment = c.get("judgment") or ""
+            action = c.get("agent_action") or ""
+            exceptions = c.get("exceptions") or ""
+            entry = f"• {when}：{judgment} {action}"
+            if exceptions:
+                entry += f" 例外：{exceptions}"
+            lines.append(entry)
+
+    pack = "\n".join(lines)
+    print(f"=== Runtime Pack ({len(cards)} cards, {len(traits)} traits) ===\n")
+    print(pack)
+
+
+# ---------------------------------------------------------------------------
+# Twin CRUD tools — get / search / add / edit / link / batch
+# ---------------------------------------------------------------------------
+
+_TWIN_RESOURCE_TABLE = {
+    "events": "evidence_events",
+    "cards": "judgment_cards",
+    "traits": "cognitive_traits",
+}
+
+# Searchable text columns per table
+_TWIN_SEARCH_COLS = {
+    "evidence_events": ["ai_action", "user_reaction", "resolution", "lesson", "domain"],
+    "judgment_cards": ["applies_when", "judgment", "agent_action", "exceptions", "tags"],
+    "cognitive_traits": ["name", "category", "description"],
+}
+
+
+def cmd_twin_get(args):
+    """Get a single event/card/trait by ID."""
+    import db as _db
+    _db.init_db()
+    table = _TWIN_RESOURCE_TABLE.get(args.resource)
+    if not table:
+        print(f"ERROR: unknown resource '{args.resource}'. Use: events, cards, traits",
+              file=sys.stderr)
+        sys.exit(1)
+    row = _db.cm_get(table, args.id)
+    if not row:
+        print(json.dumps({"error": f"Not found: {args.resource}/{args.id}"}))
+        sys.exit(1)
+    # For cards, also include linked events
+    if args.resource == "cards":
+        linked = _db.cm_get_evidence_for_card(args.id)
+        row["linked_events"] = linked
+    print(json.dumps(row, ensure_ascii=False, indent=2, default=str))
+
+
+def cmd_twin_search(args):
+    """Search events/cards/traits by keyword across text fields."""
+    import db as _db
+    _db.init_db()
+    table = _TWIN_RESOURCE_TABLE.get(args.resource)
+    if not table:
+        print(f"ERROR: unknown resource '{args.resource}'. Use: events, cards, traits",
+              file=sys.stderr)
+        sys.exit(1)
+
+    cols = _TWIN_SEARCH_COLS[table]
+    q = args.q
+    # Build WHERE clause: match keyword in any text column
+    where_parts = [f"{c} LIKE ?" for c in cols]
+    where = "(" + " OR ".join(where_parts) + ")"
+    params = tuple(f"%{q}%" for _ in cols)
+
+    total = _db.cm_count(table, where=where, params=params)
+    rows = _db.cm_get_all(table, where=where, params=params,
+                          order="rowid DESC", limit=args.limit)
+    _twin_truncated_json(rows, args.resource, total, args.limit)
+
+
+def cmd_twin_add(args):
+    """Add a new event/card/trait. Reads JSON from stdin."""
+    import db as _db
+    _db.init_db()
+    table = _TWIN_RESOURCE_TABLE.get(args.resource)
+    if not table:
+        print(f"ERROR: unknown resource '{args.resource}'. Use: events, cards, traits",
+              file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        data = json.loads(sys.stdin.read())
+    except json.JSONDecodeError as e:
+        print(f"ERROR: invalid JSON — {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Auto-generate ID
+    prefix = {"events": "ev_", "cards": "jc_", "traits": "ct_"}[args.resource]
+    item_id = prefix + uuid.uuid4().hex[:8]
+
+    # Duplicate hint: search for similar items
+    hints = []
+    cols = _TWIN_SEARCH_COLS[table]
+    for col in cols:
+        val = data.get(col, "")
+        if val and len(val) > 10:
+            # Take first significant phrase
+            snippet = val[:30]
+            where = f"{col} LIKE ?"
+            dupes = _db.cm_get_all(table, where=where, params=(f"%{snippet}%",), limit=3)
+            for d in dupes:
+                hint_id = d.get("id", "")
+                if hint_id not in [h["id"] for h in hints]:
+                    hints.append({"id": hint_id, "match_field": col,
+                                  "preview": (d.get(col) or "")[:80]})
+
+    _db.cm_upsert(table, item_id, data)
+    result = {"ok": True, "id": item_id, "resource": args.resource, "action": "added"}
+    if hints:
+        result["possible_duplicates"] = hints[:5]
+        result["hint"] = "Similar items found. Consider using twin-edit to merge instead."
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_twin_edit(args):
+    """Edit an existing event/card/trait. Reads full JSON from stdin, overwrites."""
+    import db as _db
+    _db.init_db()
+    table = _TWIN_RESOURCE_TABLE.get(args.resource)
+    if not table:
+        print(f"ERROR: unknown resource '{args.resource}'. Use: events, cards, traits",
+              file=sys.stderr)
+        sys.exit(1)
+
+    # Check exists
+    existing = _db.cm_get(table, args.id)
+    if not existing:
+        print(json.dumps({"error": f"Not found: {args.resource}/{args.id}. Use twin-add to create new."}))
+        sys.exit(1)
+
+    try:
+        data = json.loads(sys.stdin.read())
+    except json.JSONDecodeError as e:
+        print(f"ERROR: invalid JSON — {e}", file=sys.stderr)
+        sys.exit(1)
+
+    _db.cm_upsert(table, args.id, data)
+    print(json.dumps({"ok": True, "id": args.id, "resource": args.resource, "action": "updated"},
+                     ensure_ascii=False))
+
+
+def cmd_twin_link(args):
+    """Link an event to a card, or a card to a trait."""
+    import db as _db
+    _db.init_db()
+
+    from_id = args.from_id
+    to_id = args.to_id
+
+    # Detect link type by ID prefix
+    if from_id.startswith("ev_") or from_id.startswith("p_"):
+        # event → card link: set card_id on the event
+        event = _db.cm_get("evidence_events", from_id)
+        if not event:
+            print(json.dumps({"error": f"Event not found: {from_id}"}))
+            sys.exit(1)
+        card = _db.cm_get("judgment_cards", to_id)
+        if not card:
+            print(json.dumps({"error": f"Card not found: {to_id}"}))
+            sys.exit(1)
+        _db.cm_upsert("evidence_events", from_id, {"card_id": to_id})
+        # Update card evidence_count
+        count = _db.cm_count("evidence_events", where="card_id=?", params=(to_id,))
+        _db.cm_upsert("judgment_cards", to_id, {"evidence_count": count})
+        print(json.dumps({"ok": True, "link": f"{from_id} → {to_id}",
+                          "type": "event→card", "evidence_count": count}))
+
+    elif from_id.startswith("jc_"):
+        # card → trait link: append to supporting_card_ids
+        card = _db.cm_get("judgment_cards", from_id)
+        if not card:
+            print(json.dumps({"error": f"Card not found: {from_id}"}))
+            sys.exit(1)
+        trait = _db.cm_get("cognitive_traits", to_id)
+        if not trait:
+            print(json.dumps({"error": f"Trait not found: {to_id}"}))
+            sys.exit(1)
+        existing_ids = json.loads(trait.get("supporting_card_ids") or "[]")
+        if from_id not in existing_ids:
+            existing_ids.append(from_id)
+        _db.cm_upsert("cognitive_traits", to_id, {
+            "supporting_card_ids": json.dumps(existing_ids),
+            "evidence_count": len(existing_ids),
         })
+        print(json.dumps({"ok": True, "link": f"{from_id} → {to_id}",
+                          "type": "card→trait", "evidence_count": len(existing_ids)}))
+    else:
+        print(json.dumps({"error": f"Cannot determine link type. Use ev_/p_ prefix for events, jc_ for cards."}))
+        sys.exit(1)
 
-    # 2. From tensions
-    tensions = _db.cm_get_all("cm_tensions")
-    for t in tensions:
-        overrides = t.get("context_overrides") or ""
-        first_override = ""
-        if overrides:
-            try:
-                parsed = json.loads(overrides)
-                if isinstance(parsed, list) and parsed:
-                    first_override = str(parsed[0])
-            except (json.JSONDecodeError, TypeError):
-                first_override = str(overrides)[:100]
-        new_policies.append({
-            "id": _deterministic_policy_id("tension", t["id"]),
-            "data": {
-                "condition": f"面临 {t.get('value_a','')} vs {t.get('value_b','')} 的权衡",
-                "action": t.get("default_resolution") or "",
-                "exception": first_override,
-                "rationale": f"价值张力：{t.get('value_a','')} vs {t.get('value_b','')}",
-                "source_type": "tension",
-                "source_id": t["id"],
-                "domain": "",
-                "confidence": t.get("confidence"),
-                "status": "active",
-            },
-        })
 
-    # 3. From tradeoffs
-    tradeoffs = _db.cm_get_all("cm_tradeoffs")
-    for tr in tradeoffs:
-        protect = tr.get("protect") or ""
-        sacrifice = tr.get("sacrifice") or ""
+def cmd_twin_batch(args):
+    """Execute multiple twin operations in one call. Reads JSON from stdin."""
+    import db as _db
+    _db.init_db()
+
+    try:
+        payload = json.loads(sys.stdin.read())
+    except json.JSONDecodeError as e:
+        print(f"ERROR: invalid JSON — {e}", file=sys.stderr)
+        sys.exit(1)
+
+    operations = payload.get("operations", [])
+    results = []
+
+    for i, op in enumerate(operations):
+        resource = op.get("resource", "")
+        action = op.get("action", "")
+        table = _TWIN_RESOURCE_TABLE.get(resource)
+
         try:
-            protect_str = ", ".join(json.loads(protect)) if protect.startswith("[") else protect
-        except Exception:
-            protect_str = protect
-        try:
-            sacrifice_str = ", ".join(json.loads(sacrifice)) if sacrifice.startswith("[") else sacrifice
-        except Exception:
-            sacrifice_str = sacrifice
-        new_policies.append({
-            "id": _deterministic_policy_id("tradeoff", tr["id"]),
-            "data": {
-                "condition": tr.get("context") or "",
-                "action": f"保护 {protect_str}，可牺牲 {sacrifice_str}",
-                "exception": "",
-                "rationale": tr.get("strategy") or "",
-                "source_type": "tradeoff",
-                "source_id": tr["id"],
-                "domain": "",
-                "confidence": tr.get("confidence"),
-                "status": "active",
-            },
-        })
+            if action == "add":
+                if not table:
+                    results.append({"index": i, "error": f"unknown resource: {resource}"})
+                    continue
+                prefix = {"events": "ev_", "cards": "jc_", "traits": "ct_"}[resource]
+                item_id = prefix + uuid.uuid4().hex[:8]
+                _db.cm_upsert(table, item_id, op.get("data", {}))
+                results.append({"index": i, "ok": True, "id": item_id, "action": "added"})
 
-    # 4. From communication
-    comms = _db.cm_get_all("cm_communication")
-    for c in comms:
-        new_policies.append({
-            "id": _deterministic_policy_id("communication", c["id"]),
-            "data": {
-                "condition": f"AI 进行 {c.get('domain','all')} 领域工作时",
-                "action": c.get("description") or "",
-                "exception": "",
-                "rationale": f"沟通契约: {c.get('category', '')}",
-                "source_type": "communication",
-                "source_id": c["id"],
-                "domain": c.get("domain") or "",
-                "confidence": c.get("confidence"),
-                "status": "active",
-            },
-        })
+            elif action == "edit":
+                if not table:
+                    results.append({"index": i, "error": f"unknown resource: {resource}"})
+                    continue
+                item_id = op.get("id", "")
+                if not _db.cm_get(table, item_id):
+                    results.append({"index": i, "error": f"not found: {item_id}"})
+                    continue
+                _db.cm_upsert(table, item_id, op.get("data", {}))
+                results.append({"index": i, "ok": True, "id": item_id, "action": "updated"})
 
-    # 5. From roles
-    roles = _db.cm_get_all("cm_roles")
-    for r in roles:
-        new_policies.append({
-            "id": _deterministic_policy_id("role", r["id"]),
-            "data": {
-                "condition": f"用户处于 {r.get('role','')} 角色模式时",
-                "action": r.get("behavior_profile") or "",
-                "exception": "",
-                "rationale": f"自主性级别: {r.get('autonomy_level', 'medium')}",
-                "source_type": "role",
-                "source_id": r["id"],
-                "role_mode": r.get("role") or "",
-                "domain": "",
-                "confidence": r.get("confidence"),
-                "status": "active",
-            },
-        })
+            elif action == "link":
+                from_id = op.get("from", "")
+                to_id = op.get("to", "")
+                if from_id.startswith(("ev_", "p_")):
+                    _db.cm_upsert("evidence_events", from_id, {"card_id": to_id})
+                    count = _db.cm_count("evidence_events", where="card_id=?", params=(to_id,))
+                    _db.cm_upsert("judgment_cards", to_id, {"evidence_count": count})
+                    results.append({"index": i, "ok": True, "link": f"{from_id}→{to_id}"})
+                elif from_id.startswith("jc_"):
+                    trait = _db.cm_get("cognitive_traits", to_id)
+                    if trait:
+                        ids = json.loads(trait.get("supporting_card_ids") or "[]")
+                        if from_id not in ids:
+                            ids.append(from_id)
+                        _db.cm_upsert("cognitive_traits", to_id, {
+                            "supporting_card_ids": json.dumps(ids),
+                            "evidence_count": len(ids),
+                        })
+                    results.append({"index": i, "ok": True, "link": f"{from_id}→{to_id}"})
+                else:
+                    results.append({"index": i, "error": f"unknown link type for {from_id}"})
 
-    # 6. From expertise
-    expertise = _db.cm_get_all("cm_expertise")
-    for e in expertise:
-        new_policies.append({
-            "id": _deterministic_policy_id("expertise", e["id"]),
-            "data": {
-                "condition": f"涉及 {e.get('domain','')} 领域时",
-                "action": f"用户熟练度: {e.get('depth', 'unknown')}。{e.get('autonomy_boundary') or ''}",
-                "exception": "",
-                "rationale": "",
-                "source_type": "expertise",
-                "source_id": e["id"],
-                "domain": e.get("domain") or "",
-                "confidence": e.get("confidence"),
-                "status": "active",
-            },
-        })
+            else:
+                results.append({"index": i, "error": f"unknown action: {action}"})
+        except Exception as e:
+            results.append({"index": i, "error": str(e)})
 
-    # 7. From reasoning — these are style descriptions, compile as meta-policies
-    reasoning = _db.cm_get_all("cm_reasoning")
-    for rs in reasoning:
-        new_policies.append({
-            "id": _deterministic_policy_id("reasoning", rs["id"]),
-            "data": {
-                "condition": f"推理风格维度: {rs.get('dimension','')}",
-                "action": rs.get("description") or "",
-                "exception": "",
-                "rationale": "",
-                "source_type": "reasoning",
-                "source_id": rs["id"],
-                "domain": "",
-                "confidence": rs.get("confidence"),
-                "status": "active",
-            },
-        })
-
-    # Delete old compiled policies (all source types)
-    conn = _db.get_conn()
-    conn.execute(
-        "DELETE FROM cm_policies WHERE source_type IN "
-        "('principle','tension','tradeoff','communication','role','expertise','reasoning')"
-    )
-    conn.commit()
-
-    # Insert new ones
-    for pol in new_policies:
-        _db.cm_upsert("cm_policies", pol["id"], pol["data"])
-
-    # Summary by source type
-    counts = {}
-    for p in new_policies:
-        st = p["data"]["source_type"]
-        counts[st] = counts.get(st, 0) + 1
-    parts = [f"{v} from {k}" for k, v in sorted(counts.items())]
-    print(f"Compiled {len(new_policies)} policies: {', '.join(parts)}")
+    ok_count = sum(1 for r in results if r.get("ok"))
+    err_count = sum(1 for r in results if "error" in r)
+    print(json.dumps({"ok": err_count == 0, "total": len(operations),
+                      "succeeded": ok_count, "failed": err_count,
+                      "results": results}, ensure_ascii=False, indent=2))
 
 
 # ---------------------------------------------------------------------------
@@ -2613,30 +2746,48 @@ Examples:
     sub.add_parser("aggregates", help="Print pre-computed aggregates from SQLite DB as JSON")
     sub.add_parser("profile-digest", parents=[shared], help="Pre-computed profile digest for sub-agents (JSON)")
 
-    sub.add_parser("twin-stats", parents=[shared], help="Show Cognitive Model statistics")
+    sub.add_parser("twin-stats", parents=[shared], help="Show Cognitive Handbook statistics")
 
-    p_te = sub.add_parser("twin-episodes", parents=[shared], help="List episodes from the episodes table")
+    p_te = sub.add_parser("twin-events", parents=[shared], help="List evidence events")
     p_te.add_argument("--domain", default="", help="Filter by domain")
     p_te.add_argument("--signal", default="", help="Filter by signal_type")
     p_te.add_argument("--session", default="", help="Filter by session id (substring)")
 
-    p_td = sub.add_parser("twin-dimensions", parents=[shared],
-                           help="List items from any L2 dimension table")
-    p_td.add_argument("--dimension", required=True,
-                      choices=list(_DIMENSION_TABLE_MAP.keys()),
-                      help="Which dimension table to query")
-    p_td.add_argument("--status", default="", help="Filter by status")
-    p_td.add_argument("--domain", default="", help="Filter by domain")
-    p_td.add_argument("--min-confidence", type=float, default=None, dest="min_confidence",
+    p_tc = sub.add_parser("twin-cards", parents=[shared], help="List judgment cards")
+    p_tc.add_argument("--status", default="", help="Filter by status (hypothesis/emerging/confirmed)")
+    p_tc.add_argument("--tag", default="", help="Filter by tag (substring match)")
+    p_tc.add_argument("--min-confidence", type=float, default=None, dest="min_confidence",
                       help="Minimum confidence threshold")
 
-    p_tp = sub.add_parser("twin-policies", parents=[shared], help="List policies from cm_policies")
-    p_tp.add_argument("--status", default="", help="Filter by status (active/deprecated)")
-    p_tp.add_argument("--role", default="", help="Filter by role_mode")
-    p_tp.add_argument("--domain", default="", help="Filter by domain")
+    p_tt = sub.add_parser("twin-traits", parents=[shared], help="List cognitive traits")
+    p_tt.add_argument("--status", default="", help="Filter by status")
+    p_tt.add_argument("--category", default="", help="Filter by category")
 
-    sub.add_parser("twin-write", help="Write/update/delete CM entries from JSON stdin")
-    sub.add_parser("twin-compile", help="Compile L3 policies from L2 dimensions")
+    sub.add_parser("twin-write", help="Write/update/delete cognitive handbook entries from JSON stdin")
+    sub.add_parser("twin-compile", help="Compile Runtime Pack from cards + traits")
+
+    # CRUD tools
+    p_tg = sub.add_parser("twin-get", help="Get a single event/card/trait by ID")
+    p_tg.add_argument("resource", choices=["events", "cards", "traits"])
+    p_tg.add_argument("id", help="Item ID (e.g. ev_xxx, jc_xxx, ct_xxx)")
+
+    p_ts = sub.add_parser("twin-search", parents=[shared],
+                          help="Search events/cards/traits by keyword")
+    p_ts.add_argument("resource", choices=["events", "cards", "traits"])
+    p_ts.add_argument("--q", required=True, help="Search keyword")
+
+    p_ta = sub.add_parser("twin-add", help="Add a new event/card/trait (JSON from stdin)")
+    p_ta.add_argument("resource", choices=["events", "cards", "traits"])
+
+    p_ted = sub.add_parser("twin-edit", help="Edit an existing event/card/trait (JSON from stdin)")
+    p_ted.add_argument("resource", choices=["events", "cards", "traits"])
+    p_ted.add_argument("id", help="Item ID to edit")
+
+    p_tl = sub.add_parser("twin-link", help="Link event→card or card→trait")
+    p_tl.add_argument("from_id", help="Source ID (ev_/p_ for event, jc_ for card)")
+    p_tl.add_argument("to_id", help="Target ID (jc_ for card, ct_ for trait)")
+
+    sub.add_parser("twin-batch", help="Execute multiple operations (JSON from stdin)")
 
     args = parser.parse_args()
     if not args.command:
@@ -2653,11 +2804,17 @@ Examples:
         "aggregates": cmd_aggregates,
         "profile-digest": cmd_profile_digest,
         "twin-stats": cmd_twin_stats,
-        "twin-episodes": cmd_twin_episodes,
-        "twin-dimensions": cmd_twin_dimensions,
-        "twin-policies": cmd_twin_policies,
+        "twin-events": cmd_twin_events,
+        "twin-cards": cmd_twin_cards,
+        "twin-traits": cmd_twin_traits,
         "twin-write": cmd_twin_write,
         "twin-compile": cmd_twin_compile,
+        "twin-get": cmd_twin_get,
+        "twin-search": cmd_twin_search,
+        "twin-add": cmd_twin_add,
+        "twin-edit": cmd_twin_edit,
+        "twin-link": cmd_twin_link,
+        "twin-batch": cmd_twin_batch,
     }
 
     save_path = getattr(args, "save", "")

@@ -90,6 +90,22 @@ def extract_metadata(filepath: str) :
     user_texts = []  # (message_index, text, timestamp)
     assistant_snippets = []  # (message_index, first 300 chars of text)
     msg_index = 0
+    # Insight extraction accumulators
+    _tool_daily = {}     # (day, tool_name) -> count
+    _file_refs = {}      # file_path -> count
+    _error_list = []     # [(normalized_error, day)]
+    _snippet_list = []   # [(lang, code, context, applied)]
+    _code_re = re.compile(r'```(\w*)\n([\s\S]*?)```')
+    _err_re = re.compile(
+        r'((?:Traceback.*?:\s*)?'
+        r'(?:(?:Error|Exception|TypeError|ValueError|KeyError|AttributeError|'
+        r'ImportError|ModuleNotFoundError|NameError|IndexError|RuntimeError|'
+        r'SyntaxError|FileNotFoundError|PermissionError|OSError|IOError|'
+        r'ConnectionError|TimeoutError)'
+        r'[:\s].{0,120}))',
+        re.IGNORECASE
+    )
+    _prev_user_msg = ""
 
     try:
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
@@ -131,6 +147,7 @@ def extract_metadata(filepath: str) :
                         user_texts.append(
                             {"idx": msg_index, "text": text[:2000], "ts": ts}
                         )
+                    _prev_user_msg = text[:200] if text.strip() else _prev_user_msg
                     msg_index += 1
 
                 elif msg_type == "assistant":
@@ -139,20 +156,68 @@ def extract_metadata(filepath: str) :
                     # Extract first text snippet for correction detection
                     a_content = obj.get("message", {}).get("content", [])
                     a_texts = []
+                    _code_blocks = []
+                    _tool_writes = []
                     if isinstance(a_content, list):
                         for blk in a_content:
                             if isinstance(blk, dict) and blk.get("type") == "text":
                                 t = blk.get("text", "").strip()
                                 if t:
                                     a_texts.append(t)
+                                # Insight: extract code snippets
+                                for m in _code_re.finditer(blk.get("text", "")):
+                                    lang = m.group(1) or ""
+                                    code = m.group(2).strip()
+                                    if 3 < len(code.split("\n")) <= 50 and len(code) > 30:
+                                        _code_blocks.append({"lang": lang, "code": code[:1000]})
+                            elif isinstance(blk, dict) and blk.get("type") == "tool_use":
+                                # Insight: tool usage + file refs
+                                tool_name = blk.get("name", "unknown")
+                                day = (first_ts or "")[:10]
+                                if day:
+                                    key = (day, tool_name)
+                                    _tool_daily[key] = _tool_daily.get(key, 0) + 1
+                                inp = blk.get("input", {})
+                                fp = inp.get("file_path") or inp.get("path") or ""
+                                if fp and not fp.startswith("/tmp"):
+                                    _file_refs[fp] = _file_refs.get(fp, 0) + 1
+                                if tool_name in ("Edit", "Write"):
+                                    w = inp.get("new_string", "") or inp.get("content", "")
+                                    if w:
+                                        _tool_writes.append(w[:2000])
                     elif isinstance(a_content, str) and a_content.strip():
                         a_texts.append(a_content.strip())
                     if a_texts:
                         snippet = a_texts[0][:300]
                         assistant_snippets.append({"idx": msg_index, "text": snippet, "ts": ts})
+                    # Insight: determine applied status for code snippets
+                    for cb in _code_blocks:
+                        applied = False
+                        if _tool_writes:
+                            code_lines = set(cb["code"].strip().split("\n")[:10])
+                            for tw in _tool_writes:
+                                tw_lines = set(tw.strip().split("\n")[:20])
+                                if len(code_lines & tw_lines) >= min(2, len(code_lines)):
+                                    applied = True
+                                    break
+                        _snippet_list.append((cb["lang"], cb["code"], _prev_user_msg, applied))
                     msg_index += 1
 
                 elif msg_type == "user" and obj.get("toolUseResult"):
+                    # Insight: extract errors from tool results
+                    content = obj.get("message", {}).get("content", [])
+                    if isinstance(content, list):
+                        for blk in content:
+                            if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                                result_text = blk.get("content", "")
+                                if isinstance(result_text, list):
+                                    result_text = json.dumps(result_text)
+                                if isinstance(result_text, str):
+                                    day = (first_ts or "")[:10]
+                                    for m in _err_re.finditer(result_text[:5000]):
+                                        norm = _normalize_error(m.group(1))
+                                        if len(norm) >= 10:
+                                            _error_list.append((norm, day))
                     msg_index += 1
 
     except Exception:
@@ -178,6 +243,11 @@ def extract_metadata(filepath: str) :
         "userTexts": user_texts,
         "assistantSnippets": assistant_snippets,
         "preview": user_texts[0]["text"][:200] if user_texts else "",
+        # Insight data (consumed by build_index, not stored in _index cache)
+        "_insight_tools": _tool_daily,
+        "_insight_files": _file_refs,
+        "_insight_errors": _error_list,
+        "_insight_snippets": _snippet_list,
     }
 
 
@@ -336,6 +406,19 @@ def extract_codex_metadata(filepath: str):
     user_texts = []
     assistant_snippets = []
     msg_index = 0
+    # Insight extraction accumulators
+    _tool_daily = {}
+    _file_refs = {}
+    _error_list = []
+    _err_re = re.compile(
+        r'((?:Traceback.*?:\s*)?'
+        r'(?:(?:Error|Exception|TypeError|ValueError|KeyError|AttributeError|'
+        r'ImportError|ModuleNotFoundError|NameError|IndexError|RuntimeError|'
+        r'SyntaxError|FileNotFoundError|PermissionError|OSError|IOError|'
+        r'ConnectionError|TimeoutError)'
+        r'[:\s].{0,120}))',
+        re.IGNORECASE
+    )
 
     try:
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
@@ -373,8 +456,32 @@ def extract_codex_metadata(filepath: str):
                                     assistant_snippets.append({"idx": msg_index, "text": t[:300], "ts": ts})
                                     break
                         msg_index += 1
-                    elif p_type in ("function_call", "custom_tool_call",
-                                    "function_call_output", "custom_tool_call_output"):
+                    elif p_type in ("function_call", "custom_tool_call"):
+                        # Insight: tool usage + file refs
+                        raw_name = payload.get("name", "unknown")
+                        tool_name = _CODEX_TOOL_NAMES.get(raw_name, raw_name)
+                        day = (first_ts or "")[:10]
+                        if day:
+                            key = (day, tool_name)
+                            _tool_daily[key] = _tool_daily.get(key, 0) + 1
+                        args_str = payload.get("arguments", "{}")
+                        try:
+                            args = json.loads(args_str) if isinstance(args_str, str) else {}
+                        except json.JSONDecodeError:
+                            args = {}
+                        fp = args.get("file_path") or args.get("path") or ""
+                        if fp and not fp.startswith("/tmp"):
+                            _file_refs[fp] = _file_refs.get(fp, 0) + 1
+                        msg_index += 1
+                    elif p_type in ("function_call_output", "custom_tool_call_output"):
+                        # Insight: errors from tool output
+                        output = payload.get("output", "")
+                        if isinstance(output, str):
+                            day = (first_ts or "")[:10]
+                            for m in _err_re.finditer(output[:5000]):
+                                norm = _normalize_error(m.group(1))
+                                if len(norm) >= 10:
+                                    _error_list.append((norm, day))
                         msg_index += 1
     except Exception:
         return None
@@ -401,6 +508,10 @@ def extract_codex_metadata(filepath: str):
         "preview": user_texts[0]["text"][:200] if user_texts else "",
         "source": "codex",
         "cwd": cwd or "",
+        "_insight_tools": _tool_daily,
+        "_insight_files": _file_refs,
+        "_insight_errors": _error_list,
+        "_insight_snippets": [],
     }
 
 
@@ -514,6 +625,50 @@ def load_codex_session(session_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Insight DB storage (called during index build for changed sessions)
+# ---------------------------------------------------------------------------
+def _store_session_insights(meta):
+    """Extract insight data from meta and store in DB."""
+    import db as _db
+    sid = meta["id"]
+    project = meta.get("projectName", "")
+    date_str = meta.get("date", "")
+
+    _db.clear_session_insights(sid)
+
+    tool_daily = meta.get("_insight_tools", {})
+    if tool_daily:
+        _db.bulk_insert_tool_usage([
+            (sid, day, tool, count) for (day, tool), count in tool_daily.items()
+        ])
+
+    file_refs = meta.get("_insight_files", {})
+    if file_refs:
+        _db.bulk_insert_file_refs([
+            (sid, fp, count, project) for fp, count in file_refs.items()
+        ])
+
+    error_list = meta.get("_insight_errors", [])
+    if error_list:
+        err_agg = {}
+        for norm, day in error_list:
+            if norm not in err_agg:
+                err_agg[norm] = {"day": day, "count": 0}
+            err_agg[norm]["count"] += 1
+        _db.bulk_insert_errors([
+            (sid, key, data["day"], project, data["count"])
+            for key, data in err_agg.items()
+        ])
+
+    snippet_list = meta.get("_insight_snippets", [])
+    if snippet_list:
+        _db.bulk_insert_snippets([
+            (sid, lang, code, context, date_str, int(applied))
+            for lang, code, context, applied in snippet_list
+        ])
+
+
+# ---------------------------------------------------------------------------
 # Index Building (with disk cache)
 # ---------------------------------------------------------------------------
 def build_index(force: bool = False) -> dict:
@@ -576,6 +731,7 @@ def build_index(force: bool = False) -> dict:
                         meta["_mtime"] = current_files.get(fp, 0)
                         new_sessions[meta["id"]] = meta
                         _db.upsert_session(meta, meta.get("userTexts", []), meta.get("assistantSnippets", []))
+                        _store_session_insights(meta)
                 except Exception as e:
                     print(f"Error parsing {fp}: {e}")
 
@@ -633,6 +789,7 @@ def build_index(force: bool = False) -> dict:
                         meta["_mtime"] = current_files.get(fp, 0)
                         codex_new[meta["id"]] = meta
                         _db.upsert_session(meta, meta.get("userTexts", []), meta.get("assistantSnippets", []))
+                        _store_session_insights(meta)
                 except Exception as e:
                     print(f"Error parsing Codex {fp}: {e}")
 
@@ -676,6 +833,42 @@ def build_index(force: bool = False) -> dict:
                 backfill_count += 1
         if backfill_count:
             print(f"DB backfill: {backfill_count} sessions")
+
+    # Backfill insight tables if most sessions lack insight data
+    insight_sessions = _db.get_conn().execute(
+        "SELECT COUNT(DISTINCT session_id) FROM insight_tool_usage"
+    ).fetchone()[0]
+    if insight_sessions < len(sessions) * 0.5 and len(sessions) > 0:
+        # Collect session IDs already in insight tables
+        existing_insight_sids = set(
+            r[0] for r in _db.get_conn().execute(
+                "SELECT DISTINCT session_id FROM insight_tool_usage"
+            ).fetchall()
+        )
+        print(f"Backfilling insight tables ({len(sessions) - len(existing_insight_sids)} sessions)...")
+        backfill_t = time.time()
+        backfill_n = 0
+        for sid, meta in sessions.items():
+            if sid in existing_insight_sids:
+                continue
+            fp = meta.get("filePath", "")
+            source = meta.get("source", "claude")
+            if fp and os.path.exists(fp):
+                try:
+                    fresh = extract_codex_metadata(fp) if source == "codex" else extract_metadata(fp)
+                    if fresh:
+                        fresh["projectName"] = meta.get("projectName", "")
+                        fresh["date"] = meta.get("date", "")
+                        _store_session_insights(fresh)
+                        backfill_n += 1
+                except Exception:
+                    pass
+        print(f"  Insight backfill: {backfill_n} sessions in {time.time() - backfill_t:.1f}s")
+
+    # Strip non-serializable insight data before cache write
+    for sid, meta in sessions.items():
+        for k in ("_insight_tools", "_insight_files", "_insight_errors", "_insight_snippets"):
+            meta.pop(k, None)
 
     # Save to cache
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -938,21 +1131,6 @@ def _normalize_error(msg: str) -> str:
     s = re.sub(r'0x[0-9a-f]+', '0xN', s, flags=re.IGNORECASE)
     return s[:150]
 
-
-def _record_error(patterns: dict, raw_msg: str, sid: str, day: str, project: str):
-    """Record an error pattern occurrence."""
-    key = _normalize_error(raw_msg)
-    if len(key) < 10:
-        return
-    if key not in patterns:
-        patterns[key] = {"count": 0, "sessions": set(), "projects": set(), "first": day, "last": day}
-    patterns[key]["count"] += 1
-    patterns[key]["sessions"].add(sid)
-    patterns[key]["projects"].add(project)
-    if day and day < patterns[key]["first"]:
-        patterns[key]["first"] = day
-    if day and day > patterns[key]["last"]:
-        patterns[key]["last"] = day
 
 
 # ---------------------------------------------------------------------------
@@ -1308,138 +1486,145 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                     self._handle_evolve_stream(tab, source, date, project, engine)
                 else:
                     self._json_response(self._get_evolve_tab(tab, refresh, source, date, project, engine))
-        # --- Cognitive Model (Digital Twin) endpoints ---
+        # --- Cognitive Handbook (Digital Twin) endpoints ---
         elif path == "/api/twin/stats":
             import db as _db
             self._json_response(_db.get_twin_stats())
         elif path == "/api/twin/overview":
             import db as _db
-            _TWIN_DIMENSIONS = {
-                "tensions": "cm_tensions",
-                "principles": "cm_principles",
-                "tradeoffs": "cm_tradeoffs",
-                "reasoning": "cm_reasoning",
-                "communication": "cm_communication",
-                "roles": "cm_roles",
-                "expertise": "cm_expertise",
-                "policies": "cm_policies",
-            }
             overview = {}
-            for dim, table in _TWIN_DIMENSIONS.items():
-                try:
-                    count = _db.cm_count(table)
-                    items = _db.cm_get_all(table, order="confidence DESC", limit=3)
-                    overview[dim] = {"count": count, "items": items}
-                except Exception:
-                    overview[dim] = {"count": 0, "items": []}
+            # Cards overview
+            try:
+                card_count = _db.cm_count("judgment_cards")
+                card_items = _db.cm_get_all("judgment_cards", order="confidence DESC", limit=5)
+                overview["cards"] = {"count": card_count, "items": card_items}
+            except Exception:
+                overview["cards"] = {"count": 0, "items": []}
+            # Traits overview
+            try:
+                trait_count = _db.cm_count("cognitive_traits")
+                trait_items = _db.cm_get_all("cognitive_traits", order="strength DESC", limit=50)
+                overview["traits"] = {"count": trait_count, "items": trait_items}
+            except Exception:
+                overview["traits"] = {"count": 0, "items": []}
+            # Events overview (count + top 3 high-signal)
+            try:
+                event_count = _db.cm_count("evidence_events")
+                event_items = _db.cm_get_all("evidence_events",
+                                             order="signal_intensity DESC, created_at DESC", limit=3)
+                overview["events"] = {"count": event_count, "items": event_items}
+            except Exception:
+                overview["events"] = {"count": 0, "items": []}
             self._json_response(overview)
-        elif path.startswith("/api/twin/dimension/"):
+        elif path == "/api/twin/events":
             import db as _db
-            _TWIN_DIM_TABLE = {
-                "tensions": "cm_tensions",
-                "principles": "cm_principles",
-                "tradeoffs": "cm_tradeoffs",
-                "reasoning": "cm_reasoning",
-                "communication": "cm_communication",
-                "roles": "cm_roles",
-                "expertise": "cm_expertise",
-            }
-            dim_name = path[len("/api/twin/dimension/"):]
-            if dim_name not in _TWIN_DIM_TABLE:
-                self._error(400, f"Unknown dimension: {dim_name}")
-            else:
-                table = _TWIN_DIM_TABLE[dim_name]
-                # Tables that have status/domain columns
-                _HAS_STATUS = {"cm_tensions", "cm_principles"}
-                _HAS_DOMAIN = {"cm_principles", "cm_communication"}
-                status = params.get("status", [None])[0]
-                domain = params.get("domain", [None])[0]
-                sort = params.get("sort", ["confidence"])[0]
-                limit = int(params.get("limit", ["500"])[0])
-                where_parts = []
-                where_params = []
-                if status and table in _HAS_STATUS:
-                    where_parts.append("status=?")
-                    where_params.append(status)
-                if domain and table in _HAS_DOMAIN:
-                    where_parts.append("domain=?")
-                    where_params.append(domain)
-                where = " AND ".join(where_parts)
-                order = "confidence DESC" if sort == "confidence" else "updated_at DESC"
-                items = _db.cm_get_all(table, where=where, params=tuple(where_params), order=order, limit=limit)
-                self._json_response({"dimension": dim_name, "items": items})
-        elif path.startswith("/api/twin/item/"):
-            import db as _db
-            _TWIN_TYPE_TABLE = {
-                "tension": "cm_tensions",
-                "principle": "cm_principles",
-                "tradeoff": "cm_tradeoffs",
-                "reasoning": "cm_reasoning",
-                "communication": "cm_communication",
-                "role": "cm_roles",
-                "expertise": "cm_expertise",
-                "policy": "cm_policies",
-            }
-            rest = path[len("/api/twin/item/"):]
-            parts = rest.split("/", 1)
-            if len(parts) != 2:
-                self._error(400, "Expected /api/twin/item/:type/:id")
-            else:
-                item_type, item_id = parts
-                if item_type not in _TWIN_TYPE_TABLE:
-                    self._error(400, f"Unknown item type: {item_type}")
-                else:
-                    table = _TWIN_TYPE_TABLE[item_type]
-                    item = _db.cm_get(table, item_id)
-                    if item is None:
-                        self._error(404, "Item not found")
-                    else:
-                        episodes = _db.cm_get_refs_for_target(item_type, item_id)
-                        self._json_response({"item": item, "episodes": episodes})
-        elif path == "/api/twin/policies":
-            import db as _db
-            status = params.get("status", ["active"])[0]
+            signal = params.get("signal_type", [None])[0]
             domain = params.get("domain", [None])[0]
-            role = params.get("role", [None])[0]
-            limit = int(params.get("limit", ["500"])[0])
-            where_parts = ["status=?"]
-            where_params = [status]
+            limit = int(params.get("limit", ["200"])[0])
+            where_parts, where_params = [], []
+            if signal:
+                where_parts.append("signal_type=?")
+                where_params.append(signal)
             if domain:
-                where_parts.append("domain=?")
-                where_params.append(domain)
-            if role:
-                where_parts.append("role_mode=?")
-                where_params.append(role)
+                where_parts.append("domain LIKE ?")
+                where_params.append(f"%{domain}%")
             where = " AND ".join(where_parts)
-            policies = _db.cm_get_all("cm_policies", where=where, params=tuple(where_params),
-                                       order="confidence DESC", limit=limit)
-            self._json_response({"policies": policies})
-        elif path.startswith("/api/twin/trace/"):
+            items = _db.cm_get_all("evidence_events", where=where,
+                                   params=tuple(where_params),
+                                   order="signal_intensity DESC, created_at DESC", limit=limit)
+            self._json_response({"events": items})
+        elif path == "/api/twin/cards":
             import db as _db
-            _TWIN_TYPE_TABLE2 = {
-                "tension": "cm_tensions",
-                "principle": "cm_principles",
-                "tradeoff": "cm_tradeoffs",
-                "reasoning": "cm_reasoning",
-                "communication": "cm_communication",
-                "role": "cm_roles",
-                "expertise": "cm_expertise",
-                "policy": "cm_policies",
-            }
-            policy_id = path[len("/api/twin/trace/"):]
-            policy = _db.cm_get("cm_policies", policy_id)
-            if policy is None:
-                self._error(404, "Policy not found")
+            status = params.get("status", [None])[0]
+            tag = params.get("tag", [None])[0]
+            sort = params.get("sort", ["confidence"])[0]
+            limit = int(params.get("limit", ["500"])[0])
+            where_parts, where_params = [], []
+            if status:
+                where_parts.append("status=?")
+                where_params.append(status)
+            if tag:
+                where_parts.append("tags LIKE ?")
+                where_params.append(f"%{tag}%")
+            where = " AND ".join(where_parts)
+            order = "confidence DESC" if sort == "confidence" else "updated_at DESC"
+            items = _db.cm_get_all("judgment_cards", where=where,
+                                   params=tuple(where_params), order=order, limit=limit)
+            self._json_response({"cards": items})
+        elif path == "/api/twin/traits":
+            import db as _db
+            status = params.get("status", [None])[0]
+            category = params.get("category", [None])[0]
+            limit = int(params.get("limit", ["500"])[0])
+            where_parts, where_params = [], []
+            if status:
+                where_parts.append("status=?")
+                where_params.append(status)
+            if category:
+                where_parts.append("category=?")
+                where_params.append(category)
+            where = " AND ".join(where_parts)
+            items = _db.cm_get_all("cognitive_traits", where=where,
+                                   params=tuple(where_params), order="strength DESC", limit=limit)
+            self._json_response({"traits": items})
+        elif path.startswith("/api/twin/card/"):
+            import db as _db
+            card_id = path[len("/api/twin/card/"):]
+            card = _db.cm_get("judgment_cards", card_id)
+            if card is None:
+                self._error(404, "Card not found")
             else:
-                source_type = policy.get("source_type", "")
-                source_id = policy.get("source_id", "")
-                source_item = None
-                if source_type and source_id and source_type in _TWIN_TYPE_TABLE2:
-                    source_item = _db.cm_get(_TWIN_TYPE_TABLE2[source_type], source_id)
-                episodes = []
-                if source_type and source_id:
-                    episodes = _db.cm_get_refs_for_target(source_type, source_id)
-                self._json_response({"policy": policy, "source": source_item, "episodes": episodes})
+                evidence = _db.cm_get_evidence_for_card(card_id)
+                relations = _db.cm_get_card_relations(card_id)
+                self._json_response({"card": card, "evidence": evidence, "relations": relations})
+        elif path.startswith("/api/twin/trait/"):
+            import db as _db
+            trait_id = path[len("/api/twin/trait/"):]
+            trait = _db.cm_get("cognitive_traits", trait_id)
+            if trait is None:
+                self._error(404, "Trait not found")
+            else:
+                # Load supporting cards
+                card_ids = []
+                try:
+                    card_ids = json.loads(trait.get("supporting_card_ids") or "[]")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                cards = [_db.cm_get("judgment_cards", cid) for cid in card_ids if cid]
+                cards = [c for c in cards if c]
+                self._json_response({"trait": trait, "supporting_cards": cards})
+        elif path == "/api/twin/runtime-preview":
+            import db as _db
+            cards = _db.cm_get_all("judgment_cards",
+                                   where="status IN ('confirmed','emerging')",
+                                   order="confidence DESC", limit=25)
+            traits = _db.cm_get_all("cognitive_traits",
+                                    where="status IN ('confirmed','emerging')",
+                                    order="strength DESC", limit=15)
+            # Render NL text (same logic as twin-compile)
+            lines = []
+            if traits:
+                lines.append("## 关于这位用户\n")
+                for t in traits:
+                    lines.append(f"**{t.get('name','')}**。{t.get('description','')}\n")
+            if cards:
+                lines.append("\n## 场景判断\n")
+                for c in cards:
+                    when = c.get("applies_when") or ""
+                    judgment = c.get("judgment") or ""
+                    action = c.get("agent_action") or ""
+                    exceptions = c.get("exceptions") or ""
+                    lines.append(f"**{when}**：{judgment}")
+                    if action:
+                        lines.append(f"→ {action}")
+                    if exceptions:
+                        lines.append(f"例外：{exceptions}")
+                    lines.append("")
+            self._json_response({
+                "text": "\n".join(lines),
+                "card_count": len(cards),
+                "trait_count": len(traits),
+            })
         else:
             # Serve static files (with path traversal protection)
             if path == "/":
@@ -2004,141 +2189,38 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         return "\n".join(parts)
 
     def _get_analytics(self) -> dict:
-        """Compute analytics: file hotspots, tool usage heatmap, error patterns."""
-        with _index_lock:
-            sessions = dict(_index.get("sessions", {}))
+        """Compute analytics from pre-aggregated DB tables."""
+        import db as _db
+        home = str(Path.home())
 
-        file_freq = {}      # file_path -> {count, sessions, projects}
-        tool_daily = {}     # "YYYY-MM-DD" -> {tool_name -> count}
-        error_patterns = {} # normalized_error -> {count, sessions, first, last, sample}
-
-        # Regex for common errors
-        err_re = re.compile(
-            r'((?:Traceback.*?:\s*)?'
-            r'(?:(?:Error|Exception|TypeError|ValueError|KeyError|AttributeError|'
-            r'ImportError|ModuleNotFoundError|NameError|IndexError|RuntimeError|'
-            r'SyntaxError|FileNotFoundError|PermissionError|OSError|IOError|'
-            r'ConnectionError|TimeoutError)'
-            r'[:\s].{0,120}))',
-            re.IGNORECASE
-        )
-
-        for sid, meta in sessions.items():
-            filepath = meta.get("filePath", "")
-            if not filepath or not os.path.exists(filepath):
-                continue
-
-            date_str = meta.get("date", "")
-            day = date_str[:10] if date_str else ""
-            source = meta.get("source", "claude")
-            project = meta.get("projectName", "")
-
-            try:
-                with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-                    for line in f:
-                        try:
-                            obj = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-
-                        msg_type = obj.get("type")
-
-                        # -- Claude Code tool usage --
-                        if source == "claude" and msg_type == "assistant":
-                            content = obj.get("message", {}).get("content", [])
-                            if not isinstance(content, list):
-                                continue
-                            for block in content:
-                                if not isinstance(block, dict):
-                                    continue
-                                if block.get("type") == "tool_use":
-                                    tool_name = block.get("name", "unknown")
-                                    inp = block.get("input", {})
-                                    # Tool daily count
-                                    if day:
-                                        tool_daily.setdefault(day, {})
-                                        tool_daily[day][tool_name] = tool_daily[day].get(tool_name, 0) + 1
-                                    # File hotspot
-                                    fp = inp.get("file_path") or inp.get("path") or ""
-                                    if fp and not fp.startswith("/tmp"):
-                                        file_freq.setdefault(fp, {"count": 0, "sessions": set(), "projects": set()})
-                                        file_freq[fp]["count"] += 1
-                                        file_freq[fp]["sessions"].add(sid)
-                                        file_freq[fp]["projects"].add(project)
-                                elif block.get("type") == "tool_result":
-                                    pass  # handled below
-
-                        # -- Claude Code tool results (errors) --
-                        if source == "claude" and msg_type == "user" and obj.get("toolUseResult"):
-                            content = obj.get("message", {}).get("content", [])
-                            if isinstance(content, list):
-                                for block in content:
-                                    if isinstance(block, dict) and block.get("type") == "tool_result":
-                                        result_text = block.get("content", "")
-                                        if isinstance(result_text, list):
-                                            result_text = json.dumps(result_text)
-                                        if isinstance(result_text, str):
-                                            for m in err_re.finditer(result_text[:5000]):
-                                                _record_error(error_patterns, m.group(1), sid, day, project)
-
-                        # -- Codex tool usage --
-                        if source == "codex":
-                            rec_type = obj.get("type")
-                            payload = obj.get("payload", {})
-                            if rec_type == "response_item":
-                                p_type = payload.get("type", "")
-                                if p_type in ("function_call", "custom_tool_call"):
-                                    raw_name = payload.get("name", "unknown")
-                                    tool_name = _CODEX_TOOL_NAMES.get(raw_name, raw_name)
-                                    if day:
-                                        tool_daily.setdefault(day, {})
-                                        tool_daily[day][tool_name] = tool_daily[day].get(tool_name, 0) + 1
-                                    # File from codex args
-                                    args_str = payload.get("arguments", "{}")
-                                    try:
-                                        args = json.loads(args_str) if isinstance(args_str, str) else {}
-                                    except json.JSONDecodeError:
-                                        args = {}
-                                    fp = args.get("file_path") or args.get("path") or ""
-                                    if fp and not fp.startswith("/tmp"):
-                                        file_freq.setdefault(fp, {"count": 0, "sessions": set(), "projects": set()})
-                                        file_freq[fp]["count"] += 1
-                                        file_freq[fp]["sessions"].add(sid)
-                                        file_freq[fp]["projects"].add(project)
-                                elif p_type in ("function_call_output", "custom_tool_call_output"):
-                                    output = payload.get("output", "")
-                                    if isinstance(output, str):
-                                        for m in err_re.finditer(output[:5000]):
-                                            _record_error(error_patterns, m.group(1), sid, day, project)
-
-            except Exception:
-                continue
-
-        # Serialize file hotspots (top 50)
+        # File hotspots (top 50)
+        raw_hotspots = _db.query_file_hotspots(50)
         hotspots = []
-        for fp, data in sorted(file_freq.items(), key=lambda x: -x[1]["count"])[:50]:
-            # Shorten path
-            home = str(Path.home())
+        for row in raw_hotspots:
+            fp = row["file_path"]
             short = fp.replace(home, "~") if fp.startswith(home) else fp
+            projects = [p for p in (row.get("projects") or "").split(",") if p]
             hotspots.append({
                 "path": short,
                 "fullPath": fp,
-                "count": data["count"],
-                "sessionCount": len(data["sessions"]),
-                "projects": sorted(data["projects"]),
+                "count": row["total_count"],
+                "sessionCount": row["session_count"],
+                "projects": projects,
             })
 
-        # Serialize tool heatmap (last 30 days)
+        # Tool heatmap (last 30 days)
+        raw_tools = _db.query_tool_heatmap()
+        tool_daily = {}
+        for row in raw_tools:
+            day = row["day"]
+            tool_daily.setdefault(day, {})[row["tool_name"]] = row["total"]
+
         sorted_days = sorted(tool_daily.keys(), reverse=True)[:30]
-        all_tools = set()
-        for day_tools in tool_daily.values():
-            all_tools.update(day_tools.keys())
-        # Sort tools by total frequency
         tool_totals = {}
         for day_tools in tool_daily.values():
             for t, c in day_tools.items():
                 tool_totals[t] = tool_totals.get(t, 0) + c
-        sorted_tools = sorted(all_tools, key=lambda t: -tool_totals.get(t, 0))[:15]
+        sorted_tools = sorted(tool_totals.keys(), key=lambda t: -tool_totals.get(t, 0))[:15]
 
         heatmap = {
             "days": sorted_days,
@@ -2147,16 +2229,18 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             "totals": {t: tool_totals.get(t, 0) for t in sorted_tools},
         }
 
-        # Serialize errors (top 30)
+        # Error patterns (top 30)
+        raw_errors = _db.query_error_patterns(30)
         errors = []
-        for key, data in sorted(error_patterns.items(), key=lambda x: -x[1]["count"])[:30]:
+        for row in raw_errors:
+            projects = [p for p in (row.get("projects") or "").split(",") if p]
             errors.append({
-                "pattern": key[:200],
-                "count": data["count"],
-                "sessionCount": len(data["sessions"]),
-                "projects": sorted(data["projects"]),
-                "firstSeen": data["first"],
-                "lastSeen": data["last"],
+                "pattern": row["error_key"][:200],
+                "count": row["total_count"],
+                "sessionCount": row["session_count"],
+                "projects": projects,
+                "firstSeen": row.get("first_seen", ""),
+                "lastSeen": row.get("last_seen", ""),
             })
 
         return {"hotspots": hotspots, "heatmap": heatmap, "errors": errors}
@@ -2232,92 +2316,22 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         return {"request": first_user_msg, "files": file_list, "tools": tool_counts}
 
     def _get_snippets(self) -> dict:
-        """F12: Solution Snippet Library — extract code blocks with Applied detection."""
-        with _index_lock:
-            sessions = dict(_index.get("sessions", {}))
-
+        """Solution Snippet Library from pre-aggregated DB."""
+        import db as _db
+        raw = _db.query_snippets(150)
         snippets = []
-        code_re = re.compile(r'```(\w*)\n([\s\S]*?)```')
-
-        for sid, meta in sessions.items():
-            filepath = meta.get("filePath", "")
-            source = meta.get("source", "claude")
-            if source != "claude" or not filepath or not os.path.exists(filepath):
-                continue
-
-            project = meta.get("projectName", "")
-            title = meta.get("title", "Untitled")
-            prev_user_msg = ""
-
-            try:
-                with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-                    for line in f:
-                        try:
-                            obj = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        msg_type = obj.get("type")
-                        if msg_type == "user" and not obj.get("toolUseResult"):
-                            content = obj.get("message", {}).get("content", [])
-                            prev_user_msg = _extract_user_text(content)[:200]
-                        elif msg_type == "assistant":
-                            content = obj.get("message", {}).get("content", [])
-                            if not isinstance(content, list):
-                                continue
-                            # Collect code blocks and tool_use in this turn
-                            code_blocks = []
-                            tool_writes = []  # content from Edit/Write tool_use
-                            for block in content:
-                                if not isinstance(block, dict):
-                                    continue
-                                if block.get("type") == "text":
-                                    text = block.get("text", "")
-                                    for m in code_re.finditer(text):
-                                        lang = m.group(1) or ""
-                                        code = m.group(2).strip()
-                                        if 3 < len(code.split("\n")) <= 50 and len(code) > 30:
-                                            code_blocks.append({"lang": lang, "code": code[:1000]})
-                                elif block.get("type") == "tool_use":
-                                    name = block.get("name", "")
-                                    if name in ("Edit", "Write"):
-                                        inp = block.get("input", {})
-                                        # Collect written content for matching
-                                        w = inp.get("new_string", "") or inp.get("content", "")
-                                        if w:
-                                            tool_writes.append(w[:2000])
-
-                            # Determine applied status for each code block
-                            for cb in code_blocks:
-                                applied = False
-                                if tool_writes:
-                                    # Check if any tool write overlaps with this code
-                                    code_lines = set(cb["code"].strip().split("\n")[:10])
-                                    for tw in tool_writes:
-                                        tw_lines = set(tw.strip().split("\n")[:20])
-                                        overlap = code_lines & tw_lines
-                                        if len(overlap) >= min(2, len(code_lines)):
-                                            applied = True
-                                            break
-                                snippets.append({
-                                    "sessionId": sid,
-                                    "sessionTitle": title,
-                                    "project": project,
-                                    "language": cb["lang"],
-                                    "code": cb["code"],
-                                    "context": prev_user_msg,
-                                    "date": meta.get("date", ""),
-                                    "applied": applied,
-                                })
-            except Exception:
-                continue
-
-            if len(snippets) >= 300:
-                break
-
-        # Sort: applied first, then newest first (two stable sorts)
-        snippets.sort(key=lambda s: s.get("date", ""), reverse=True)
-        snippets.sort(key=lambda s: not s.get("applied", False))
-        return {"snippets": snippets[:150]}
+        for row in raw:
+            snippets.append({
+                "sessionId": row["session_id"],
+                "sessionTitle": row.get("session_title") or "Untitled",
+                "project": row.get("project") or "",
+                "language": row.get("language") or "",
+                "code": row.get("code") or "",
+                "context": row.get("context") or "",
+                "date": row.get("date") or "",
+                "applied": bool(row.get("applied")),
+            })
+        return {"snippets": snippets}
 
     def _get_file_evolution(self, file_path: str) -> dict:
         """F13: Cross-session edit timeline for a specific file."""
@@ -2749,14 +2763,14 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         self._json_response(result)
 
     def _handle_twin_analyze(self):
-        """POST /api/twin/analyze — run 2-stage cognitive model extraction via AI."""
+        """POST /api/twin/analyze — run 4-stage cognitive handbook extraction via AI."""
         import db as _db
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
 
         self._start_sse()
 
-        # Stage 1: Episode extraction
-        self._sse_event({"type": "text", "content": "Stage 1/3: 从对话历史中提取事件记录 (Episodes)...\n"})
+        # Stage 1: Evidence event extraction
+        self._sse_event({"type": "text", "content": "Stage 1/4: 从对话历史中提取决策事件 (Evidence Events)...\n"})
 
         stage1_prompt = self._build_twin_stage1_prompt(cli_path)
         try:
@@ -2770,8 +2784,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             except BrokenPipeError:
                 return
 
-        # Stage 2: Cognitive model inference (7 dimensions)
-        self._sse_event({"type": "text", "content": "\n\nStage 2/3: 从事件中推断认知模型 (7 维度)...\n"})
+        # Stage 2: Judgment card distillation
+        self._sse_event({"type": "text", "content": "\n\nStage 2/4: 从事件中蒸馏判断卡 (Judgment Cards)...\n"})
 
         stage2_prompt = self._build_twin_stage2_prompt(cli_path)
         try:
@@ -2785,8 +2799,23 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             except BrokenPipeError:
                 return
 
-        # Stage 3: Compile policies (pure Python, no AI)
-        self._sse_event({"type": "text", "content": "\n\nStage 3/3: 编译策略 (twin-compile)...\n"})
+        # Stage 3: Cognitive trait inference
+        self._sse_event({"type": "text", "content": "\n\nStage 3/4: 从判断卡归纳认知特质 (Cognitive Traits)...\n"})
+
+        stage3_prompt = self._build_twin_stage3_prompt(cli_path)
+        try:
+            for evt in _run_ai_engine_stream(stage3_prompt, allow_write=True, timeout=600):
+                self._sse_event(evt)
+        except BrokenPipeError:
+            return
+        except Exception as e:
+            try:
+                self._sse_event({"type": "error", "message": f"Stage 3 failed: {e}"})
+            except BrokenPipeError:
+                return
+
+        # Stage 4: Compile Runtime Pack (pure Python, no AI)
+        self._sse_event({"type": "text", "content": "\n\nStage 4/4: 编译 Runtime Pack (twin-compile)...\n"})
         try:
             r = subprocess.run(
                 [sys.executable, cli_path, "twin-compile"],
@@ -2802,11 +2831,10 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         _db.init_db()
         stats = _db.get_twin_stats()
         summary_parts = []
-        for t in ["episodes", "cm_tensions", "cm_principles", "cm_tradeoffs",
-                   "cm_reasoning", "cm_communication", "cm_roles", "cm_expertise", "cm_policies"]:
+        for t in ["evidence_events", "judgment_cards", "cognitive_traits"]:
             count = stats.get(t, {}).get("count", 0)
             if count > 0:
-                label = t.replace("cm_", "")
+                label = t.replace("_", " ")
                 summary_parts.append(f"{label}: {count}")
 
         summary = ", ".join(summary_parts) if summary_parts else "暂无数据"
@@ -2817,13 +2845,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             pass
 
     def _build_twin_stage1_prompt(self, cli_path: str) -> str:
-        """Build prompt for Stage 1: Episode extraction from conversation history."""
+        """Build prompt for Stage 1: Evidence event extraction from conversation history."""
         digest = self._collect_profile_digest("all", "all", "", cli_path)
 
         return f"""# Background
 
-You are extracting structured EPISODES from a user's AI conversation history.
-An episode is a record of: what the AI did → how the user reacted → what lesson was learned.
+You are extracting structured EVIDENCE EVENTS from a user's AI conversation history.
+An evidence event records: what the AI did → how the user reacted → what lesson was learned.
 
 # CLI Tool
 
@@ -2836,9 +2864,15 @@ Commands for exploration:
   read <id> -s   — Read a specific session (summary mode)
   search <q>     — Full-text search across sessions
 
+Commands for reading existing data:
+  twin-events [--domain X] [--signal Y] [--limit N] --json  — List existing evidence events
+  twin-get events <id>                                      — Get a single event by ID
+  twin-search events --q "keyword" --json                   — Search events by keyword
+
 Commands for writing:
-  twin-write     — Write episodes to database (reads JSON from stdin)
-  twin-episodes  — List existing episodes (to check for duplicates)
+  twin-add events       — Add a new event (JSON from stdin, auto-generates ID)
+  twin-edit events <id> — Edit an existing event (JSON from stdin, overwrites)
+  twin-batch            — Execute multiple add/edit operations in one call
 
 # Pre-computed Profile Digest
 
@@ -2846,32 +2880,44 @@ Commands for writing:
 
 # Task
 
-1. First, run `python3 {cli_path} twin-episodes --limit 10` to see what episodes already exist (avoid duplicates).
+1. First, run `python3 {cli_path} twin-events --json` to see ALL existing events. Check what's already been captured — avoid duplicates.
 2. Run `python3 {cli_path} corrections --limit 100` to get all correction events.
 3. Run `python3 {cli_path} highlights --limit 20` to find high-signal sessions.
 4. For the top 5-8 most interesting sessions, run `python3 {cli_path} read <id> -s` to understand context.
 5. Also run `python3 {cli_path} queries --limit 50` and look for acceptance patterns — cases where the user did NOT correct the AI (positive signals).
 
-From these, extract 20-40 structured episodes. Each episode captures one meaningful interaction:
+From these, extract new evidence events. Compare with existing events — if an event already exists for the same session and similar situation, use `twin-edit` to update/enrich it. Only `twin-add` genuinely new events.
 
-For EACH episode, write it using twin-write:
+Write events using the CRUD tools:
 
-python3 {cli_path} twin-write <<'TWIN_EOF'
-{{"table": "episodes", "operations": [
-  {{"action": "insert", "data": {{
-    "session_id": "actual-session-id",
-    "event_index": 1,
-    "task_type": "coding|review|design|research|communication",
-    "ai_action": "AI did what (1 sentence)",
-    "user_reaction": "User reacted how (1 sentence)",
-    "resolution": "What happened in the end",
-    "lesson": "What we learned from this (reusable insight)",
-    "signal_type": "correction|acceptance|escalation|question",
-    "signal_intensity": 0.0-1.0,
-    "domain": "domain tag (e.g., coding/scope, review/verification, design/architecture)"
-  }}}}
+# Add a new event:
+python3 {cli_path} twin-add events <<'EOF'
+{{
+  "session_id": "actual-session-id",
+  "event_index": 1,
+  "task_type": "coding|review|design|research|communication",
+  "ai_action": "AI did what (1 sentence)",
+  "user_reaction": "User reacted how (1 sentence)",
+  "resolution": "What happened in the end",
+  "lesson": "What we learned from this (reusable insight)",
+  "signal_type": "correction|acceptance|escalation|question",
+  "signal_intensity": 0.0-1.0,
+  "domain": "domain tag (e.g., coding/scope, review/verification, design/architecture)"
+}}
+EOF
+
+# Edit an existing event (e.g. enrich lesson, update intensity):
+python3 {cli_path} twin-edit events <event_id> <<'EOF'
+{{"lesson": "improved lesson text", "signal_intensity": 0.85}}
+EOF
+
+# Or use batch for multiple operations at once:
+python3 {cli_path} twin-batch <<'EOF'
+{{"operations": [
+  {{"resource": "events", "action": "add", "data": {{...}}}},
+  {{"resource": "events", "action": "edit", "id": "ev_xxx", "data": {{...}}}}
 ]}}
-TWIN_EOF
+EOF
 
 Quality requirements:
 - MUST include real session_id from the corrections/highlights data
@@ -2879,27 +2925,19 @@ Quality requirements:
 - domain: use slash format like "coding/scope", "review/neutrality", "design/simplicity"
 - lesson: write as a reusable insight, not specific to one case
 - Balance: include BOTH correction episodes AND acceptance episodes (positive signals)
-- Check existing episodes first to avoid duplicates (same session_id + similar event)
+- IMPORTANT: Always check existing events first. If a similar event exists, use twin-edit to enrich it rather than creating a duplicate with twin-add.
 - All text in Chinese
 """
 
     def _build_twin_stage2_prompt(self, cli_path: str) -> str:
-        """Build prompt for Stage 2: Cognitive model inference from episodes."""
+        """Build prompt for Stage 2: Judgment card distillation from evidence events."""
         import db as _db
         _db.init_db()
 
-        # Get existing data for dedup
-        existing_tensions = _db.cm_get_all("cm_tensions", limit=100)
-        existing_principles = _db.cm_get_all("cm_principles", limit=200)
-        existing_tradeoffs = _db.cm_get_all("cm_tradeoffs", limit=50)
-        existing_reasoning = _db.cm_get_all("cm_reasoning", limit=20)
-        existing_communication = _db.cm_get_all("cm_communication", limit=50)
-        existing_roles = _db.cm_get_all("cm_roles", limit=20)
-        existing_expertise = _db.cm_get_all("cm_expertise", limit=30)
-
-        # Get episodes
-        episodes = _db.cm_get_all("episodes", order="created_at DESC", limit=100)
-        episodes_json = json.dumps([dict(e) for e in episodes], ensure_ascii=False, default=str)
+        # Get existing cards for dedup
+        existing_cards = _db.cm_get_all("judgment_cards", limit=100)
+        events = _db.cm_get_all("evidence_events", order="created_at DESC", limit=100)
+        events_json = json.dumps([dict(e) for e in events], ensure_ascii=False, default=str)
 
         # Get existing Profile/Memory as supplementary input
         profile_cache = CACHE_DIR / "evolve" / "profile.json"
@@ -2923,160 +2961,263 @@ Quality requirements:
         except Exception:
             pass
 
-        def _fmt_existing(table_name, items, fields):
-            if not items:
-                return f"  (empty — no existing {table_name})"
+        existing_cards_str = ""
+        if existing_cards:
             lines = []
-            for item in items[:20]:
-                parts = [f"{f}={json.dumps(item.get(f,''), ensure_ascii=False)}" for f in fields]
-                lines.append(f"  id={item.get('id','')} {' '.join(parts)}")
-            return "\n".join(lines)
-
-        existing_data = f"""
-=== Existing Cognitive Model Data (for dedup — merge if similar, insert if new) ===
-
-Tensions ({len(existing_tensions)}):
-{_fmt_existing("tensions", existing_tensions, ["value_a", "value_b", "status", "confidence"])}
-
-Principles ({len(existing_principles)}):
-{_fmt_existing("principles", existing_principles, ["statement", "status", "confidence"])}
-
-Tradeoffs ({len(existing_tradeoffs)}):
-{_fmt_existing("tradeoffs", existing_tradeoffs, ["context", "confidence"])}
-
-Reasoning ({len(existing_reasoning)}):
-{_fmt_existing("reasoning", existing_reasoning, ["dimension", "description"])}
-
-Communication ({len(existing_communication)}):
-{_fmt_existing("communication", existing_communication, ["category", "description"])}
-
-Roles ({len(existing_roles)}):
-{_fmt_existing("roles", existing_roles, ["role", "behavior_profile"])}
-
-Expertise ({len(existing_expertise)}):
-{_fmt_existing("expertise", existing_expertise, ["domain", "depth"])}
-"""
+            for c in existing_cards[:30]:
+                lines.append(f"  id={c.get('id','')} applies_when={json.dumps(c.get('applies_when',''), ensure_ascii=False)} "
+                             f"judgment={json.dumps((c.get('judgment','') or '')[:80], ensure_ascii=False)} "
+                             f"tags={c.get('tags','')} status={c.get('status','')} confidence={c.get('confidence','')}")
+            existing_cards_str = "\n".join(lines)
+        else:
+            existing_cards_str = "  (empty — no existing cards)"
 
         return f"""# Background
 
-You are building a COGNITIVE MODEL from structured episodes extracted from a user's AI conversation history.
-The cognitive model has 7 dimensions. For each dimension, you analyze episodes to infer patterns.
+You are distilling JUDGMENT CARDS from structured evidence events extracted from a user's AI conversation history.
+A judgment card captures a situation-specific judgment pattern: when does this apply → how the user thinks about it → what the AI should do.
 
 # CLI Tool
 
-  python3 {cli_path} twin-write    — Write cognitive model data (reads JSON from stdin)
-  python3 {cli_path} twin-dimensions --dimension <name>  — Check existing items
+  python3 {cli_path} <command>
 
-# Episodes (input data)
+Commands for reading:
+  twin-cards [--status X] [--tag Y] --json    — List all existing judgment cards
+  twin-get cards <id>                         — Get a single card with linked events
+  twin-search cards --q "keyword" --json      — Search cards by keyword
+  twin-events --json                          — List all evidence events
 
-{episodes_json}
+Commands for writing:
+  twin-add cards        — Add a new card (JSON from stdin)
+  twin-edit cards <id>  — Edit an existing card (JSON from stdin, overwrites)
+  twin-link <event_id> <card_id>  — Link an event to a card
+  twin-batch            — Execute multiple operations in one call
+
+# Evidence Events (input data)
+
+{events_json}
 
 # Supplementary data
 
 {profile_summary}
 {memory_summary}
 
-{existing_data}
+# Existing Judgment Cards (for dedup — merge if similar, insert if new)
+
+{existing_cards_str}
 
 # Task
 
-Analyze the episodes above and extract insights for ALL 7 dimensions.
-For each item, FIRST check the existing data above. If a similar item exists, use "update" to merge (add evidence, update confidence). If it's genuinely new, use "insert".
+Analyze the events above and distill judgment cards. This is INCREMENTAL — you are updating an existing knowledge base, not building from scratch.
 
-Write ALL dimensions in a SINGLE twin-write call per dimension (batch operations).
+**Workflow:**
 
-## Dimension 1: Tensions (cm_tensions)
-Value conflicts the user resolves repeatedly.
-```
-python3 {cli_path} twin-write <<'TWIN_EOF'
-{{"table": "cm_tensions", "operations": [
-  {{"action": "insert|update", "id": "t1", "data": {{
-    "value_a": "价值A", "value_b": "价值B",
-    "default_resolution": "默认保护哪一端",
-    "context_overrides": "[{{\\"context\\": \\"例外场景\\", \\"resolution\\": \\"此时保护另一端\\"}}]",
-    "confidence": 0.0-1.0, "episode_count": N, "status": "hypothesis|emerging|confirmed"
-  }}}}
+1. First review the existing cards above carefully.
+2. For each cluster of related events, decide:
+   - **If a similar card already exists** → use `twin-edit cards <id>` to refine it (improve judgment text, update confidence, etc.)
+   - **If it's a genuinely new pattern** → use `twin-add cards` to create a new card
+3. After creating/updating cards, link events to cards using `twin-link <event_id> <card_id>`
+
+**Writing examples:**
+
+# Add a new card:
+python3 {cli_path} twin-add cards <<'EOF'
+{{
+  "applies_when": "触发场景（1-2句）",
+  "judgment": "用户的推理逻辑（自然语言段落，2-4句）",
+  "agent_action": "AI 应该怎么做（1-2句）",
+  "exceptions": "例外条件",
+  "tags": "[\\"tag1\\", \\"tag2\\"]",
+  "confidence": 0.7,
+  "status": "hypothesis",
+  "evidence_count": 1
+}}
+EOF
+
+# Edit an existing card (e.g. strengthen with new evidence):
+python3 {cli_path} twin-edit cards jc_xxx <<'EOF'
+{{
+  "judgment": "refined judgment text...",
+  "confidence": 0.85,
+  "status": "emerging",
+  "evidence_count": 3
+}}
+EOF
+
+# Link events to cards:
+python3 {cli_path} twin-link ev_xxx jc_yyy
+
+# Or batch multiple operations:
+python3 {cli_path} twin-batch <<'EOF'
+{{"operations": [
+  {{"resource": "cards", "action": "add", "data": {{...}}}},
+  {{"resource": "cards", "action": "edit", "id": "jc_xxx", "data": {{...}}}},
+  {{"resource": "link", "action": "link", "from": "ev_xxx", "to": "jc_yyy"}}
 ]}}
-TWIN_EOF
-```
+EOF
 
-## Dimension 2: Principles (cm_principles)
-Causal beliefs connecting values to rules. Format: "Because X (cause), therefore Y (effect)."
-Fields: statement, cause, effect, domain, tension_ids (JSON array of related tension ids), confidence, status, episode_count
+# Key design principles
 
-## Dimension 3: Tradeoffs (cm_tradeoffs)
-Context-specific protect/sacrifice decisions.
-Fields: context, protect (JSON array), sacrifice (JSON array), strategy, confidence, episode_count
+- **judgment field is natural language**: Merge the user's values, causal reasoning into a coherent paragraph. The consumer is an LLM — NL is its most efficient input format.
+- **agent_action is executable**: Write it as a concrete instruction the AI can follow, not an abstract principle.
+- **Tags for retrieval**: Use consistent tag vocabulary (scope, style, communication, design, review, testing, etc.)
+- **Status rules**: first appearance → "hypothesis"; supported by 2+ events from different contexts → "emerging"; 3+ events across projects → "confirmed"
+- **All text in Chinese**
+- **Dedup carefully**: Two events about "不要改无关文件" and "只改必要代码" should merge into one card, not create two. Use `twin-edit` to merge, not `twin-add` to duplicate.
+"""
 
-## Dimension 4: Reasoning (cm_reasoning)
-How the user thinks: evidence-first? bottom-up? explicit-uncertainty?
-Fields: dimension (label), description, evidence (JSON array of quotes), confidence
+    def _build_twin_stage3_prompt(self, cli_path: str) -> str:
+        """Build prompt for Stage 3: Cognitive trait inference from judgment cards."""
+        import db as _db
+        _db.init_db()
 
-## Dimension 5: Communication (cm_communication)
-What the AI must do / must avoid / must verify.
-Fields: category (must_do|must_avoid|must_verify), description, domain, confidence, episode_count
+        cards = _db.cm_get_all("judgment_cards", order="confidence DESC", limit=100)
+        cards_json = json.dumps([dict(c) for c in cards], ensure_ascii=False, default=str)
 
-## Dimension 6: Roles (cm_roles)
-Different behavior modes for different task types.
-Fields: role (architect|debugger|reviewer|writer|researcher), behavior_profile, key_preferences (JSON), autonomy_level (high|medium|low), confidence, episode_count
+        existing_traits = _db.cm_get_all("cognitive_traits", limit=50)
+        existing_str = ""
+        if existing_traits:
+            lines = []
+            for t in existing_traits[:20]:
+                lines.append(f"  id={t.get('id','')} name={json.dumps(t.get('name',''), ensure_ascii=False)} "
+                             f"category={t.get('category','')} status={t.get('status','')} strength={t.get('strength','')}")
+            existing_str = "\n".join(lines)
+        else:
+            existing_str = "  (empty — no existing traits)"
 
-## Dimension 7: Expertise (cm_expertise)
-Domain knowledge depth and autonomy boundaries.
-Fields: domain, depth (expert|proficient|familiar|novice), session_count, key_patterns (JSON), autonomy_boundary, confidence
+        return f"""# Background
 
-# Quality requirements
-- Extract 5-15 items per dimension (fewer for stable dimensions like reasoning/roles)
-- All text in Chinese
-- Status rules: first appearance → "hypothesis"; if supported by 2+ episodes from different contexts → "emerging"; if 3+ episodes across projects → "confirmed"
-- For "update" actions: merge evidence, increase episode_count, possibly upgrade status
-- Episode refs: after writing all dimensions, link episodes to items using episode_refs:
-```
-python3 {cli_path} twin-write <<'TWIN_EOF'
-{{"table": "episode_refs", "operations": [
-  {{"action": "insert", "data": {{"episode_id": "ep_xxx", "target_type": "principle", "target_id": "p1"}}}}
-]}}
-TWIN_EOF
-```
+You are inferring COGNITIVE TRAITS from judgment cards. Traits are personality-level characteristics
+that explain WHY the user makes certain judgments. Multiple cards pointing to the same underlying
+pattern should be abstracted into one trait.
+
+# CLI Tool
+
+  python3 {cli_path} <command>
+
+Commands for reading:
+  twin-traits [--category X] [--status X] --json  — List existing cognitive traits
+  twin-get traits <id>                             — Get a single trait by ID
+  twin-search traits --q "keyword" --json          — Search traits by keyword
+  twin-cards --json                                — List all judgment cards
+
+Commands for writing:
+  twin-add traits        — Add a new trait (JSON from stdin)
+  twin-edit traits <id>  — Edit an existing trait (JSON from stdin, overwrites)
+  twin-link <card_id> <trait_id>  — Link a card to a trait
+  twin-batch             — Execute multiple operations in one call
+
+# Judgment Cards (input data)
+
+{cards_json}
+
+# Existing Cognitive Traits (for dedup)
+
+{existing_str}
+
+# Task
+
+Analyze the judgment cards above and infer cognitive traits. This is INCREMENTAL — update existing traits or add new ones.
+
+Categories:
+- **价值取向**: What the user protects/sacrifices (e.g., 极简主义, 最小影响原则)
+- **决策风格**: How the user makes judgments (e.g., 证据先行, 风险厌恶, 谨慎型)
+- **协作模式**: How the user works with AI (e.g., 高控制偏好, 主导型, 方案先行)
+- **能力边界**: Domain expertise levels (e.g., 后端专家/前端学习中)
+- **思维模式**: Cognitive habits (e.g., 系统性思维, 发散-收敛型)
+
+**Workflow:**
+
+1. Review existing traits above.
+2. For each group of related cards:
+   - **If a similar trait exists** → `twin-edit traits <id>` to refine description, update strength
+   - **If genuinely new** → `twin-add traits`
+3. Link supporting cards to traits: `twin-link jc_xxx ct_yyy`
+
+**Writing examples:**
+
+# Add a new trait:
+python3 {cli_path} twin-add traits <<'EOF'
+{{
+  "name": "特质名称",
+  "category": "价值取向|决策风格|协作模式|能力边界|思维模式",
+  "description": "自然语言描述（2-4句）",
+  "strength": 0.7,
+  "supporting_card_ids": "[\\"jc_xxx\\", \\"jc_yyy\\"]",
+  "status": "emerging",
+  "evidence_count": 2
+}}
+EOF
+
+# Edit an existing trait:
+python3 {cli_path} twin-edit traits ct_xxx <<'EOF'
+{{
+  "description": "refined description...",
+  "strength": 0.85,
+  "status": "confirmed"
+}}
+EOF
+
+# Key principles
+- **Each trait must be supported by ≥2 cards**: Don't infer traits from a single card
+- **description is natural language**: Explain the trait so an AI can predict behavior in new scenarios
+- **supporting_card_ids must reference real card IDs** from the input data above
+- **Dedup carefully**: If a similar trait exists, use twin-edit to enrich it, not twin-add to duplicate
+- **Status follows card evidence**: all hypothesis cards → hypothesis; emerging/confirmed cards → emerging/confirmed
+- **All text in Chinese**
 """
 
     def _handle_twin_sync(self):
-        """POST /api/twin/sync — compile runtime pack from cm_policies into CLAUDE.md and memory files."""
+        """POST /api/twin/sync — compile runtime pack from cards+traits into CLAUDE.md."""
         import db as _db
 
-        CM_MARKER_START = "<!-- cognitive-model:start -->"
-        CM_MARKER_END = "<!-- cognitive-model:end -->"
+        CM_MARKER_START = "<!-- cognitive-handbook:start -->"
+        CM_MARKER_END = "<!-- cognitive-handbook:end -->"
 
         try:
-            policies = _db.cm_get_all(
-                "cm_policies",
-                where="status=?",
-                params=("active",),
+            cards = _db.cm_get_all(
+                "judgment_cards",
+                where="status IN ('confirmed','emerging')",
                 order="confidence DESC",
                 limit=25,
+            )
+            traits = _db.cm_get_all(
+                "cognitive_traits",
+                where="status IN ('confirmed','emerging')",
+                order="strength DESC",
+                limit=15,
             )
         except Exception as e:
             self._json_response({"ok": False, "error": str(e)})
             return
 
-        # Build CLAUDE.md section
-        lines = [CM_MARKER_START, "## Cognitive Model Policies (Auto-sync)", ""]
-        for p in policies:
-            condition = p.get("condition", "") or ""
-            action = p.get("action", "") or ""
-            exception = p.get("exception", "") or ""
-            rationale = p.get("rationale", "") or ""
-            pid = p.get("id", "")
-            conf = p.get("confidence", 0)
-            lines.append(f"### {pid} (confidence: {conf:.2f})" if isinstance(conf, (int, float)) else f"### {pid}")
-            if condition:
-                lines.append(f"When: {condition}")
-            if action:
-                lines.append(f"Do: {action}")
-            if exception:
-                lines.append(f"Unless: {exception}")
-            if rationale:
-                lines.append(f"Why: {rationale}")
+        # Build CLAUDE.md section — render as natural language
+        lines = [CM_MARKER_START, "## Cognitive Handbook (Auto-sync)", ""]
+
+        if traits:
+            lines.append("### 关于这位用户")
             lines.append("")
+            for t in traits:
+                name = t.get("name") or ""
+                desc = t.get("description") or ""
+                lines.append(f"**{name}**。{desc}")
+                lines.append("")
+
+        if cards:
+            lines.append("### 场景判断")
+            lines.append("")
+            for c in cards:
+                when = c.get("applies_when") or ""
+                judgment = c.get("judgment") or ""
+                action = c.get("agent_action") or ""
+                exceptions = c.get("exceptions") or ""
+                lines.append(f"**{when}**：{judgment}")
+                if action:
+                    lines.append(f"→ {action}")
+                if exceptions:
+                    lines.append(f"例外：{exceptions}")
+                lines.append("")
+
         lines.append(CM_MARKER_END)
         section = "\n".join(lines) + "\n"
 
@@ -3095,56 +3236,11 @@ TWIN_EOF
             claude_md_status = "appended"
         CLAUDE_MD_PATH.write_text(new_text, encoding="utf-8")
 
-        # Write individual memory files
-        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        mem_created, mem_updated = 0, 0
-        for p in policies:
-            pid = p.get("id", "")
-            if not pid:
-                continue
-            condition = p.get("condition", "") or ""
-            action_text = p.get("action", "") or ""
-            exception = p.get("exception", "") or ""
-            rationale = p.get("rationale", "") or ""
-            desc = condition or pid
-            name_kebab = _sanitize_filename(desc)
-            fname = f"cognitive_{pid}.md"
-            fpath = MEMORY_DIR / fname
-            is_update = fpath.exists()
-
-            body = ""
-            if condition:
-                body += f"When: {condition}\n"
-            if action_text:
-                body += f"Do: {action_text}\n"
-            if exception:
-                body += f"Unless: {exception}\n"
-            if rationale:
-                body += f"Why: {rationale}\n"
-            body = body.strip() or desc
-
-            content_lines = [
-                "---",
-                f"name: {name_kebab}",
-                f"description: {desc}",
-                "type: policy",
-                "source: twin-sync",
-                "---",
-                "",
-                body,
-                "",
-            ]
-            fpath.write_text("\n".join(content_lines), encoding="utf-8")
-            if is_update:
-                mem_updated += 1
-            else:
-                mem_created += 1
-
         self._json_response({
             "ok": True,
-            "policies_synced": len(policies),
+            "cards_synced": len(cards),
+            "traits_synced": len(traits),
             "claude_md": {"status": claude_md_status, "lines": len(section.strip().split("\n"))},
-            "memory": {"created": mem_created, "updated": mem_updated},
         })
 
     def log_message(self, format, *args):
@@ -3439,18 +3535,6 @@ def main():
     t0 = time.time()
     build_index()
     print(f"Index built in {time.time() - t0:.1f}s")
-
-    # Pre-compute heavy endpoints in background so Insights loads instantly
-    def _precompute_heavy():
-        handler = ChatViewerHandler.__new__(ChatViewerHandler)
-        t1 = time.time()
-        _cached("analytics", handler._get_analytics)
-        print(f"  Analytics pre-computed in {time.time() - t1:.1f}s")
-        t1 = time.time()
-        _cached("snippets", handler._get_snippets)
-        print(f"  Snippets pre-computed in {time.time() - t1:.1f}s")
-    bg = threading.Thread(target=_precompute_heavy, daemon=True)
-    bg.start()
 
     ThreadingHTTPServer.allow_reuse_address = True
     server = ThreadingHTTPServer(("127.0.0.1", PORT), ChatViewerHandler)

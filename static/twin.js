@@ -1,19 +1,18 @@
 /**
- * Digital Twin — Cognitive Model UI
+ * Digital Twin — Cognitive Handbook UI
  * Rich streaming analysis + wiki-style navigation
  * Reuses evolve.js streaming patterns (tool groups, text blocks, thinking dots)
  */
 (function () {
   "use strict";
 
-  const DIMENSIONS = [
-    { key: "tensions",      table: "cm_tensions",      icon: "⚖️", label: "价值层级",   color: "#0f766e" },
-    { key: "principles",    table: "cm_principles",    icon: "🔗", label: "因果原则",   color: "#1d4ed8" },
-    { key: "tradeoffs",     table: "cm_tradeoffs",     icon: "🎯", label: "权衡矩阵",   color: "#9d174d" },
-    { key: "reasoning",     table: "cm_reasoning",     icon: "🧠", label: "推理风格",   color: "#854d0e" },
-    { key: "communication", table: "cm_communication", icon: "📋", label: "沟通契约",   color: "#7c3aed" },
-    { key: "roles",         table: "cm_roles",         icon: "🎭", label: "角色模式",   color: "#c2410c" },
-    { key: "expertise",     table: "cm_expertise",     icon: "📊", label: "领域图谱",   color: "#0369a1" },
+  // Trait categories for display
+  const TRAIT_CATEGORIES = [
+    { key: "价值取向",   icon: "⚖️", color: "#0f766e" },
+    { key: "决策风格",   icon: "🧠", color: "#854d0e" },
+    { key: "协作模式",   icon: "🤝", color: "#7c3aed" },
+    { key: "能力边界",   icon: "📊", color: "#0369a1" },
+    { key: "思维模式",   icon: "💡", color: "#c2410c" },
   ];
 
   const esc = (s) => {
@@ -28,203 +27,407 @@
   let analysisAbort = null;
   let analysisRunning = false;
   let eventsInited = false;
+  let currentView = "overview"; // "overview" | "cards" | "card-detail" | "traits" | "trait-detail" | "analyzing"
 
   // ── Init ──
   window.initTwinView = function () {
     if (!eventsInited) { bindEvents(); eventsInited = true; }
-    if (analysisRunning) {
-      // Analysis in progress — just make sure the progress area is visible
-      hide("twin-overview");
-      hide("twin-detail");
-      hide("twin-policies-view");
-      hide("twin-item-view");
-      show("twin-analysis-progress");
-      return;
+    // Restore whichever sub-view was active (analysis runs independently)
+    if (currentView === "analyzing") {
+      _showOnlyView("analysis");
+    } else {
+      // Just reload overview if not already in a detail view
+      loadOverview();
     }
-    loadOverview();
+    _updateAnalyzeButton();
   };
 
   function bindEvents() {
     const btnAnalyze = document.getElementById("twin-btn-analyze");
     const btnSync = document.getElementById("twin-btn-sync");
+    const btnProgress = document.getElementById("twin-btn-progress");
     if (btnAnalyze) btnAnalyze.onclick = startAnalysis;
     if (btnSync) btnSync.onclick = startSync;
+    if (btnProgress) btnProgress.onclick = toggleProgressView;
   }
 
-  // ── Stats Bar ──
-  function renderStatsBar(data) {
-    const bar = document.getElementById("twin-stats-bar");
-    if (!bar) return;
-    const allDims = [...DIMENSIONS, { key: "policies", icon: "⚡", label: "策略", color: "#1e293b" }];
-    bar.innerHTML = "";
-    let totalItems = 0;
-    allDims.forEach(dim => {
-      const info = data[dim.key] || { count: 0 };
-      const count = info.count || 0;
-      totalItems += count;
-      const card = document.createElement("div");
-      card.className = "twin-stat-card";
-      card.innerHTML = `<span class="twin-stat-icon">${dim.icon}</span><span class="twin-stat-count">${count}</span><span class="twin-stat-label">${dim.label}</span>`;
-      card.onclick = () => {
-        if (dim.key === "policies") loadPolicies();
-        else loadDimension(dim.key);
-      };
-      bar.appendChild(card);
-    });
-    // Episode count
-    const epInfo = data.episodes || { count: 0 };
-    if (epInfo.count > 0) {
-      const epCard = document.createElement("div");
-      epCard.className = "twin-stat-card";
-      epCard.innerHTML = `<span class="twin-stat-icon">📝</span><span class="twin-stat-count">${epInfo.count}</span><span class="twin-stat-label">事件</span>`;
-      bar.insertBefore(epCard, bar.firstChild);
+  /** Toggle between analysis progress view and overview */
+  function toggleProgressView() {
+    if (currentView === "analyzing") {
+      loadOverview();
+    } else {
+      currentView = "analyzing";
+      _showOnlyView("analysis");
+      setBreadcrumb([{ label: "分析中…" }]);
     }
-    // Last analyzed info
+    _updateProgressButton();
+  }
+
+  /** Show only the specified sub-view, hide all others */
+  function _showOnlyView(name) {
+    const views = {
+      overview: "twin-overview",
+      dimension: "twin-detail",
+      item: "twin-item-view",
+      analysis: "twin-analysis-progress",
+    };
+    for (const [k, id] of Object.entries(views)) {
+      if (k === name) show(id);
+      else hide(id);
+    }
+    _updateProgressButton();
+  }
+
+  /** Update analyze button and progress toggle to reflect current state */
+  function _updateAnalyzeButton() {
+    const btn = document.getElementById("twin-btn-analyze");
     const updatedEl = document.getElementById("twin-last-analyzed");
-    if (updatedEl) {
-      updatedEl.textContent = totalItems > 0 ? `${totalItems} 条认知记录` : "尚未分析";
+    if (analysisRunning) {
+      if (btn) { btn.disabled = true; btn.textContent = "⏳ Analyzing..."; }
+      if (updatedEl) updatedEl.classList.add("loading");
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = "🔄 Analyze"; }
+      if (updatedEl) updatedEl.classList.remove("loading");
+    }
+    _updateProgressButton();
+  }
+
+  function _updateProgressButton() {
+    const btnProgress = document.getElementById("twin-btn-progress");
+    if (!btnProgress) return;
+    if (analysisRunning) {
+      btnProgress.classList.remove("hidden");
+      btnProgress.textContent = currentView === "analyzing" ? "📋 查看概览" : "📊 查看进度";
+    } else {
+      btnProgress.classList.add("hidden");
     }
   }
 
-  // ── Overview ──
+  // ── Overview: Vertical Pipeline Layout ──
   function loadOverview() {
-    Promise.all([
-      fetch("/api/twin/overview").then(r => r.json()),
-      fetch("/api/twin/stats").then(r => r.json())
-    ])
-      .then(([overview, stats]) => {
-        overviewData = { ...overview, episodes: stats.episodes || { count: 0 } };
-        // Merge policy count into overview
-        if (stats.cm_policies) overviewData.policies = { ...overviewData.policies, count: stats.cm_policies.count };
-        renderStatsBar(overviewData);
-        renderOverview(overviewData);
+    fetch("/api/twin/overview")
+      .then(r => r.json())
+      .then((data) => {
+        overviewData = data;
+        renderOverview(data);
       })
       .catch(() => renderOverviewEmpty());
+  }
+
+  function _confColor(conf) {
+    if (conf == null) return "var(--text-muted)";
+    const h = Math.round(conf * 120); // 0=red, 60=yellow, 120=green
+    return `hsl(${h}, 70%, 45%)`;
   }
 
   function renderOverview(data) {
     const container = document.getElementById("twin-overview");
     if (!container) return;
 
-    container.classList.remove("hidden");
-    hide("twin-detail");
-    hide("twin-policies-view");
-    hide("twin-item-view");
-    hide("twin-analysis-progress");
+    currentView = "overview";
+    _showOnlyView("overview");
     setBreadcrumb([]);
+    // Hide stats bar in pipeline mode
+    const bar = document.getElementById("twin-stats-bar");
+    if (bar) bar.innerHTML = "";
 
-    let html = '<div class="twin-cards-grid">';
+    const eventsInfo = data.events || { count: 0, items: [] };
+    const cardsInfo = data.cards || { count: 0, items: [] };
+    const traitsInfo = data.traits || { count: 0, items: [] };
+    const evtCount = eventsInfo.count || 0;
+    const cardCount = cardsInfo.count || 0;
+    const traitCount = traitsInfo.count || 0;
+    const traitItems = traitsInfo.items || [];
 
-    for (const dim of DIMENSIONS) {
-      const info = data[dim.key] || { count: 0, items: [] };
-      const count = info.count || 0;
-      const items = info.items || [];
+    if (evtCount === 0 && cardCount === 0 && traitCount === 0) {
+      renderOverviewEmpty(); return;
+    }
 
-      html += `<div class="twin-dim-card" data-dim="${dim.key}" style="--dim-color:${dim.color}">
-        <div class="twin-dim-header">
-          <span class="twin-dim-icon">${dim.icon}</span>
-          <span class="twin-dim-label">${dim.label}</span>
-          <span class="twin-dim-count">${count}</span>
+    const updatedEl = document.getElementById("twin-last-analyzed");
+    if (updatedEl) updatedEl.textContent = `${evtCount + cardCount + traitCount} 条认知记录`;
+
+    // ─── Pipeline Header ───
+    let html = `<div class="twin-pipeline-header">
+      <span class="twin-ph-node" data-layer="events">📝 ${evtCount} 事件</span>
+      <span class="twin-ph-arrow">→</span>
+      <span class="twin-ph-node" data-layer="cards">🃏 ${cardCount} 判断卡</span>
+      <span class="twin-ph-arrow">→</span>
+      <span class="twin-ph-node" data-layer="traits">🧬 ${traitCount} 认知特质</span>
+      <span class="twin-ph-arrow">→</span>
+      <span class="twin-ph-node" data-layer="runtime">📦 Runtime</span>
+    </div>`;
+
+    html += '<div class="twin-pipeline">';
+
+    // ─── L1: Evidence Events ───
+    html += `<div class="twin-stage" style="--stage-color:#3b82f6">
+      <div class="twin-stage-marker">L1</div>
+      <div class="twin-stage-card">
+        <div class="twin-stage-header" data-nav="events">
+          <span class="twin-stage-icon">📝</span>
+          <span class="twin-stage-title">Evidence Events</span>
+          <span class="twin-stage-count">${evtCount}</span>
+          <span class="twin-stage-cta">Browse all →</span>
         </div>
-        <div class="twin-dim-preview">`;
+        <div class="twin-stage-body">`;
 
-      if (items.length === 0) {
-        html += '<div class="twin-dim-empty">暂无数据</div>';
-      } else {
-        for (const item of items.slice(0, 3)) {
-          const text = itemPreviewText(dim.key, item);
-          const conf = item.confidence != null ? Math.round(item.confidence * 100) : null;
-          html += `<div class="twin-dim-item">
-            <span class="twin-dim-item-text">${esc(text)}</span>
-            ${conf !== null ? `<span class="twin-dim-item-conf">${conf}%</span>` : ""}
-          </div>`;
-        }
-        if (count > 3) {
-          html += `<div class="twin-dim-more">+${count - 3} more</div>`;
-        }
+    const evtItems = eventsInfo.items || [];
+    if (evtItems.length === 0) {
+      html += '<div class="twin-dim-empty">暂无事件。点击 Analyze 开始提取。</div>';
+    } else {
+      for (const e of evtItems.slice(0, 3)) {
+        const sig = e.signal_type || "";
+        const quote = e.lesson || e.user_reaction || "";
+        const domain = e.domain || "";
+        html += `<div class="twin-event-row">
+          <span class="twin-event-dot ${sig}"></span>
+          <span class="twin-event-quote">${esc(truncate(quote, 80))}</span>
+          <span class="twin-event-domain">${esc(domain)}</span>
+        </div>`;
       }
-
-      html += `</div></div>`;
+      if (evtCount > 3) {
+        html += `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">+${evtCount - 3} more events</div>`;
+      }
     }
+    html += `</div></div></div>`;
+    html += '<div class="twin-stage-connector">↓ distilled into</div>';
 
-    // Policies card
-    const polInfo = data.policies || { count: 0, items: [] };
-    html += `<div class="twin-dim-card twin-policies-card" data-dim="policies" style="--dim-color:#1e293b">
-      <div class="twin-dim-header">
-        <span class="twin-dim-icon">⚡</span>
-        <span class="twin-dim-label">执行策略</span>
-        <span class="twin-dim-count">${polInfo.count || 0}</span>
+    // ─── L2: Judgment Cards ───
+    html += `<div class="twin-stage" style="--stage-color:#8b5cf6">
+      <div class="twin-stage-marker">L2</div>
+      <div class="twin-stage-card">
+        <div class="twin-stage-header" data-nav="cards">
+          <span class="twin-stage-icon">🃏</span>
+          <span class="twin-stage-title">Judgment Cards</span>
+          <span class="twin-stage-count">${cardCount}</span>
+          <span class="twin-stage-cta">View all →</span>
+        </div>
+        <div class="twin-stage-body">`;
+
+    const cardItems = cardsInfo.items || [];
+    if (cardItems.length === 0) {
+      html += '<div class="twin-dim-empty">暂无判断卡。</div>';
+    } else {
+      html += '<div class="twin-card-grid">';
+      for (const c of cardItems.slice(0, 4)) {
+        const conf = c.confidence != null ? Math.round(c.confidence * 100) : 0;
+        const status = c.status || "hypothesis";
+        const statusClass = status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis";
+        const confColor = _confColor(c.confidence);
+        html += `<div class="twin-card-preview" style="--card-color:${confColor}" data-card-id="${esc(c.id)}">
+          <div class="twin-card-title">${esc(truncate(c.applies_when, 40))}</div>
+          <div class="twin-conf-bar"><span style="width:${conf}%"></span></div>
+          <div class="twin-item-meta" style="margin-top:2px">
+            <span class="twin-status-badge ${statusClass}">${status}</span>
+            <span class="twin-conf">${conf}%</span>
+            ${c.evidence_count ? `<span class="twin-ep-count">${c.evidence_count} events</span>` : ""}
+          </div>
+          ${c.agent_action ? `<div class="twin-card-action">→ ${esc(truncate(c.agent_action, 50))}</div>` : ""}
+        </div>`;
+      }
+      html += '</div>';
+      if (cardCount > 4) {
+        html += `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:right">+${cardCount - 4} more cards</div>`;
+      }
+    }
+    html += `</div></div></div>`;
+    html += '<div class="twin-stage-connector">↓ generalized to</div>';
+
+    // ─── L3: Cognitive Traits ───
+    html += `<div class="twin-stage" style="--stage-color:#14b8a6">
+      <div class="twin-stage-marker">L3</div>
+      <div class="twin-stage-card">
+        <div class="twin-stage-header" data-nav="traits">
+          <span class="twin-stage-icon">🧬</span>
+          <span class="twin-stage-title">Cognitive Traits</span>
+          <span class="twin-stage-count">${traitCount}</span>
+          <span class="twin-stage-cta">View all →</span>
+        </div>
+        <div class="twin-stage-body">`;
+
+    if (traitItems.length === 0) {
+      html += '<div class="twin-dim-empty">暂无认知特质。</div>';
+    } else {
+      html += '<div class="twin-trait-columns">';
+      for (const cat of TRAIT_CATEGORIES) {
+        const catTraits = traitItems.filter(t => t.category === cat.key);
+        html += `<div class="twin-trait-col" style="--cat-color:${cat.color}" data-category="${cat.key}">
+          <div class="twin-trait-col-header">
+            <span class="twin-trait-col-icon">${cat.icon}</span>
+            <span class="twin-trait-col-name">${cat.key}</span>
+            <span class="twin-trait-col-count">${catTraits.length}</span>
+          </div>`;
+        if (catTraits.length === 0) {
+          html += '<div class="twin-trait-empty">暂无数据</div>';
+        } else {
+          for (const t of catTraits.slice(0, 5)) {
+            const str = t.strength != null ? Math.round(t.strength * 100) : 0;
+            html += `<div class="twin-trait-row">
+              <span class="twin-trait-name">${esc(t.name)}</span>
+              <span class="twin-trait-bar"><span style="width:${str}%"></span></span>
+              <span class="twin-trait-pct">${str}%</span>
+            </div>`;
+          }
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += `</div></div></div>`;
+    html += '<div class="twin-stage-connector">↓ compiled to</div>';
+
+    // ─── L4: Runtime Pack ───
+    const hasData = cardCount > 0 || traitCount > 0;
+    const statusClass = hasData ? "ready" : "no-data";
+    const statusText = hasData ? "✅ Ready" : "⏳ No data";
+    html += `<div class="twin-stage" style="--stage-color:#f59e0b">
+      <div class="twin-stage-marker">L4</div>
+      <div class="twin-stage-card">
+        <div class="twin-stage-header" data-nav="sync">
+          <span class="twin-stage-icon">📦</span>
+          <span class="twin-stage-title">Runtime Pack</span>
+          <span class="twin-stage-cta">Sync to AI →</span>
+        </div>
+        <div class="twin-stage-body">
+          <div class="twin-runtime-panel">
+            <span class="twin-runtime-status ${statusClass}">${statusText}</span>
+            <span class="twin-runtime-info">${cardCount} cards + ${traitCount} traits → AI 指令文件</span>
+          </div>
+        </div>
       </div>
-      <div class="twin-dim-preview">`;
-    for (const p of (polInfo.items || []).slice(0, 3)) {
-      html += `<div class="twin-dim-item">
-        <span class="twin-dim-item-text">${esc(p.condition || p.action || "")}</span>
-        ${p.confidence != null ? `<span class="twin-dim-item-conf">${Math.round(p.confidence * 100)}%</span>` : ""}
-      </div>`;
-    }
-    if (!polInfo.items?.length) html += '<div class="twin-dim-empty">暂无数据</div>';
-    html += `</div></div>`;
+    </div>`;
 
-    html += "</div>";
+    html += '</div>'; // close .twin-pipeline
+
     container.innerHTML = html;
 
-    // Card click → drill into dimension
-    container.querySelectorAll(".twin-dim-card").forEach((card) => {
-      card.onclick = () => {
-        const dim = card.dataset.dim;
-        if (dim === "policies") loadPolicies();
-        else loadDimension(dim);
+    // ─── Click handlers ───
+    // Pipeline header pills
+    container.querySelectorAll(".twin-ph-node").forEach(el => {
+      el.onclick = () => {
+        const layer = el.dataset.layer;
+        if (layer === "events") loadEventsList();
+        else if (layer === "cards") loadCards();
+        else if (layer === "traits") loadTraits();
+        else if (layer === "runtime") loadRuntimePreview();
       };
+    });
+    // Stage headers
+    container.querySelectorAll(".twin-stage-header").forEach(el => {
+      el.onclick = () => {
+        const nav = el.dataset.nav;
+        if (nav === "events") loadEventsList();
+        else if (nav === "cards") loadCards();
+        else if (nav === "traits") loadTraits();
+        else if (nav === "sync") loadRuntimePreview();
+      };
+    });
+    // Card previews → card detail
+    container.querySelectorAll(".twin-card-preview").forEach(el => {
+      el.onclick = (e) => { e.stopPropagation(); loadCardDetail(el.dataset.cardId); };
+    });
+    // Trait columns → trait list by category
+    container.querySelectorAll(".twin-trait-col").forEach(el => {
+      el.onclick = (e) => { e.stopPropagation(); loadTraits(el.dataset.category); };
     });
   }
 
   function renderOverviewEmpty() {
     const container = document.getElementById("twin-overview");
     if (!container) return;
+    const bar = document.getElementById("twin-stats-bar");
+    if (bar) bar.innerHTML = "";
     container.innerHTML = `<div class="twin-empty-state">
-      <p>🧠 Digital Twin 认知模型</p>
+      <p>🧠 Distill Yourself (Cognitive Handbook)</p>
       <p>点击 <b>Analyze</b> 开始从对话历史中提取认知模型</p>
       <p style="color:var(--text-muted);font-size:0.85em;margin-top:12px">
-        3 阶段流水线：事件提取 → 认知推断 → 策略编译
+        4 阶段流水线：事件提取 → 判断卡蒸馏 → 认知特质归纳 → Runtime 编译
       </p>
     </div>`;
   }
 
-  function itemPreviewText(dimKey, item) {
-    switch (dimKey) {
-      case "tensions": return `${item.value_a || ""} vs ${item.value_b || ""}`;
-      case "principles": return item.statement || "";
-      case "tradeoffs": return item.context || "";
-      case "reasoning": return `${item.dimension || ""}: ${item.description || ""}`;
-      case "communication": return `[${item.category || ""}] ${item.description || ""}`;
-      case "roles": return `${item.role || ""}: ${item.behavior_profile || ""}`;
-      case "expertise": return `${item.domain || ""} (${item.depth || ""})`;
-      default: return JSON.stringify(item).slice(0, 60);
+  // ── Events List View ──
+  function loadEventsList(signalFilter) {
+    let url = "/api/twin/events?limit=200";
+    if (signalFilter) url += `&signal_type=${encodeURIComponent(signalFilter)}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => renderEventsList(data.events || [], signalFilter))
+      .catch(e => console.error("Failed to load events:", e));
+  }
+
+  function renderEventsList(items, activeFilter) {
+    currentView = "events";
+    _showOnlyView("dimension");
+    const container = document.getElementById("twin-detail");
+    setBreadcrumb([{ label: "Evidence Events", onclick: () => loadEventsList() }]);
+
+    const filters = ["all", "correction", "acceptance", "escalation", "question"];
+    let html = `<div class="twin-detail-header" style="--dim-color:#3b82f6">
+      <span class="twin-dim-icon">📝</span>
+      <span class="twin-detail-title">Evidence Events</span>
+      <span class="twin-dim-count">${items.length} 条</span>
+    </div>
+    <div class="twin-filter-chips">
+      ${filters.map(f => `<span class="twin-filter-chip ${(!activeFilter && f === "all") || activeFilter === f ? "active" : ""}" data-filter="${f}">${f}</span>`).join("")}
+    </div>
+    <div class="twin-detail-list" style="margin-top:12px">`;
+
+    if (items.length === 0) {
+      html += '<div class="twin-dim-empty" style="padding:24px">暂无事件。</div>';
     }
+
+    for (const e of items) {
+      const sig = e.signal_type || "";
+      html += `<div class="twin-episode-card">
+        <div class="twin-ep-header">
+          <span class="twin-event-dot ${sig}" style="display:inline-block"></span>
+          <span class="twin-ep-signal ${sig}">${esc(sig)}</span>
+          <span class="twin-ep-domain">${esc(e.domain || "")}</span>
+          <span class="twin-ep-date">${esc((e.created_at || "").slice(0, 10))}</span>
+        </div>
+        <div class="twin-ep-body">
+          <div><b>AI:</b> ${esc(truncate(e.ai_action, 120))}</div>
+          <div><b>反应:</b> ${esc(truncate(e.user_reaction, 120))}</div>
+          ${e.lesson ? `<div><b>教训:</b> ${esc(e.lesson)}</div>` : ""}
+        </div>
+        ${e.card_id ? `<div style="margin-top:4px"><span class="twin-tag" style="cursor:pointer" data-card-link="${esc(e.card_id)}">🃏 ${esc(e.card_id)}</span></div>` : ""}
+      </div>`;
+    }
+
+    html += "</div>";
+    container.innerHTML = html;
+
+    // Filter chip clicks
+    container.querySelectorAll(".twin-filter-chip").forEach(el => {
+      el.onclick = () => {
+        const f = el.dataset.filter;
+        loadEventsList(f === "all" ? undefined : f);
+      };
+    });
+    // Card link clicks
+    container.querySelectorAll("[data-card-link]").forEach(el => {
+      el.onclick = (e) => { e.stopPropagation(); loadCardDetail(el.dataset.cardLink); };
+    });
   }
 
-  // ── Dimension Detail ──
-  function loadDimension(dimKey) {
-    const dim = DIMENSIONS.find((d) => d.key === dimKey);
-    if (!dim) return;
-
-    fetch(`/api/twin/dimension/${dimKey}?limit=200`)
-      .then((r) => r.json())
-      .then((data) => renderDimension(dim, data.items || data))
-      .catch((e) => console.error("Failed to load dimension:", e));
+  // ── Judgment Cards List ──
+  function loadCards() {
+    fetch("/api/twin/cards?limit=200")
+      .then(r => r.json())
+      .then(data => renderCards(data.cards || []))
+      .catch(e => console.error("Failed to load cards:", e));
   }
 
-  function renderDimension(dim, items) {
-    hide("twin-overview");
-    hide("twin-policies-view");
-    hide("twin-item-view");
-    hide("twin-analysis-progress");
-    const container = show("twin-detail");
-    setBreadcrumb([{ label: dim.label, onclick: () => loadDimension(dim.key) }]);
+  function renderCards(items) {
+    currentView = "cards";
+    _showOnlyView("dimension");
+    const container = document.getElementById("twin-detail");
+    setBreadcrumb([{ label: "判断卡", onclick: () => loadCards() }]);
 
-    let html = `<div class="twin-detail-header" style="--dim-color:${dim.color}">
-      <span class="twin-dim-icon">${dim.icon}</span>
-      <span class="twin-detail-title">${dim.label}</span>
+    let html = `<div class="twin-detail-header" style="--dim-color:#1d4ed8">
+      <span class="twin-dim-icon">🃏</span>
+      <span class="twin-detail-title">判断卡</span>
       <span class="twin-dim-count">${items.length} 条</span>
     </div>
     <div class="twin-detail-list">`;
@@ -233,107 +436,81 @@
       html += '<div class="twin-dim-empty" style="padding:24px">暂无数据。点击 Analyze 开始提取。</div>';
     }
 
-    for (const item of items) {
-      html += renderDimensionItem(dim.key, item);
+    for (const card of items) {
+      const conf = card.confidence != null ? Math.round(card.confidence * 100) : null;
+      const status = card.status || "";
+      const statusClass = status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis";
+      const tags = tryParseJson(card.tags);
+
+      html += `<div class="twin-detail-item" data-item-id="${esc(card.id)}">
+        <div class="twin-item-body">
+          <div><b>${esc(card.applies_when)}</b></div>
+          <div class="twin-item-sub">${esc(truncate(card.judgment, 150))}</div>
+          <div class="twin-item-sub" style="color:var(--accent)">→ ${esc(card.agent_action)}</div>
+          ${tags ? `<div class="twin-item-tags">${tags.split(", ").map(t => `<span class="twin-tag">${esc(t)}</span>`).join("")}</div>` : ""}
+        </div>
+        <div class="twin-item-meta">
+          ${status ? `<span class="twin-status-badge ${statusClass}">${status}</span>` : ""}
+          ${conf !== null ? `<span class="twin-conf">${conf}%</span>` : ""}
+          ${card.evidence_count ? `<span class="twin-ep-count">${card.evidence_count} events</span>` : ""}
+        </div>
+      </div>`;
     }
 
     html += "</div>";
     container.innerHTML = html;
 
-    container.querySelectorAll("[data-item-id]").forEach((el) => {
-      el.onclick = () => loadItemDetail(dim.key, el.dataset.itemId);
+    container.querySelectorAll("[data-item-id]").forEach(el => {
+      el.onclick = () => loadCardDetail(el.dataset.itemId);
     });
   }
 
-  function renderDimensionItem(dimKey, item) {
-    const conf = item.confidence != null ? Math.round(item.confidence * 100) : null;
-    const status = item.status || "";
-    const statusClass = status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis";
-
-    let body = "";
-    switch (dimKey) {
-      case "tensions":
-        body = `<b>${esc(item.value_a)}</b> vs <b>${esc(item.value_b)}</b>
-          <div class="twin-item-sub">默认：${esc(item.default_resolution)}</div>`;
-        break;
-      case "principles":
-        body = `<div>${esc(item.statement)}</div>
-          <div class="twin-item-sub">因：${esc(item.cause)} → 果：${esc(item.effect)}</div>`;
-        break;
-      case "tradeoffs":
-        body = `<div>场景：${esc(item.context)}</div>
-          <div class="twin-item-sub">保护：${esc(tryParseJson(item.protect))} | 牺牲：${esc(tryParseJson(item.sacrifice))}</div>`;
-        break;
-      case "reasoning":
-        body = `<b>${esc(item.dimension)}</b>: ${esc(item.description)}`;
-        break;
-      case "communication":
-        body = `<span class="twin-cat-badge ${item.category}">${esc(item.category)}</span> ${esc(item.description)}`;
-        break;
-      case "roles":
-        body = `<b>${esc(item.role)}</b>: ${esc(item.behavior_profile)}
-          <div class="twin-item-sub">自主性: ${esc(item.autonomy_level)}</div>`;
-        break;
-      case "expertise":
-        body = `<b>${esc(item.domain)}</b> — ${esc(item.depth)}
-          <div class="twin-item-sub">${esc(item.autonomy_boundary || "")}</div>`;
-        break;
-    }
-
-    return `<div class="twin-detail-item" data-item-id="${esc(item.id)}">
-      <div class="twin-item-body">${body}</div>
-      <div class="twin-item-meta">
-        ${status ? `<span class="twin-status-badge ${statusClass}">${status}</span>` : ""}
-        ${conf !== null ? `<span class="twin-conf">${conf}%</span>` : ""}
-        ${item.episode_count ? `<span class="twin-ep-count">${item.episode_count} episodes</span>` : ""}
-      </div>
-    </div>`;
+  // ── Card Detail ──
+  function loadCardDetail(cardId) {
+    fetch(`/api/twin/card/${cardId}`)
+      .then(r => r.json())
+      .then(data => renderCardDetail(data))
+      .catch(e => console.error("Failed to load card detail:", e));
   }
 
-  // ── Item Detail + Trace ──
-  function loadItemDetail(dimKey, itemId) {
-    const typeMap = {
-      tensions: "tension", principles: "principle", tradeoffs: "tradeoff",
-      reasoning: "reasoning", communication: "communication",
-      roles: "role", expertise: "expertise",
-    };
-    const type = typeMap[dimKey] || dimKey;
-    fetch(`/api/twin/item/${type}/${itemId}`)
-      .then((r) => r.json())
-      .then((data) => renderItemDetail(dimKey, data))
-      .catch((e) => console.error("Failed to load item detail:", e));
-  }
-
-  function renderItemDetail(dimKey, data) {
-    const dim = DIMENSIONS.find((d) => d.key === dimKey);
-    hide("twin-overview");
-    hide("twin-policies-view");
-    hide("twin-analysis-progress");
-    const detailContainer = show("twin-detail");
-    const container = show("twin-item-view");
+  function renderCardDetail(data) {
+    currentView = "card-detail";
+    _showOnlyView("item");
+    const container = document.getElementById("twin-item-view");
+    const card = data.card || {};
+    const evidence = data.evidence || [];
+    const relations = data.relations || [];
     setBreadcrumb([
-      { label: dim.label, onclick: () => loadDimension(dim.key) },
-      { label: data.item?.id || "detail" },
+      { label: "判断卡", onclick: () => loadCards() },
+      { label: card.id || "detail" },
     ]);
 
-    detailContainer.classList.add("hidden");
-
-    const item = data.item || {};
-    const episodes = data.episodes || [];
+    const conf = card.confidence != null ? Math.round(card.confidence * 100) : null;
+    const status = card.status || "";
+    const tags = tryParseJson(card.tags);
 
     let html = `<div class="twin-item-detail">
-      <div class="twin-item-detail-header" style="border-left:4px solid ${dim.color}">
-        <span>${dim.icon} ${dim.label}</span>
-        <span class="twin-item-id">${esc(item.id)}</span>
+      <div class="twin-item-detail-header" style="border-left:4px solid #1d4ed8">
+        <span>🃏 判断卡</span>
+        <span class="twin-item-id">${esc(card.id)}</span>
       </div>
-      <div class="twin-item-detail-body">
-        ${renderDimensionItem(dimKey, item)}
+      <div class="twin-item-detail-body" style="padding:16px">
+        <div style="margin-bottom:12px"><b>触发场景：</b>${esc(card.applies_when)}</div>
+        <div style="margin-bottom:12px"><b>用户判断逻辑：</b>${esc(card.judgment)}</div>
+        <div style="margin-bottom:12px;color:var(--accent)"><b>AI 行动：</b>${esc(card.agent_action)}</div>
+        ${card.exceptions ? `<div style="margin-bottom:12px"><b>例外：</b>${esc(card.exceptions)}</div>` : ""}
+        <div class="twin-item-meta">
+          ${status ? `<span class="twin-status-badge ${status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis"}">${status}</span>` : ""}
+          ${conf !== null ? `<span class="twin-conf">${conf}%</span>` : ""}
+          ${card.evidence_count ? `<span class="twin-ep-count">${card.evidence_count} events</span>` : ""}
+          ${tags ? tags.split(", ").map(t => `<span class="twin-tag">${esc(t)}</span>`).join("") : ""}
+        </div>
       </div>`;
 
-    if (episodes.length) {
+    if (evidence.length) {
       html += `<div class="twin-trace-section">
-        <h4>📎 支撑事件 (${episodes.length})</h4>`;
-      for (const ep of episodes) {
+        <h4>📎 支撑事件 (${evidence.length})</h4>`;
+      for (const ep of evidence) {
         html += `<div class="twin-episode-card">
           <div class="twin-ep-header">
             <span class="twin-ep-signal ${ep.signal_type || ""}">${esc(ep.signal_type)}</span>
@@ -351,76 +528,136 @@
       html += "</div>";
     }
 
+    if (relations.length) {
+      html += `<div class="twin-trace-section">
+        <h4>🔗 关联卡片 (${relations.length})</h4>`;
+      for (const rel of relations) {
+        const other = rel.from_id === card.id ? rel.to_id : rel.from_id;
+        html += `<div class="twin-dim-item" style="cursor:pointer" onclick="window._loadCardDetail && window._loadCardDetail('${esc(other)}')">
+          <span class="twin-tag">${esc(rel.relation)}</span> ${esc(other)}
+        </div>`;
+      }
+      html += "</div>";
+    }
+
     html += "</div>";
     container.innerHTML = html;
   }
+  window._loadCardDetail = loadCardDetail;
 
-  // ── Policies ──
-  function loadPolicies() {
-    fetch("/api/twin/policies?status=active&limit=200")
-      .then((r) => r.json())
-      .then((data) => renderPolicies(data.policies || data))
-      .catch((e) => console.error("Failed to load policies:", e));
+  // ── Cognitive Traits List ──
+  function loadTraits(category) {
+    let url = "/api/twin/traits?limit=200";
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => renderTraits(data.traits || [], category))
+      .catch(e => console.error("Failed to load traits:", e));
   }
 
-  function renderPolicies(items) {
-    hide("twin-overview");
-    hide("twin-detail");
-    hide("twin-item-view");
-    hide("twin-analysis-progress");
-    const container = show("twin-policies-view");
-    setBreadcrumb([{ label: "执行策略" }]);
+  function renderTraits(items, category) {
+    currentView = "traits";
+    _showOnlyView("dimension");
+    const container = document.getElementById("twin-detail");
+    const title = category || "全部认知特质";
+    setBreadcrumb([{ label: title, onclick: () => loadTraits(category) }]);
 
-    let html = `<div class="twin-detail-header" style="--dim-color:#1e293b">
-      <span class="twin-dim-icon">⚡</span>
-      <span class="twin-detail-title">执行策略</span>
+    const cat = TRAIT_CATEGORIES.find(c => c.key === category) || { icon: "🧬", color: "#7c3aed" };
+
+    let html = `<div class="twin-detail-header" style="--dim-color:${cat.color}">
+      <span class="twin-dim-icon">${cat.icon}</span>
+      <span class="twin-detail-title">${title}</span>
       <span class="twin-dim-count">${items.length} 条</span>
     </div>
-    <div class="twin-policies-list">`;
+    <div class="twin-detail-list">`;
 
-    for (const p of items) {
-      const conf = p.confidence != null ? Math.round(p.confidence * 100) : null;
-      html += `<div class="twin-policy-card" data-policy-id="${esc(p.id)}">
-        <div class="twin-policy-rule">
-          <div><span class="twin-kw">IF</span> ${esc(p.condition)}</div>
-          <div><span class="twin-kw">THEN</span> ${esc(p.action)}</div>
-          ${p.exception ? `<div><span class="twin-kw">UNLESS</span> ${esc(p.exception)}</div>` : ""}
+    if (items.length === 0) {
+      html += '<div class="twin-dim-empty" style="padding:24px">暂无数据。点击 Analyze 开始提取。</div>';
+    }
+
+    for (const t of items) {
+      const str = t.strength != null ? Math.round(t.strength * 100) : null;
+      const status = t.status || "";
+      const statusClass = status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis";
+
+      html += `<div class="twin-detail-item" data-item-id="${esc(t.id)}">
+        <div class="twin-item-body">
+          <div><b>${esc(t.name)}</b> <span class="twin-tag">${esc(t.category)}</span></div>
+          <div class="twin-item-sub">${esc(t.description)}</div>
         </div>
-        ${p.rationale ? `<div class="twin-policy-rationale"><b>Why:</b> ${esc(p.rationale)}</div>` : ""}
         <div class="twin-item-meta">
-          <span class="twin-source">${esc(p.source_type)}:${esc(p.source_id)}</span>
-          ${p.domain ? `<span class="twin-ep-domain">${esc(p.domain)}</span>` : ""}
-          ${conf !== null ? `<span class="twin-conf">${conf}%</span>` : ""}
+          ${status ? `<span class="twin-status-badge ${statusClass}">${status}</span>` : ""}
+          ${str !== null ? `<span class="twin-conf">${str}%</span>` : ""}
+          ${t.evidence_count ? `<span class="twin-ep-count">${t.evidence_count} events</span>` : ""}
         </div>
       </div>`;
     }
 
-    if (!items.length) {
-      html += '<div class="twin-dim-empty" style="padding:24px">暂无策略。先运行 Analyze 提取认知模型。</div>';
+    html += "</div>";
+    container.innerHTML = html;
+
+    container.querySelectorAll("[data-item-id]").forEach(el => {
+      el.onclick = () => loadTraitDetail(el.dataset.itemId);
+    });
+  }
+
+  // ── Trait Detail ──
+  function loadTraitDetail(traitId) {
+    fetch(`/api/twin/trait/${traitId}`)
+      .then(r => r.json())
+      .then(data => renderTraitDetail(data))
+      .catch(e => console.error("Failed to load trait detail:", e));
+  }
+
+  function renderTraitDetail(data) {
+    currentView = "trait-detail";
+    _showOnlyView("item");
+    const container = document.getElementById("twin-item-view");
+    const trait = data.trait || {};
+    const cards = data.supporting_cards || [];
+    const cat = TRAIT_CATEGORIES.find(c => c.key === trait.category) || { icon: "🧬", color: "#7c3aed" };
+    setBreadcrumb([
+      { label: trait.category || "特质", onclick: () => loadTraits(trait.category) },
+      { label: trait.name || "detail" },
+    ]);
+
+    const str = trait.strength != null ? Math.round(trait.strength * 100) : null;
+    const status = trait.status || "";
+
+    let html = `<div class="twin-item-detail">
+      <div class="twin-item-detail-header" style="border-left:4px solid ${cat.color}">
+        <span>${cat.icon} ${esc(trait.category)}</span>
+        <span class="twin-item-id">${esc(trait.id)}</span>
+      </div>
+      <div class="twin-item-detail-body" style="padding:16px">
+        <div style="margin-bottom:12px;font-size:1.1em"><b>${esc(trait.name)}</b></div>
+        <div style="margin-bottom:12px">${esc(trait.description)}</div>
+        <div class="twin-item-meta">
+          ${status ? `<span class="twin-status-badge ${status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis"}">${status}</span>` : ""}
+          ${str !== null ? `<span class="twin-conf">${str}%</span>` : ""}
+          ${trait.evidence_count ? `<span class="twin-ep-count">${trait.evidence_count} events</span>` : ""}
+        </div>
+      </div>`;
+
+    if (cards.length) {
+      html += `<div class="twin-trace-section">
+        <h4>🃏 支撑判断卡 (${cards.length})</h4>`;
+      for (const c of cards) {
+        html += `<div class="twin-episode-card" style="cursor:pointer" onclick="window._loadCardDetail && window._loadCardDetail('${esc(c.id)}')">
+          <div class="twin-ep-header">
+            <span class="twin-ep-domain">${esc(c.applies_when)}</span>
+            ${c.confidence != null ? `<span class="twin-conf">${Math.round(c.confidence * 100)}%</span>` : ""}
+          </div>
+          <div class="twin-ep-body">
+            <div>${esc(truncate(c.judgment, 120))}</div>
+          </div>
+        </div>`;
+      }
+      html += "</div>";
     }
 
     html += "</div>";
     container.innerHTML = html;
-
-    container.querySelectorAll("[data-policy-id]").forEach((el) => {
-      el.onclick = () => loadPolicyTrace(el.dataset.policyId);
-    });
-  }
-
-  function loadPolicyTrace(policyId) {
-    fetch(`/api/twin/trace/${policyId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.source) {
-          const typeMap = {
-            principle: "principles", tension: "tensions", tradeoff: "tradeoffs",
-            communication: "communication", role: "roles", expertise: "expertise",
-          };
-          const dimKey = typeMap[data.policy?.source_type] || "principles";
-          renderItemDetail(dimKey, { item: data.source, episodes: data.episodes || [] });
-        }
-      })
-      .catch((e) => console.error("Failed to load trace:", e));
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -430,18 +667,14 @@
   function startAnalysis() {
     if (analysisRunning) return; // prevent double-start
     analysisRunning = true;
-
-    const btn = document.getElementById("twin-btn-analyze");
-    if (btn) { btn.disabled = true; btn.textContent = "⏳ Analyzing..."; }
+    _updateAnalyzeButton();
 
     const updatedEl = document.getElementById("twin-last-analyzed");
-    if (updatedEl) { updatedEl.textContent = "AI 启动中…"; updatedEl.classList.add("loading"); }
+    if (updatedEl) { updatedEl.textContent = "AI 启动中…"; }
 
-    // Show progress area inline in twin-body, hide other views
-    hide("twin-overview");
-    hide("twin-detail");
-    hide("twin-policies-view");
-    hide("twin-item-view");
+    // Switch to analysis view
+    currentView = "analyzing";
+    _showOnlyView("analysis");
     setBreadcrumb([{ label: "分析中…" }]);
 
     const progress = show("twin-analysis-progress");
@@ -482,7 +715,7 @@
         function pump() {
           return reader.read().then(({ done, value }) => {
             if (done) {
-              _finishAnalysis(btn, updatedEl, streamState);
+              _finishAnalysis(streamState);
               return;
             }
             buffer += decoder.decode(value, { stream: true });
@@ -494,7 +727,7 @@
                 if (!line.startsWith("data: ")) continue;
                 try {
                   const evt = JSON.parse(line.slice(6));
-                  _handleStreamEvent(evt, streamState, updatedEl);
+                  _handleStreamEvent(evt, streamState);
                 } catch (e) { /* skip */ }
               }
             }
@@ -505,7 +738,7 @@
               if (!line.startsWith("data: ")) continue;
               try {
                 const evt = JSON.parse(line.slice(6));
-                _handleStreamEvent(evt, streamState, updatedEl);
+                _handleStreamEvent(evt, streamState);
               } catch (e) { /* skip */ }
             }
             return pump();
@@ -514,7 +747,7 @@
         return pump();
       })
       .catch((e) => {
-        if (e.name === "AbortError") { analysisRunning = false; return; }
+        if (e.name === "AbortError") { analysisRunning = false; _updateAnalyzeButton(); return; }
         const container = document.getElementById("twin-stream-output");
         if (container) {
           _hideThinking(container);
@@ -523,24 +756,28 @@
           errDiv.textContent = `❌ ${String(e)}`;
           container.appendChild(errDiv);
         }
-        _finishAnalysis(btn, updatedEl, streamState);
+        _finishAnalysis(streamState);
       })
       .finally(() => { analysisAbort = null; });
   }
 
-  function _finishAnalysis(btn, updatedEl, state) {
+  function _finishAnalysis(state) {
     analysisRunning = false;
     _finalizeToolGroup(state);
-    if (btn) { btn.disabled = false; btn.textContent = "🔄 Analyze"; }
-    if (updatedEl) { updatedEl.classList.remove("loading"); }
-    setBreadcrumb([{ label: "分析完成" }]);
-    // Reload overview data in background
-    loadOverview();
+    _updateAnalyzeButton();
+    const updatedEl = document.getElementById("twin-last-analyzed");
+    if (updatedEl) { updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`; }
+    // If user is still watching the analysis, switch to overview
+    if (currentView === "analyzing") {
+      setBreadcrumb([{ label: "分析完成 ✅" }]);
+      setTimeout(() => loadOverview(), 1500);
+    }
   }
 
   /** Handle a single SSE event — renders tool cards, text blocks, thinking dots */
-  function _handleStreamEvent(evt, state, updatedEl) {
+  function _handleStreamEvent(evt, state) {
     const container = document.getElementById("twin-stream-output");
+    const updatedEl = document.getElementById("twin-last-analyzed");
     if (!container) return;
 
     switch (evt.type) {
@@ -751,14 +988,56 @@
     }
   }
 
+  // ── Runtime Preview ──
+  function loadRuntimePreview() {
+    fetch("/api/twin/runtime-preview")
+      .then(r => r.json())
+      .then(data => renderRuntimePreview(data))
+      .catch(e => console.error("Failed to load runtime preview:", e));
+  }
+
+  function renderRuntimePreview(data) {
+    currentView = "runtime";
+    _showOnlyView("dimension");
+    const container = document.getElementById("twin-detail");
+    setBreadcrumb([{ label: "Runtime Pack", onclick: () => loadRuntimePreview() }]);
+
+    const text = data.text || "(empty)";
+    const cardCount = data.card_count || 0;
+    const traitCount = data.trait_count || 0;
+    const hasData = cardCount > 0 || traitCount > 0;
+
+    let html = `<div class="twin-detail-header" style="--dim-color:#f59e0b">
+      <span class="twin-dim-icon">📦</span>
+      <span class="twin-detail-title">Runtime Pack</span>
+      <span class="twin-dim-count">${cardCount} cards + ${traitCount} traits</span>
+    </div>
+    <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <span class="twin-runtime-status ${hasData ? "ready" : "no-data"}">${hasData ? "✅ Ready to sync" : "⏳ No data"}</span>
+      <span style="font-size:12px;color:var(--text-muted)">以下内容将写入 AI 指令文件，AI 在下次会话时自动读取</span>
+    </div>
+    <div style="padding:16px;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius);font-size:13px;line-height:1.8;white-space:pre-wrap;color:var(--text);max-height:60vh;overflow-y:auto">${window.renderMarkdownSimple ? window.renderMarkdownSimple(text) : esc(text)}</div>`;
+
+    if (hasData) {
+      html += `<div style="margin-top:16px;text-align:right">
+        <button class="btn-text" id="twin-runtime-sync-btn" style="font-size:13px;padding:6px 16px;background:var(--accent);color:white;border-radius:var(--radius-sm);border:none;cursor:pointer">📤 Sync to CLAUDE.md</button>
+      </div>`;
+    }
+
+    container.innerHTML = html;
+
+    const syncBtn = document.getElementById("twin-runtime-sync-btn");
+    if (syncBtn) syncBtn.onclick = startSync;
+  }
+
   // ── Sync ──
   function startSync() {
-    if (!confirm("将认知模型策略同步到 CLAUDE.md 和 memory 文件？")) return;
+    if (!confirm("将Distill Yourself同步到 CLAUDE.md？")) return;
     fetch("/api/twin/sync", { method: "POST" })
       .then((r) => r.json())
       .then((data) => {
         if (data.ok) {
-          alert(`同步完成：${data.policies_synced || 0} 条策略已写入`);
+          alert(`同步完成：${data.cards_synced || 0} 判断卡 + ${data.traits_synced || 0} 认知特质已写入`);
         } else {
           alert("同步失败：" + (data.error || "unknown"));
         }
@@ -770,7 +1049,7 @@
   function setBreadcrumb(parts) {
     const bc = document.getElementById("twin-breadcrumb");
     if (!bc) return;
-    let html = `<span class="twin-bc-root" onclick="window.initTwinView && window.initTwinView()">Digital Twin</span>`;
+    let html = `<span class="twin-bc-root" onclick="window.initTwinView && window.initTwinView()">Distill Yourself</span>`;
     for (const p of parts) {
       html += ` <span class="twin-bc-sep">›</span> `;
       if (p.onclick) {

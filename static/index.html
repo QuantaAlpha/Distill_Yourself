@@ -44,7 +44,7 @@
           </button>
           <button class="sidebar-nav-item" data-view="twin">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/><path d="M12 12v4"/><circle cx="12" cy="19" r="2" fill="currentColor" opacity="0.4"/></svg>
-            Digital Twin
+            Distill Yourself
           </button>
         </nav>
         <!-- Filter button + popover -->
@@ -163,27 +163,26 @@
           <div id="insights-body"></div>
         </div>
 
-        <!-- Digital Twin view -->
+        <!-- Cognitive Handbook (Digital Twin) view -->
         <div id="twin-view" class="hidden">
           <div id="twin-header">
-            <div id="twin-breadcrumb"><span class="twin-bc-root">Digital Twin</span></div>
+            <div id="twin-breadcrumb"><span class="twin-bc-root">Distill Yourself</span></div>
             <div id="twin-actions">
               <span id="twin-last-analyzed">尚未分析</span>
+              <button id="twin-btn-progress" class="btn-text hidden">📊 查看进度</button>
               <button id="twin-btn-analyze" class="btn-text">🔄 Analyze</button>
               <button id="twin-btn-sync" class="btn-text">📤 Sync</button>
             </div>
           </div>
           <div id="twin-body">
-            <!-- Overview: stats bar + 7 dimension cards + policies card -->
+            <!-- Overview: stats bar + cards + traits -->
             <div id="twin-stats-bar"></div>
             <div id="twin-overview"></div>
-            <!-- Dimension detail (hidden until drilled in) -->
+            <!-- Detail list (cards or traits) -->
             <div id="twin-detail" class="hidden"></div>
-            <!-- Policy list (hidden until clicked) -->
-            <div id="twin-policies-view" class="hidden"></div>
-            <!-- Item detail with trace (hidden until clicked) -->
+            <!-- Item detail with trace -->
             <div id="twin-item-view" class="hidden"></div>
-            <!-- Analysis progress (SSE stream, renders inline in body) -->
+            <!-- Analysis progress (SSE stream) -->
             <div id="twin-analysis-progress" class="hidden"></div>
           </div>
         </div>
