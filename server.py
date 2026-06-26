@@ -835,6 +835,10 @@ def build_index(force: bool = False) -> dict:
         "_file_mtimes": current_files,
     }
 
+    pruned_count = _db.prune_stale_sessions(set(current_files))
+    if pruned_count:
+        print(f"DB prune: removed {pruned_count} stale sessions")
+
     # Backfill DB from cached sessions (only if DB is missing entries)
     db_count = _db.get_conn().execute("SELECT count(*) FROM sessions").fetchone()[0]
     if db_count < len(sessions):
@@ -897,7 +901,7 @@ def build_index(force: bool = False) -> dict:
         _result_cache.clear()
 
     # Rebuild DB FTS + aggregates if anything changed
-    if to_parse or codex_to_parse:
+    if to_parse or codex_to_parse or pruned_count:
         try:
             _db.rebuild_fts()
             _db.refresh_aggregates()
@@ -1218,16 +1222,67 @@ def _normalize_ai_engine(engine: str) -> str:
     return engine
 
 
+def _kill_process_group(proc: subprocess.Popen):
+    """Terminate a process group when possible; fall back to the process."""
+    if not proc or proc.poll() is not None:
+        return
+    try:
+        if os.name == "posix":
+            os.killpg(proc.pid, 15)
+        else:
+            proc.terminate()
+        proc.wait(timeout=2)
+    except Exception:
+        try:
+            if os.name == "posix":
+                os.killpg(proc.pid, 9)
+            else:
+                proc.kill()
+        except Exception:
+            pass
+
+
+def _drain_text_pipe(pipe, sink: list):
+    """Continuously drain a text pipe to avoid child process deadlock."""
+    if not pipe:
+        return
+    try:
+        for line in pipe:
+            sink.append(line)
+    except Exception:
+        pass
+
+
+def _run_ai_command(cmd: list, prompt: str = None, timeout: int = 300) -> tuple:
+    """Run a local AI command with process-group timeout semantics."""
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE if prompt is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=(os.name == "posix"),
+    )
+    try:
+        return proc.communicate(input=prompt, timeout=timeout) + (proc.returncode,)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        stdout, stderr = proc.communicate()
+        raise subprocess.TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr)
+
 
 
 def _detect_ai_engine():
+    """Auto-detect available AI CLI: Claude Code first, then Codex."""
     """Auto-detect available AI CLI: Claude Code first, then Codex."""
     global _ai_engine_cache
     if _ai_engine_cache is not None:
         return _ai_engine_cache
     for name, cmd in [("claude", ["claude", "--version"]), ("codex", ["codex", "--version"])]:
         try:
-            subprocess.run(cmd, capture_output=True, timeout=5)
+            r = subprocess.run(cmd, capture_output=True, timeout=5)
+            if r.returncode != 0:
+                continue
             _ai_engine_cache = name
             print(f"AI engine: {name}")
             return _ai_engine_cache
@@ -1245,25 +1300,24 @@ def _run_ai_engine(prompt, allow_write=False, timeout=300, engine_override="auto
     engine = engine_override if engine_override != "auto" else _detect_ai_engine()
     if engine == "codex":
         sandbox = "workspace-write" if allow_write else "read-only"
-        r = subprocess.run(
+        stdout, stderr, returncode = _run_ai_command(
             ["codex", "--sandbox", sandbox, "--ask-for-approval", "never",
              "exec", "--skip-git-repo-check", prompt],
-            capture_output=True, text=True, timeout=timeout,
-            stdin=subprocess.DEVNULL,
+            timeout=timeout,
         )
         # Fallback: if codex failed and engine was auto-detected, try claude
-        if r.returncode != 0 and engine_override in ("auto", "", None):
-            print(f"Codex failed (rc={r.returncode}), falling back to claude")
+        if returncode != 0 and engine_override in ("auto", "", None):
+            print(f"Codex failed (rc={returncode}), falling back to claude")
             engine = "claude"
         else:
-            return r.stdout, r.stderr, r.returncode
+            return stdout, stderr, returncode
     if engine == "claude":
-        r = subprocess.run(
+        stdout, stderr, returncode = _run_ai_command(
             ["claude", "-p"],
-            input=prompt,
-            capture_output=True, text=True, timeout=timeout,
+            prompt=prompt,
+            timeout=timeout,
         )
-        return r.stdout, r.stderr, r.returncode
+        return stdout, stderr, returncode
     raise FileNotFoundError(
         "No AI engine found. Install Codex (npm i -g @openai/codex) "
         "or Claude Code (npm i -g @anthropic-ai/claude-code)."
@@ -1335,6 +1389,7 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_callback
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, stdin=subprocess.DEVNULL,
+            start_new_session=(os.name == "posix"),
         )
     else:  # claude
         cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose",
@@ -1342,6 +1397,7 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_callback
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, bufsize=1,
+            start_new_session=(os.name == "posix"),
         )
         # Write prompt in a thread to avoid blocking on large prompts
         # (macOS pipe buffer is ~64KB, prompt can be 100KB+)
@@ -1358,19 +1414,24 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_callback
         proc_callback(proc)
 
     accumulated_text = ""
+    stderr_lines = []
+    stderr_thread = threading.Thread(target=_drain_text_pipe, args=(proc.stderr, stderr_lines), daemon=True)
+    stderr_thread.start()
     try:
         import select as _select
         deadline = time.time() + timeout
         while True:
             if cancel_callback and cancel_callback():
-                proc.kill()
+                _kill_process_group(proc)
                 yield {"type": "cancelled", "message": "Cancelled by user"}
                 return
             remaining = deadline - time.time()
             if remaining <= 0:
-                proc.kill()
+                _kill_process_group(proc)
+                stderr_tail = "".join(stderr_lines)[-500:]
                 yield {"type": "timeout", "content": accumulated_text,
-                       "message": f"Timeout ({timeout // 60} min limit)"}
+                       "message": f"Timeout ({timeout // 60} min limit)",
+                       "stderr": stderr_tail}
                 return
             ready, _, _ = _select.select([proc.stdout], [], [], min(remaining, 1.0))
             if ready:
@@ -1406,8 +1467,16 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_callback
         yield {"type": "error", "message": str(e)}
     finally:
         if proc.poll() is None:
-            proc.kill()
-        proc.wait()
+            _kill_process_group(proc)
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc)
+
+    if proc.returncode not in (0, None):
+        stderr_tail = "".join(stderr_lines)[-1000:]
+        yield {"type": "error", "message": stderr_tail or f"{engine} exited with {proc.returncode}"}
+        return
 
     yield {"type": "done", "content": accumulated_text}
 
@@ -1629,7 +1698,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                     )
                     if updated_at and not is_active and (_utc_now_naive() - updated_at).total_seconds() > 1800:
                         stage_num = int(latest_run.get("current_stage") or 1)
-                        counts = self._stage_counts(stage_num)
+                        counts = self._stage_counts(stage_num, latest_run.get("run_id", ""))
                         _db.twin_run_update_stage(
                             latest_run["run_id"],
                             current_stage=stage_num,
@@ -3165,13 +3234,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             _twin_run_state["updated_at"] = time.time()
         if proc and proc.poll() is None:
             try:
-                proc.kill()
+                _kill_process_group(proc)
             except OSError:
                 pass
         if run_id:
             try:
                 stage_num = _stage_number(stage)
-                counts = self._stage_counts(stage_num)
+                counts = self._stage_counts(stage_num, run_id)
                 _db.twin_run_update_stage(
                     run_id,
                     status="cancelled",
@@ -3191,14 +3260,16 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 pass
         self._json_response({"ok": True, "status": "cancel_requested"})
 
-    def _stage_counts(self, stage_num: int) -> dict:
+    def _stage_counts(self, stage_num: int, run_id: str = "") -> dict:
         """Return compact stage progress counts for UI cards."""
         import db as _db
         _db.init_db()
+        where = "run_id=?" if run_id else ""
+        params = (run_id,) if run_id else ()
         counts = {
-            "events": _db.cm_count("evidence_events"),
-            "cards": _db.cm_count("judgment_cards"),
-            "traits": _db.cm_count("cognitive_traits"),
+            "events": _db.cm_count("evidence_events", where, params),
+            "cards": _db.cm_count("judgment_cards", where, params),
+            "traits": _db.cm_count("cognitive_traits", where, params),
         }
         if stage_num == 2:
             counts["shown"] = min(counts["events"], 120)
@@ -3211,7 +3282,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 "input_limit": 120,
                 "output": "judgment_cards",
                 "resume_granularity": "stage",
-                "run_scoped": False,
+                "run_scoped": bool(run_id),
+                "run_id": run_id,
             }
         elif stage_num == 3:
             counts["shown"] = min(counts["cards"], 120)
@@ -3224,7 +3296,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 "input_limit": 120,
                 "output": "cognitive_traits",
                 "resume_granularity": "stage",
-                "run_scoped": False,
+                "run_scoped": bool(run_id),
+                "run_id": run_id,
             }
         else:
             counts["shown"] = counts.get("events", 0)
@@ -3234,7 +3307,8 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 "input": "sessions" if stage_num == 1 else "cognitive_traits",
                 "input_total": counts.get("events" if stage_num == 1 else "traits", 0),
                 "resume_granularity": "stage",
-                "run_scoped": False,
+                "run_scoped": bool(run_id),
+                "run_id": run_id,
             }
         return counts
 
@@ -3243,7 +3317,23 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                             finished: bool = False):
         """Persist and emit a stage card update."""
         import db as _db
-        counts = self._stage_counts(stage_num)
+        counts = self._stage_counts(stage_num, run_id)
+        task_id = _db.twin_task_upsert(
+            run_id,
+            stage_num,
+            status,
+            input_scope={"counts": counts.get("cursor", {})},
+            last_error=last_error,
+            finished=finished or status in ("done", "timeout", "error", "cancelled"),
+        )
+        if status == "done":
+            _db.twin_artifact_record(
+                run_id,
+                task_id,
+                stage_num,
+                "stage_counts",
+                payload={"counts": counts},
+            )
         meta = {
             str(stage_num): {
                 "stage": stage_num,
@@ -3345,7 +3435,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             self._set_twin_run_state(status="stage_done", process=None)
             elapsed = round(time.time() - started, 1)
             self._persist_twin_stage(run_id, stage_num, "done", elapsed)
-            counts = self._stage_counts(stage_num)
+            counts = self._stage_counts(stage_num, run_id)
             self._sse_event({
                 "type": "stage_done",
                 "stage": stage_label,
@@ -3377,17 +3467,18 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         self._sse_event({"type": "stage_start", "stage": "Stage 4", "stage_num": stage_num, "run_id": run_id})
 
         proc = subprocess.Popen(
-            [sys.executable, cli_path, "twin-compile"],
+            [sys.executable, cli_path, "twin-compile", "--run-id", run_id],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=(os.name == "posix"),
         )
         self._set_twin_run_state(process=proc)
         try:
             while proc.poll() is None:
                 state = self._get_twin_run_state()
                 if state.get("run_id") == run_id and state.get("cancel_requested"):
-                    proc.kill()
+                    _kill_process_group(proc)
                     stdout, stderr = proc.communicate()
                     elapsed = round(time.time() - started, 1)
                     msg = "Cancelled by user"
@@ -3407,7 +3498,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                     })
                     return False
                 if time.time() - started > 30:
-                    proc.kill()
+                    _kill_process_group(proc)
                     stdout, stderr = proc.communicate()
                     elapsed = round(time.time() - started, 1)
                     msg = "Stage 4 timed out after 30s"
@@ -3431,7 +3522,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 self._sse_event({"type": "error", "message": f"Stage 4 failed: {msg}", "stage_num": stage_num, "run_id": run_id})
                 return False
             self._persist_twin_stage(run_id, stage_num, "done", elapsed)
-            counts = self._stage_counts(stage_num)
+            counts = self._stage_counts(stage_num, run_id)
             self._sse_event({
                 "type": "stage_done",
                 "stage": "Stage 4",
@@ -3560,19 +3651,19 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                     "Stage 1/4: 从对话历史中提取决策事件 (Evidence Events)...\n"
                     f"Scope: source={source}, date={date}, project={project or 'all'}, engine={engine}\n"
                 )})
-                stage1_prompt = self._build_twin_stage1_prompt(cli_path, source, date, project, engine)
+                stage1_prompt = self._build_twin_stage1_prompt(cli_path, run_id, source, date, project, engine)
                 if not self._run_twin_ai_stage(stage1_prompt, "Stage 1", run_id, 1, engine):
                     return
 
             if start_stage <= 2:
                 self._sse_event({"type": "text", "content": "\n\nStage 2/4: 从事件中蒸馏判断卡 (Judgment Cards)...\n"})
-                stage2_prompt = self._build_twin_stage2_prompt(cli_path)
+                stage2_prompt = self._build_twin_stage2_prompt(cli_path, run_id)
                 if not self._run_twin_ai_stage(stage2_prompt, "Stage 2", run_id, 2, engine):
                     return
 
             if start_stage <= 3:
                 self._sse_event({"type": "text", "content": "\n\nStage 3/4: 从判断卡归纳认知特质 (Cognitive Traits)...\n"})
-                stage3_prompt = self._build_twin_stage3_prompt(cli_path)
+                stage3_prompt = self._build_twin_stage3_prompt(cli_path, run_id)
                 if not self._run_twin_ai_stage(stage3_prompt, "Stage 3", run_id, 3, engine):
                     return
 
@@ -3600,12 +3691,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             proc = state.get("process")
             if proc and proc.poll() is None:
                 try:
-                    proc.kill()
+                    _kill_process_group(proc)
                 except OSError:
                     pass
             stage_num = _stage_number(state.get("stage", ""))
             try:
-                counts = self._stage_counts(stage_num)
+                counts = self._stage_counts(stage_num, run_id)
                 _db.twin_run_update_stage(
                     run_id,
                     current_stage=stage_num,
@@ -3637,7 +3728,9 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 self._set_twin_run_state(status="idle", process=None)
             _twin_analyze_lock.release()
 
-    def _build_twin_stage1_prompt(self, cli_path: str, source: str = "all", date: str = "7d", project: str = "", engine: str = "auto") -> str:
+    def _build_twin_stage1_prompt(self, cli_path: str, run_id: str,
+                                  source: str = "all", date: str = "7d",
+                                  project: str = "", engine: str = "auto") -> str:
         """Build prompt for Stage 1: Evidence event extraction from conversation history."""
         digest = self._collect_profile_digest(source, date, project, cli_path)
         scope_flags = f"--date {shlex.quote(date)} --source {shlex.quote(source)}"
@@ -3659,6 +3752,7 @@ An evidence event records: what the AI did → how the user reacted → what les
 - source: {source}
 - date: {date}
 - project: {project or "all"}
+- run_id: {run_id}
 
 # CLI Tool
 
@@ -3672,7 +3766,7 @@ Commands for exploration:
   search <q>     — Full-text search across sessions
 
 Commands for reading existing data:
-  twin-events [--domain X] [--signal Y] [--limit N] --json  — List existing evidence events
+  twin-events --run-id {run_id} [--domain X] [--signal Y] [--limit N] --json  — List current-run evidence events
   twin-get events <id>                                      — Get a single event by ID
   twin-search events --q "keyword" --json                   — Search events by keyword
 
@@ -3686,13 +3780,14 @@ Commands for writing:
 
 # Task
 
-0. Existing data first: run `python3 {cli_path} twin-events --json --limit 500`.
+0. Existing data first: run `python3 {cli_path} twin-events --run-id {run_id} --json --limit 500`.
 1. Multi-subagent plan: {agent_strategy}
 2. Shard A: corrections/friction. Run `python3 {cli_path} corrections {scope_flags} --limit 80`, inspect top sessions with `read <id> -s`.
 3. Shard B: positive/acceptance. Run `python3 {cli_path} queries {scope_flags} --limit 60`, inspect accepted workflows.
 4. Shard C: project/domain coverage. Run `python3 {cli_path} highlights {scope_flags} --limit 20` and inspect diverse projects/domains.
 5. IMPORTANT: subagents/readers produce candidate JSON only. They MUST NOT run twin-add, twin-edit, twin-link, or twin-batch.
 6. Supervisor step: merge candidates, deduplicate against existing events, validate with `twin-candidates`, then write once with `twin-batch`.
+7. IMPORTANT: every final `twin-batch` payload MUST include top-level `"run_id": "{run_id}"`; do not write unscoped Twin entities.
 
 Candidate JSON format:
 
@@ -3720,7 +3815,7 @@ EOF
 Final write:
 
 python3 {cli_path} twin-batch <<'EOF'
-{{"operations": [
+{{"run_id": "{run_id}", "operations": [
   {{"resource": "events", "action": "add", "data": {{...}}}},
   {{"resource": "events", "action": "edit", "id": "ev_xxx", "data": {{...}}}}
 ]}}
@@ -3736,16 +3831,22 @@ Quality requirements:
 - All text in Chinese
 """
 
-    def _build_twin_stage2_prompt(self, cli_path: str) -> str:
+    def _build_twin_stage2_prompt(self, cli_path: str, run_id: str) -> str:
         """Build prompt for Stage 2: Judgment card distillation from evidence events."""
         import db as _db
         _db.init_db()
 
         # Get existing cards for dedup
-        existing_card_total = _db.cm_count("judgment_cards")
-        event_total = _db.cm_count("evidence_events")
-        existing_cards = _db.cm_get_all("judgment_cards", limit=100)
-        events = _db.cm_get_all("evidence_events", order="created_at DESC", limit=120)
+        existing_card_total = _db.cm_count("judgment_cards", "run_id=?", (run_id,))
+        event_total = _db.cm_count("evidence_events", "run_id=?", (run_id,))
+        existing_cards = _db.cm_get_all("judgment_cards", where="run_id=?", params=(run_id,), limit=100)
+        events = _db.cm_get_all(
+            "evidence_events",
+            where="run_id=?",
+            params=(run_id,),
+            order="created_at DESC",
+            limit=120,
+        )
         events_json = json.dumps([dict(e) for e in events], ensure_ascii=False, default=str)
         input_meta = {
             "events_total": event_total,
@@ -3795,14 +3896,18 @@ A judgment card captures a situation-specific judgment pattern: when does this a
   python3 {cli_path} <command>
 
 Commands for reading:
-  twin-cards [--status X] [--tag Y] --json    — List all existing judgment cards
+  twin-cards --run-id {run_id} [--status X] [--tag Y] --json    — List current-run judgment cards
   twin-get cards <id>                         — Get a single card with linked events
   twin-search cards --q "keyword" --json      — Search cards by keyword
-  twin-events --json                          — List all evidence events
+  twin-events --run-id {run_id} --json        — List current-run evidence events
 
 Commands for validating/writing:
   twin-candidates       — Validate candidate card JSON without writing
   twin-batch            — Execute validated operations in one transactional call
+
+# Run Scope
+
+Only use evidence events where `run_id == "{run_id}"`. Every `twin-batch` payload MUST include top-level `"run_id": "{run_id}"`.
 
 # Evidence Events (input data)
 
@@ -3845,7 +3950,7 @@ EOF
 
 # Then batch multiple operations:
 python3 {cli_path} twin-batch <<'EOF'
-{{"operations": [
+{{"run_id": "{run_id}", "operations": [
   {{"resource": "cards", "action": "add", "data": {{...}}}},
   {{"resource": "cards", "action": "edit", "id": "jc_xxx", "data": {{...}}}},
   {{"resource": "link", "action": "link", "from": "ev_xxx", "to": "jc_yyy"}}
@@ -3862,17 +3967,23 @@ EOF
 - **Dedup carefully**: Two events about "不要改无关文件" and "只改必要代码" should merge into one card, not create two. Use `twin-batch` edit operations to merge, not direct one-off write commands.
 """
 
-    def _build_twin_stage3_prompt(self, cli_path: str) -> str:
+    def _build_twin_stage3_prompt(self, cli_path: str, run_id: str) -> str:
         """Build prompt for Stage 3: Cognitive trait inference from judgment cards."""
         import db as _db
         _db.init_db()
 
-        card_total = _db.cm_count("judgment_cards")
-        trait_total = _db.cm_count("cognitive_traits")
-        cards = _db.cm_get_all("judgment_cards", order="confidence DESC", limit=120)
+        card_total = _db.cm_count("judgment_cards", "run_id=?", (run_id,))
+        trait_total = _db.cm_count("cognitive_traits", "run_id=?", (run_id,))
+        cards = _db.cm_get_all(
+            "judgment_cards",
+            where="run_id=?",
+            params=(run_id,),
+            order="confidence DESC",
+            limit=120,
+        )
         cards_json = json.dumps([dict(c) for c in cards], ensure_ascii=False, default=str)
 
-        existing_traits = _db.cm_get_all("cognitive_traits", limit=60)
+        existing_traits = _db.cm_get_all("cognitive_traits", where="run_id=?", params=(run_id,), limit=60)
         input_meta = {
             "cards_total": card_total,
             "cards_shown": len(cards),
@@ -3902,14 +4013,18 @@ pattern should be abstracted into one trait.
   python3 {cli_path} <command>
 
 Commands for reading:
-  twin-traits [--category X] [--status X] --json  — List existing cognitive traits
+  twin-traits --run-id {run_id} [--category X] [--status X] --json  — List current-run cognitive traits
   twin-get traits <id>                             — Get a single trait by ID
   twin-search traits --q "keyword" --json          — Search traits by keyword
-  twin-cards --json                                — List all judgment cards
+  twin-cards --run-id {run_id} --json              — List current-run judgment cards
 
 Commands for validating/writing:
   twin-candidates        — Validate candidate trait JSON without writing
   twin-batch             — Execute validated operations in one transactional call
+
+# Run Scope
+
+Only use judgment cards where `run_id == "{run_id}"`. Every `twin-batch` payload MUST include top-level `"run_id": "{run_id}"`.
 
 # Judgment Cards (input data)
 
@@ -3954,7 +4069,7 @@ EOF
 
 # Then batch all writes:
 python3 {cli_path} twin-batch <<'EOF'
-{{"operations": [
+{{"run_id": "{run_id}", "operations": [
   {{"resource": "traits", "action": "add", "data": {{...}}}},
   {{"resource": "traits", "action": "edit", "id": "ct_xxx", "data": {{...}}}},
   {{"resource": "link", "action": "link", "from": "jc_xxx", "to": "ct_yyy"}}

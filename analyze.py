@@ -337,6 +337,23 @@ def cmd_queries(args):
 
         user_msgs = _db.get_session_messages(meta["id"], role="user")
         title = meta.get("title") or "Untitled"
+        if args.json:
+            out = []
+            for i, msg in enumerate(user_msgs):
+                text = msg.get("text", "")
+                if args.keyword and args.keyword.lower() not in text.lower():
+                    continue
+                out.append({
+                    "sessionId": meta["id"],
+                    "title": title,
+                    "project": meta.get("project_name", ""),
+                    "source": meta.get("source", ""),
+                    "date": (msg.get("ts") or "")[:19],
+                    "messageIndex": msg.get("idx", i),
+                    "text": text,
+                })
+            print(json.dumps(out, ensure_ascii=False, indent=2))
+            return
         print(f"# User queries from: {title}")
         print(f"# {len(user_msgs)} messages\n")
         for i, msg in enumerate(user_msgs):
@@ -871,7 +888,10 @@ def cmd_stats(args):
         filtered = _get_filtered(args)
         total = len(filtered)
         if total == 0:
-            print("No sessions match the filters.")
+            if args.json:
+                print(json.dumps({"total": 0, "userMessages": 0, "dataSizeBytes": 0}, ensure_ascii=False, indent=2))
+            else:
+                print("No sessions match the filters.")
             return
         proj_counts = {}
         src_counts = {}
@@ -889,10 +909,24 @@ def cmd_stats(args):
                 dates.append(m["date"][:10])
 
     if total == 0:
-        print("No sessions match the filters.")
+        if args.json:
+            print(json.dumps({"total": 0, "userMessages": 0, "dataSizeBytes": 0}, ensure_ascii=False, indent=2))
+        else:
+            print("No sessions match the filters.")
         return
 
     dates.sort()
+
+    if args.json:
+        print(json.dumps({
+            "total": total,
+            "userMessages": total_msgs,
+            "dataSizeBytes": total_size,
+            "dateRange": {"start": dates[0], "end": dates[-1]} if dates else None,
+            "bySource": dict(sorted(src_counts.items(), key=lambda x: -x[1])),
+            "byProject": dict(sorted(proj_counts.items(), key=lambda x: -x[1])[:args.limit]),
+        }, ensure_ascii=False, indent=2))
+        return
 
     print("=== Statistics ===\n")
     print(f"  Sessions:       {total}")
@@ -2219,6 +2253,9 @@ def cmd_twin_events(args):
     if getattr(args, "session", ""):
         where_parts.append("session_id LIKE ?")
         params.append(f"%{args.session}%")
+    if getattr(args, "run_id", ""):
+        where_parts.append("run_id=?")
+        params.append(args.run_id)
 
     where = " AND ".join(where_parts) if where_parts else ""
     total = _db.cm_count("evidence_events", where=where, params=tuple(params))
@@ -2259,6 +2296,9 @@ def cmd_twin_cards(args):
     if getattr(args, "tag", ""):
         where_parts.append("tags LIKE ?")
         params.append(f"%{args.tag}%")
+    if getattr(args, "run_id", ""):
+        where_parts.append("run_id=?")
+        params.append(args.run_id)
     min_conf = getattr(args, "min_confidence", None)
     if min_conf is not None:
         where_parts.append("confidence>=?")
@@ -2299,6 +2339,9 @@ def cmd_twin_traits(args):
     if getattr(args, "category", ""):
         where_parts.append("category=?")
         params.append(args.category)
+    if getattr(args, "run_id", ""):
+        where_parts.append("run_id=?")
+        params.append(args.run_id)
 
     where = " AND ".join(where_parts) if where_parts else ""
     total = _db.cm_count("cognitive_traits", where=where, params=tuple(params))
@@ -2395,12 +2438,23 @@ def cmd_twin_compile(args):
     _db.init_db()
 
     # Select top cards by confidence × status weight
-    cards = _db.cm_get_all("judgment_cards",
-                           where="status IN ('confirmed','emerging')",
-                           order="confidence DESC", limit=25)
-    traits = _db.cm_get_all("cognitive_traits",
-                            where="status IN ('confirmed','emerging')",
-                            order="strength DESC", limit=15)
+    run_id = getattr(args, "run_id", "") or ""
+    if run_id:
+        cards = _db.cm_get_all("judgment_cards",
+                               where="run_id=? AND status IN ('confirmed','emerging')",
+                               params=(run_id,),
+                               order="confidence DESC", limit=25)
+        traits = _db.cm_get_all("cognitive_traits",
+                                where="run_id=? AND status IN ('confirmed','emerging')",
+                                params=(run_id,),
+                                order="strength DESC", limit=15)
+    else:
+        cards = _db.cm_get_all("judgment_cards",
+                               where="status IN ('confirmed','emerging')",
+                               order="confidence DESC", limit=25)
+        traits = _db.cm_get_all("cognitive_traits",
+                                where="status IN ('confirmed','emerging')",
+                                order="strength DESC", limit=15)
 
     if not cards and not traits:
         print("No confirmed/emerging cards or traits to compile.")
@@ -2430,7 +2484,8 @@ def cmd_twin_compile(args):
             lines.append(entry)
 
     pack = "\n".join(lines)
-    print(f"=== Runtime Pack ({len(cards)} cards, {len(traits)} traits) ===\n")
+    scope = f", run_id={run_id}" if run_id else ""
+    print(f"=== Runtime Pack ({len(cards)} cards, {len(traits)} traits{scope}) ===\n")
     print(pack)
 
 
@@ -2443,6 +2498,16 @@ _TWIN_RESOURCE_TABLE = {
     "cards": "judgment_cards",
     "traits": "cognitive_traits",
 }
+
+_TWIN_REQUIRED_BY_RESOURCE = {
+    "events": ["session_id", "event_index", "lesson", "signal_type", "domain"],
+    "cards": ["applies_when", "judgment", "agent_action"],
+    "traits": ["name", "category", "description"],
+}
+
+
+def _validate_twin_resource_data(resource: str, data: dict) -> list:
+    return [k for k in _TWIN_REQUIRED_BY_RESOURCE.get(resource, []) if data.get(k) in ("", None)]
 
 # Searchable text columns per table
 _TWIN_SEARCH_COLS = {
@@ -2650,6 +2715,7 @@ def cmd_twin_batch(args):
         sys.exit(1)
 
     operations = payload.get("operations", [])
+    run_id = payload.get("run_id", "")
     results = []
     conn = _db.get_conn()
     current_index = 0
@@ -2667,7 +2733,13 @@ def cmd_twin_batch(args):
                     raise ValueError(f"unknown resource: {resource}")
                 prefix = {"events": "ev_", "cards": "jc_", "traits": "ct_"}[resource]
                 item_id = prefix + uuid.uuid4().hex[:8]
-                _db.cm_upsert(table, item_id, op.get("data", {}), commit=False)
+                data = dict(op.get("data", {}))
+                if run_id and resource in _TWIN_RESOURCE_TABLE:
+                    data.setdefault("run_id", run_id)
+                missing = _validate_twin_resource_data(resource, data)
+                if missing:
+                    raise ValueError(f"{resource} missing required fields: {', '.join(missing)}")
+                _db.cm_upsert(table, item_id, data, commit=False)
                 results.append({"index": i, "ok": True, "id": item_id, "action": "added"})
 
             elif action == "edit":
@@ -2676,7 +2748,15 @@ def cmd_twin_batch(args):
                 item_id = op.get("id", "")
                 if not _db.cm_get(table, item_id):
                     raise ValueError(f"not found: {item_id}")
-                _db.cm_upsert(table, item_id, op.get("data", {}), commit=False)
+                data = dict(op.get("data", {}))
+                if run_id and resource in _TWIN_RESOURCE_TABLE:
+                    data.setdefault("run_id", run_id)
+                merged = _db.cm_get(table, item_id) or {}
+                merged.update(data)
+                missing = _validate_twin_resource_data(resource, merged)
+                if missing:
+                    raise ValueError(f"{resource} missing required fields: {', '.join(missing)}")
+                _db.cm_upsert(table, item_id, data, commit=False)
                 results.append({"index": i, "ok": True, "id": item_id, "action": "updated"})
 
             elif action == "link":
@@ -2697,7 +2777,10 @@ def cmd_twin_batch(args):
     err_count = sum(1 for r in results if "error" in r)
     print(json.dumps({"ok": err_count == 0, "total": len(operations),
                       "succeeded": ok_count, "failed": err_count,
+                      "run_id": run_id,
                       "results": results}, ensure_ascii=False, indent=2))
+    if err_count:
+        sys.exit(1)
 
 
 def cmd_twin_candidates(args):
@@ -2713,19 +2796,14 @@ def cmd_twin_candidates(args):
         print(json.dumps({"ok": False, "error": "expected list or object with candidates list"}, ensure_ascii=False))
         sys.exit(1)
 
-    required_by_resource = {
-        "events": ["session_id", "event_index", "lesson", "signal_type", "domain"],
-        "cards": ["applies_when", "judgment", "agent_action"],
-        "traits": ["name", "category", "description"],
-    }
     results = []
     for i, item in enumerate(candidates):
         resource = item.get("resource", "events")
         data = item.get("data", item)
-        missing = [k for k in required_by_resource.get(resource, []) if data.get(k) in ("", None)]
+        missing = _validate_twin_resource_data(resource, data)
         results.append({
             "index": i,
-            "ok": not missing and resource in required_by_resource,
+            "ok": not missing and resource in _TWIN_REQUIRED_BY_RESOURCE,
             "resource": resource,
             "missing": missing,
         })
@@ -2824,19 +2902,23 @@ Examples:
     p_te.add_argument("--domain", default="", help="Filter by domain")
     p_te.add_argument("--signal", default="", help="Filter by signal_type")
     p_te.add_argument("--session", default="", help="Filter by session id (substring)")
+    p_te.add_argument("--run-id", default="", help="Filter by Twin run_id")
 
     p_tc = sub.add_parser("twin-cards", parents=[shared], help="List judgment cards")
     p_tc.add_argument("--status", default="", help="Filter by status (hypothesis/emerging/confirmed)")
     p_tc.add_argument("--tag", default="", help="Filter by tag (substring match)")
+    p_tc.add_argument("--run-id", default="", help="Filter by Twin run_id")
     p_tc.add_argument("--min-confidence", type=float, default=None, dest="min_confidence",
                       help="Minimum confidence threshold")
 
     p_tt = sub.add_parser("twin-traits", parents=[shared], help="List cognitive traits")
     p_tt.add_argument("--status", default="", help="Filter by status")
     p_tt.add_argument("--category", default="", help="Filter by category")
+    p_tt.add_argument("--run-id", default="", help="Filter by Twin run_id")
 
     sub.add_parser("twin-write", help="Write/update/delete cognitive handbook entries from JSON stdin")
-    sub.add_parser("twin-compile", help="Compile Runtime Pack from cards + traits")
+    p_tcompile = sub.add_parser("twin-compile", help="Compile Runtime Pack from cards + traits")
+    p_tcompile.add_argument("--run-id", default="", help="Compile only artifacts from a Twin run")
 
     # CRUD tools
     p_tg = sub.add_parser("twin-get", help="Get a single event/card/trait by ID")

@@ -55,6 +55,21 @@ class TwinIntegrityTests(unittest.TestCase):
         self.assertEqual(db.cm_get("evidence_events", "ev_original")["lesson"], "original lesson")
         self.assertIsNone(db.cm_get("evidence_events", "ev_duplicate"))
 
+    def test_evidence_event_index_can_repeat_across_runs(self):
+        base = {
+            "session_id": "s1",
+            "event_index": 1,
+            "lesson": "scoped lesson",
+            "signal_type": "correction",
+            "domain": "coding/scope",
+        }
+        db.cm_upsert("evidence_events", "ev_run_a", {**base, "run_id": "run_a"})
+        db.cm_upsert("evidence_events", "ev_run_b", {**base, "run_id": "run_b"})
+
+        self.assertEqual(db.cm_count("evidence_events"), 2)
+        self.assertEqual(db.cm_get("evidence_events", "ev_run_a")["run_id"], "run_a")
+        self.assertEqual(db.cm_get("evidence_events", "ev_run_b")["run_id"], "run_b")
+
     def test_twin_batch_rejects_invalid_link_and_rolls_back_prior_add(self):
         payload = {
             "operations": [
@@ -65,6 +80,8 @@ class TwinIntegrityTests(unittest.TestCase):
                         "session_id": "s1",
                         "event_index": 1,
                         "lesson": "should roll back",
+                        "signal_type": "correction",
+                        "domain": "testing/scope",
                     },
                 },
                 {
@@ -80,7 +97,8 @@ class TwinIntegrityTests(unittest.TestCase):
         out = io.StringIO()
         try:
             with contextlib.redirect_stdout(out):
-                analyze.cmd_twin_batch(None)
+                with self.assertRaises(SystemExit):
+                    analyze.cmd_twin_batch(None)
         finally:
             sys.stdin = old_stdin
 
@@ -175,6 +193,150 @@ class TwinIntegrityTests(unittest.TestCase):
         result = json.loads(out.getvalue())
         self.assertFalse(result["ok"])
         self.assertIn("lesson", result["results"][0]["missing"])
+
+    def test_twin_batch_stamps_run_id_and_records_dag(self):
+        payload = {
+            "run_id": "run_scope_a",
+            "operations": [{
+                "resource": "events",
+                "action": "add",
+                "data": {
+                    "session_id": "s1",
+                    "event_index": 1,
+                    "lesson": "scoped lesson",
+                    "signal_type": "correction",
+                    "domain": "coding/scope",
+                },
+            }],
+        }
+
+        old_stdin = sys.stdin
+        sys.stdin = io.StringIO(json.dumps(payload))
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                analyze.cmd_twin_batch(None)
+        finally:
+            sys.stdin = old_stdin
+
+        result = json.loads(out.getvalue())
+        self.assertTrue(result["ok"])
+        row = db.cm_get("evidence_events", result["results"][0]["id"])
+        self.assertEqual(row["run_id"], "run_scope_a")
+
+        task_id = db.twin_task_upsert("run_scope_a", 1, "done", {"input": "sessions"}, finished=True)
+        artifact_id = db.twin_artifact_record("run_scope_a", task_id, 1, "stage_counts", payload={"events": 1})
+        conn = db.get_conn()
+        self.assertEqual(conn.execute("SELECT run_id FROM twin_tasks WHERE task_id=?", (task_id,)).fetchone()["run_id"], "run_scope_a")
+        self.assertEqual(conn.execute("SELECT run_id FROM twin_artifacts WHERE artifact_id=?", (artifact_id,)).fetchone()["run_id"], "run_scope_a")
+
+    def test_stage_prompts_and_counts_are_run_scoped(self):
+        db.cm_upsert("evidence_events", "ev_in", {
+            "run_id": "run_in",
+            "session_id": "s1",
+            "event_index": 1,
+            "lesson": "inside run",
+            "signal_type": "correction",
+            "domain": "coding/scope",
+        })
+        db.cm_upsert("evidence_events", "ev_out", {
+            "run_id": "run_out",
+            "session_id": "s2",
+            "event_index": 1,
+            "lesson": "outside run",
+            "signal_type": "acceptance",
+            "domain": "research/scope",
+        })
+        db.cm_upsert("judgment_cards", "jc_in", {
+            "run_id": "run_in",
+            "applies_when": "inside card",
+            "judgment": "inside judgment",
+            "agent_action": "inside action",
+        })
+        db.cm_upsert("judgment_cards", "jc_out", {
+            "run_id": "run_out",
+            "applies_when": "outside card",
+            "judgment": "outside judgment",
+            "agent_action": "outside action",
+        })
+
+        class DummyHandler:
+            def _collect_profile_digest(self, *args, **kwargs):
+                return ""
+
+        stage2 = server.ChatViewerHandler._build_twin_stage2_prompt(DummyHandler(), "analyze.py", "run_in")
+        stage3 = server.ChatViewerHandler._build_twin_stage3_prompt(DummyHandler(), "analyze.py", "run_in")
+        stage1 = server.ChatViewerHandler._build_twin_stage1_prompt(
+            DummyHandler(), "analyze.py", "run_in", "all", "7d", "", "auto"
+        )
+        counts = server.ChatViewerHandler._stage_counts(DummyHandler(), 2, "run_in")
+
+        self.assertIn("twin-events --run-id run_in", stage1)
+        self.assertIn("inside run", stage2)
+        self.assertNotIn("outside run", stage2)
+        self.assertIn("inside card", stage3)
+        self.assertNotIn("outside card", stage3)
+        self.assertTrue(counts["cursor"]["run_scoped"])
+        self.assertEqual(counts["events"], 1)
+
+    def test_prune_stale_sessions_removes_messages_and_insights(self):
+        meta = {
+            "id": "s_stale",
+            "title": "Stale",
+            "date": "2026-06-26T10:00:00",
+            "lastDate": "2026-06-26T10:00:00",
+            "filePath": "/tmp/stale.jsonl",
+            "fileSize": 10,
+            "_mtime": 1,
+            "userMessageCount": 1,
+            "preview": "hello",
+            "project": "demo",
+            "projectName": "Demo Project",
+            "source": "codex",
+        }
+        db.upsert_session(meta, [{"idx": 0, "text": "hello", "ts": "2026-06-26T10:00:00"}], [])
+        db.get_conn().execute(
+            "INSERT INTO insight_tool_usage(session_id, day, tool_name, count) VALUES (?,?,?,?)",
+            ("s_stale", "2026-06-26", "Read", 1),
+        )
+        db.get_conn().commit()
+
+        self.assertEqual(db.prune_stale_sessions(set()), 1)
+        self.assertIsNone(db.get_session_meta("s_stale"))
+        self.assertEqual(db.get_conn().execute("SELECT COUNT(*) FROM messages").fetchone()[0], 0)
+        self.assertEqual(db.get_conn().execute("SELECT COUNT(*) FROM insight_tool_usage").fetchone()[0], 0)
+
+    def test_project_filter_is_substring_and_stats_json_is_machine_readable(self):
+        meta = {
+            "id": "s_project",
+            "title": "Project",
+            "date": "2026-06-26T10:00:00",
+            "lastDate": "2026-06-26T10:00:00",
+            "filePath": "/tmp/project.jsonl",
+            "fileSize": 10,
+            "_mtime": 1,
+            "userMessageCount": 1,
+            "preview": "hello",
+            "project": "demo",
+            "projectName": "Distill Yourself",
+            "source": "codex",
+        }
+        db.upsert_session(meta, [{"idx": 0, "text": "how to test", "ts": "2026-06-26T10:00:00"}], [])
+
+        class Args:
+            source = "all"
+            project = "distill"
+            date = "all"
+            limit = 10
+            json = True
+
+        self.assertEqual(len(db.get_filtered_sessions(project="distill")), 1)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            analyze.cmd_stats(Args())
+        data = json.loads(out.getvalue())
+        self.assertEqual(data["total"], 1)
+        self.assertEqual(data["byProject"]["Distill Yourself"], 1)
 
     def test_twin_run_persists_stage_metadata_and_latest(self):
         db.twin_run_upsert(
@@ -375,7 +537,7 @@ class TwinIntegrityTests(unittest.TestCase):
             def _sse_event(self, evt):
                 self.events.append(evt)
 
-            def _stage_counts(self, stage_num):
+            def _stage_counts(self, stage_num, run_id=""):
                 return {}
 
         dummy = DummyHandler()

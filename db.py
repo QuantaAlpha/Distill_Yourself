@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -151,6 +152,7 @@ def init_db():
         -- L1: Evidence Events — structured decision events from conversations
         CREATE TABLE IF NOT EXISTS evidence_events (
             id          TEXT PRIMARY KEY,
+            run_id      TEXT,
             session_id  TEXT,
             event_index INTEGER,
             card_id     TEXT,
@@ -165,9 +167,10 @@ def init_db():
             created_at  TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id),
             FOREIGN KEY (card_id) REFERENCES judgment_cards(id) ON DELETE SET NULL,
-            UNIQUE(session_id, event_index)
+            UNIQUE(run_id, session_id, event_index)
         );
         CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_events(session_id);
+        CREATE INDEX IF NOT EXISTS idx_evidence_run     ON evidence_events(run_id);
         CREATE INDEX IF NOT EXISTS idx_evidence_domain  ON evidence_events(domain);
         CREATE INDEX IF NOT EXISTS idx_evidence_signal  ON evidence_events(signal_type);
         CREATE INDEX IF NOT EXISTS idx_evidence_card    ON evidence_events(card_id);
@@ -175,6 +178,7 @@ def init_db():
         -- L2: Judgment Cards — situation-specific judgment patterns
         CREATE TABLE IF NOT EXISTS judgment_cards (
             id              TEXT PRIMARY KEY,
+            run_id          TEXT,
             applies_when    TEXT,
             judgment        TEXT,
             agent_action    TEXT,
@@ -188,6 +192,7 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_cards_status ON judgment_cards(status);
         CREATE INDEX IF NOT EXISTS idx_cards_confidence ON judgment_cards(confidence);
+        CREATE INDEX IF NOT EXISTS idx_cards_run ON judgment_cards(run_id);
 
         -- L2: Card Relations — lightweight relationship tracking between cards
         CREATE TABLE IF NOT EXISTS card_relations (
@@ -202,6 +207,7 @@ def init_db():
         -- L3: Cognitive Traits — personality/cognitive characteristics inferred from cards
         CREATE TABLE IF NOT EXISTS cognitive_traits (
             id                  TEXT PRIMARY KEY,
+            run_id              TEXT,
             name                TEXT,
             category            TEXT,
             description         TEXT,
@@ -213,6 +219,7 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_traits_category ON cognitive_traits(category);
         CREATE INDEX IF NOT EXISTS idx_traits_status ON cognitive_traits(status);
+        CREATE INDEX IF NOT EXISTS idx_traits_run ON cognitive_traits(run_id);
 
         -- Twin analysis run checkpoints for interactive timeout recovery.
         CREATE TABLE IF NOT EXISTS twin_runs (
@@ -229,6 +236,37 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_twin_runs_updated ON twin_runs(updated_at);
         CREATE INDEX IF NOT EXISTS idx_twin_runs_status ON twin_runs(status);
+
+        -- Durable Twin DAG: one task per run stage, one artifact per stage output.
+        CREATE TABLE IF NOT EXISTS twin_tasks (
+            task_id         TEXT PRIMARY KEY,
+            run_id          TEXT NOT NULL,
+            stage_num       INTEGER NOT NULL,
+            status          TEXT,
+            input_scope_json TEXT,
+            started_at      TEXT,
+            updated_at      TEXT,
+            finished_at     TEXT,
+            last_error      TEXT,
+            UNIQUE(run_id, stage_num)
+        );
+        CREATE INDEX IF NOT EXISTS idx_twin_tasks_run ON twin_tasks(run_id);
+        CREATE INDEX IF NOT EXISTS idx_twin_tasks_status ON twin_tasks(status);
+
+        CREATE TABLE IF NOT EXISTS twin_artifacts (
+            artifact_id     TEXT PRIMARY KEY,
+            run_id          TEXT NOT NULL,
+            task_id         TEXT,
+            stage_num       INTEGER NOT NULL,
+            artifact_type   TEXT,
+            resource_table  TEXT,
+            resource_id     TEXT,
+            payload_json    TEXT,
+            created_at      TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_twin_artifacts_run ON twin_artifacts(run_id);
+        CREATE INDEX IF NOT EXISTS idx_twin_artifacts_task ON twin_artifacts(task_id);
+        CREATE INDEX IF NOT EXISTS idx_twin_artifacts_resource ON twin_artifacts(resource_table, resource_id);
 
         -- =================================================================
         -- Evolve cache — single source of truth for AI-generated tab data
@@ -247,7 +285,74 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_evolve_tab     ON evolve_cache(tab);
         CREATE INDEX IF NOT EXISTS idx_evolve_updated  ON evolve_cache(updated_at);
     """)
+    _ensure_column(conn, "evidence_events", "run_id", "TEXT")
+    _migrate_evidence_events_run_unique(conn)
+    _ensure_column(conn, "judgment_cards", "run_id", "TEXT")
+    _ensure_column(conn, "cognitive_traits", "run_id", "TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_events(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_run ON evidence_events(run_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_domain ON evidence_events(domain)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_signal ON evidence_events(signal_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_card ON evidence_events(card_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_run ON judgment_cards(run_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_traits_run ON cognitive_traits(run_id)")
     conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str):
+    """Add a column when upgrading an existing local SQLite DB."""
+    cols = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _migrate_evidence_events_run_unique(conn: sqlite3.Connection):
+    """Upgrade legacy evidence_events UNIQUE(session_id,event_index) to run-scoped uniqueness."""
+    unique_cols = []
+    for idx in conn.execute("PRAGMA index_list(evidence_events)").fetchall():
+        if not idx["unique"]:
+            continue
+        cols = [
+            row["name"] for row in conn.execute(
+                f"PRAGMA index_info({idx['name']})"
+            ).fetchall()
+        ]
+        unique_cols.append(cols)
+    if ["session_id", "event_index"] not in unique_cols:
+        return
+
+    conn.execute("ALTER TABLE evidence_events RENAME TO evidence_events_legacy")
+    conn.executescript("""
+        CREATE TABLE evidence_events (
+            id          TEXT PRIMARY KEY,
+            run_id      TEXT,
+            session_id  TEXT,
+            event_index INTEGER,
+            card_id     TEXT,
+            task_type   TEXT,
+            ai_action   TEXT,
+            user_reaction TEXT,
+            resolution  TEXT,
+            lesson      TEXT,
+            signal_type TEXT,
+            signal_intensity REAL,
+            domain      TEXT,
+            created_at  TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id),
+            FOREIGN KEY (card_id) REFERENCES judgment_cards(id) ON DELETE SET NULL,
+            UNIQUE(run_id, session_id, event_index)
+        );
+    """)
+    cols = [
+        "id", "run_id", "session_id", "event_index", "card_id", "task_type",
+        "ai_action", "user_reaction", "resolution", "lesson", "signal_type",
+        "signal_intensity", "domain", "created_at",
+    ]
+    conn.execute(
+        f"INSERT OR IGNORE INTO evidence_events ({','.join(cols)}) "
+        f"SELECT {','.join(cols)} FROM evidence_events_legacy"
+    )
+    conn.execute("DROP TABLE evidence_events_legacy")
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +434,32 @@ def rebuild_fts():
     conn.commit()
 
 
+def prune_stale_sessions(valid_file_paths: set) -> int:
+    """Delete sessions and derived rows whose source JSONL file disappeared."""
+    conn = get_conn()
+    valid = {str(p) for p in valid_file_paths if p}
+    rows = conn.execute("SELECT id, file_path FROM sessions").fetchall()
+    stale_ids = [r["id"] for r in rows if r["file_path"] and r["file_path"] not in valid]
+    if not stale_ids:
+        return 0
+
+    placeholders = ",".join("?" * len(stale_ids))
+    message_ids = [
+        r["id"] for r in conn.execute(
+            f"SELECT id FROM messages WHERE session_id IN ({placeholders})",
+            stale_ids,
+        ).fetchall()
+    ]
+    with conn:
+        if message_ids:
+            msg_placeholders = ",".join("?" * len(message_ids))
+            conn.execute(f"DELETE FROM messages_fts WHERE rowid IN ({msg_placeholders})", message_ids)
+        for table in ("messages", "insight_tool_usage", "insight_file_refs", "insight_errors", "insight_snippets"):
+            conn.execute(f"DELETE FROM {table} WHERE session_id IN ({placeholders})", stale_ids)
+        conn.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", stale_ids)
+    return len(stale_ids)
+
+
 # ---------------------------------------------------------------------------
 # Queries
 # ---------------------------------------------------------------------------
@@ -343,8 +474,8 @@ def get_filtered_sessions(source="all", project="", date="", max_days=99999) -> 
         params.append(source)
 
     if project:
-        clauses.append("project_name=?")
-        params.append(project)
+        clauses.append("LOWER(project_name) LIKE ?")
+        params.append(f"%{project.lower()}%")
 
     if date:
         # date is an ISO date string like "2026-06-01"; compare against session.date
@@ -636,13 +767,13 @@ def query_snippets(limit=150):
 
 # Table registry: name → columns (excluding id, updated_at which are auto-managed)
 _CM_TABLES = {
-    "evidence_events": ["session_id", "event_index", "card_id", "task_type",
+    "evidence_events": ["run_id", "session_id", "event_index", "card_id", "task_type",
                         "ai_action", "user_reaction", "resolution", "lesson",
                         "signal_type", "signal_intensity", "domain", "created_at"],
-    "judgment_cards": ["applies_when", "judgment", "agent_action", "exceptions",
+    "judgment_cards": ["run_id", "applies_when", "judgment", "agent_action", "exceptions",
                        "tags", "confidence", "status", "evidence_count", "created_at"],
     "card_relations": ["from_id", "to_id", "relation"],
-    "cognitive_traits": ["name", "category", "description", "strength",
+    "cognitive_traits": ["run_id", "name", "category", "description", "strength",
                          "supporting_card_ids", "status", "evidence_count"],
 }
 
@@ -680,17 +811,25 @@ def cm_upsert(table: str, item_id: str, data: dict, commit: bool = True):
             )
     else:
         if table == "evidence_events":
+            run_id = data.get("run_id")
             session_id = data.get("session_id")
             event_index = data.get("event_index")
             if session_id is not None and event_index is not None:
-                conflict = conn.execute(
-                    "SELECT id FROM evidence_events WHERE session_id=? AND event_index=?",
-                    (session_id, event_index),
-                ).fetchone()
+                if run_id:
+                    conflict = conn.execute(
+                        "SELECT id FROM evidence_events WHERE run_id=? AND session_id=? AND event_index=?",
+                        (run_id, session_id, event_index),
+                    ).fetchone()
+                else:
+                    conflict = conn.execute(
+                        "SELECT id FROM evidence_events WHERE (run_id IS NULL OR run_id='') AND session_id=? AND event_index=?",
+                        (session_id, event_index),
+                    ).fetchone()
                 if conflict and conflict["id"] != item_id:
                     raise ValueError(
                         "evidence event already exists for "
-                        f"session_id={session_id!r}, event_index={event_index!r}: {conflict['id']}"
+                        f"run_id={run_id!r}, session_id={session_id!r}, "
+                        f"event_index={event_index!r}: {conflict['id']}"
                     )
         all_cols = ["id"] + [c for c in cols if c in data]
         if has_updated:
@@ -885,6 +1024,72 @@ def twin_run_latest() -> Optional[dict]:
     """Return the most recently updated Twin run."""
     conn = get_conn()
     return _row_to_twin_run(conn.execute("SELECT * FROM twin_runs ORDER BY updated_at DESC LIMIT 1").fetchone())
+
+
+def twin_task_upsert(run_id: str, stage_num: int, status: str,
+                     input_scope: Optional[dict] = None, last_error: str = "",
+                     finished: bool = False) -> str:
+    """Create or update the durable DAG task row for a Twin run stage."""
+    conn = get_conn()
+    now = _utc_now().isoformat()
+    task_id = f"{run_id}_stage_{int(stage_num)}"
+    existing = conn.execute(
+        "SELECT started_at FROM twin_tasks WHERE task_id=?",
+        (task_id,),
+    ).fetchone()
+    started_at = existing["started_at"] if existing else now
+    conn.execute(
+        """INSERT INTO twin_tasks
+           (task_id, run_id, stage_num, status, input_scope_json, started_at,
+            updated_at, finished_at, last_error)
+           VALUES (?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(run_id, stage_num) DO UPDATE SET
+             status=excluded.status,
+             input_scope_json=excluded.input_scope_json,
+             updated_at=excluded.updated_at,
+             finished_at=excluded.finished_at,
+             last_error=excluded.last_error""",
+        (
+            task_id,
+            run_id,
+            int(stage_num),
+            status,
+            json.dumps(input_scope or {}, ensure_ascii=False),
+            started_at,
+            now,
+            now if finished else "",
+            last_error or "",
+        ),
+    )
+    conn.commit()
+    return task_id
+
+
+def twin_artifact_record(run_id: str, task_id: str, stage_num: int,
+                         artifact_type: str, resource_table: str = "",
+                         resource_id: str = "", payload: Optional[dict] = None) -> str:
+    """Record a durable artifact emitted by a Twin stage."""
+    conn = get_conn()
+    artifact_id = f"ta_{uuid.uuid4().hex[:12]}"
+    conn.execute(
+        """INSERT INTO twin_artifacts
+           (artifact_id, run_id, task_id, stage_num, artifact_type, resource_table,
+            resource_id, payload_json, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (
+            artifact_id,
+            run_id,
+            task_id,
+            int(stage_num),
+            artifact_type,
+            resource_table or "",
+            resource_id or "",
+            json.dumps(payload or {}, ensure_ascii=False),
+            _utc_now().isoformat(),
+        ),
+    )
+    conn.commit()
+    return artifact_id
 
 
 def get_twin_stats() -> dict:

@@ -270,13 +270,20 @@ python3 analyze.py twin-cards --limit 20
 python3 analyze.py twin-traits
 python3 analyze.py twin-runtime
 
+# Run-scoped Twin inspection after a resumable distillation run
+python3 analyze.py twin-events --run-id twrun_xxx --json
+python3 analyze.py twin-cards --run-id twrun_xxx --json
+python3 analyze.py twin-traits --run-id twrun_xxx --json
+
 # Twin internal write/compile commands used by the server's AI pipeline
 python3 analyze.py twin-candidates < candidates.json
-python3 analyze.py twin-batch < operations.json
-python3 analyze.py twin-compile
+python3 analyze.py twin-batch < operations.json    # operations may include top-level run_id
+python3 analyze.py twin-compile --run-id twrun_xxx
 ```
 
-Most read commands support filters such as `--source`, `--date`, `--project`, and `--limit`. `--project` currently performs substring matching for history search/listing, while Evolve/Twin scoped writes use the exact project value supplied by the UI. `--json` is intended for machine-readable read commands; internal write commands such as `evolve-write`, `twin-candidates`, and `twin-batch` consume JSON from `stdin` and print their own structured result.
+Most read commands support filters such as `--source`, `--date`, `--project`, and `--limit`. `--project` uses substring matching for DB-backed and index-backed history commands. `--json` is intended for machine-readable read commands; internal write commands such as `evolve-write`, `twin-candidates`, and `twin-batch` consume JSON from `stdin` and print their own structured result.
+
+Twin distillation is run-scoped: Stage 1 writes `run_id` onto evidence events, Stage 2/3 read only artifacts from the current run, and Stage 4 can compile with `--run-id`. The local SQLite DB also contains `twin_tasks` and `twin_artifacts` as durable DAG tables for stage status and emitted artifacts.
 
 ---
 
