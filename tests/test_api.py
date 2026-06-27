@@ -67,12 +67,17 @@ class APITestCase(unittest.TestCase):
         cls._orig_projects_dir = server.PROJECTS_DIR
         cls._orig_cache_dir = server.CACHE_DIR
         cls._orig_index_cache = server.INDEX_CACHE
+        cls._orig_codex_sessions = server.CODEX_SESSIONS_DIR
+        cls._orig_codex_archived = server.CODEX_ARCHIVED_DIR
         cls._orig_db_path = db.DB_PATH
         cls._orig_db_cache_dir = db.CACHE_DIR
 
         server.PROJECTS_DIR = Path(cls._tmpdir) / "projects"
         server.CACHE_DIR = Path(cls._tmpdir) / ".cache"
         server.INDEX_CACHE = server.CACHE_DIR / "index.json"
+        # Isolate Codex dirs to avoid scanning real user data
+        server.CODEX_SESSIONS_DIR = Path(cls._tmpdir) / "codex_sessions"
+        server.CODEX_ARCHIVED_DIR = Path(cls._tmpdir) / "codex_archived"
         db.CACHE_DIR = Path(cls._tmpdir) / ".cache"
         db.DB_PATH = db.CACHE_DIR / "sessions.db"
         db._local = threading.local()
@@ -95,6 +100,8 @@ class APITestCase(unittest.TestCase):
         server.PROJECTS_DIR = cls._orig_projects_dir
         server.CACHE_DIR = cls._orig_cache_dir
         server.INDEX_CACHE = cls._orig_index_cache
+        server.CODEX_SESSIONS_DIR = cls._orig_codex_sessions
+        server.CODEX_ARCHIVED_DIR = cls._orig_codex_archived
         db.DB_PATH = cls._orig_db_path
         db.CACHE_DIR = cls._orig_db_cache_dir
         db._local = threading.local()
