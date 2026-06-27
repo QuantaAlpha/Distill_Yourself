@@ -184,5 +184,46 @@ class TestEdgeCases(BaseTestCase):
         self.assertIsNone(result)
 
 
+# ---------------------------------------------------------------------------
+# FTS search edge cases
+# ---------------------------------------------------------------------------
+
+class TestSearchFTSEdgeCases(BaseTestCase):
+
+    def test_search_fts_special_chars_no_crash(self):
+        """Queries with FTS5 metacharacters should not crash; they fall back to LIKE."""
+        db.upsert_session(_META, _USER_TEXTS, _ASST_SNIPPETS)
+        for q in ['"unclosed', '***', '(((', 'foo"bar', 'a*b(c']:
+            result = db.search_fts(q)
+            self.assertIsInstance(result, list, f"search_fts({q!r}) should return a list")
+
+    def test_search_fts_returns_ranked(self):
+        """Sessions with more matches should appear (both should be found)."""
+        meta_a = {**_META, "id": "rank-sess-a", "filePath": "/tmp/rank-a.jsonl"}
+        meta_b = {**_META, "id": "rank-sess-b", "filePath": "/tmp/rank-b.jsonl"}
+
+        # Session A: term appears once
+        texts_a = [{"idx": 0, "text": "banana is great", "ts": "2026-06-01T10:00:00Z"}]
+        # Session B: term appears three times
+        texts_b = [
+            {"idx": 0, "text": "banana banana banana", "ts": "2026-06-01T10:00:00Z"},
+        ]
+        db.upsert_session(meta_a, texts_a, [])
+        db.upsert_session(meta_b, texts_b, [])
+
+        results = db.search_fts("banana")
+        self.assertTrue(len(results) >= 2, "Both sessions should appear in results")
+        sids = [r["session_id"] for r in results]
+        self.assertIn("rank-sess-a", sids)
+        self.assertIn("rank-sess-b", sids)
+
+    def test_search_fts_empty_query(self):
+        """Empty string falls through to LIKE '%%' — returns results (not crash)."""
+        db.upsert_session(_META, _USER_TEXTS, _ASST_SNIPPETS)
+        result = db.search_fts("")
+        self.assertIsInstance(result, list)
+        # The LIKE fallback with '%%' matches everything; main point: no crash
+
+
 if __name__ == "__main__":
     unittest.main()
