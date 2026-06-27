@@ -19,6 +19,7 @@
   let _sessionAbort = null; // AbortController for session loading
   let outlineVisible = true;
   let _scrollHandler = null;
+  let _sidebarScrollHandler = null;
   let currentMessages = []; // store for export
   let currentView = "sessions"; // sessions|conversation|search|insights|ai
   let viewHistory = []; // for back navigation
@@ -104,6 +105,8 @@
         renderSessions(s);
         searchStats.textContent = `${s.length} sessions`;
         updateWelcomeStats(s, p);
+        // Invalidate insights cache so new sessions are reflected
+        insightsDataCache = { analytics: null, health: null, snippets: null };
       }
     }).catch(() => {});
 
@@ -309,6 +312,31 @@
 
     // Load persisted chat history
     loadChatFromStorage();
+
+    // Browser back/forward button support
+    window.addEventListener("popstate", (e) => {
+      const state = e.state;
+      if (state && state.view === "conversation" && state.sessionId) {
+        loadSession(state.sessionId);
+      } else {
+        showView("sessions", false);
+        currentSessionId = null;
+      }
+    });
+
+    // Mobile sidebar toggle
+    const sidebarToggle = $("#sidebar-toggle");
+    const sidebar = $("#sidebar");
+    const sidebarOverlay = $("#sidebar-overlay");
+    if (sidebarToggle && sidebar) {
+      const closeSidebar = () => sidebar.classList.remove("open");
+      sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("open"));
+      if (sidebarOverlay) sidebarOverlay.addEventListener("click", closeSidebar);
+      // Close sidebar when a session is selected on mobile
+      sessionList.addEventListener("click", (e) => {
+        if (e.target.closest("li") && window.innerWidth <= 768) closeSidebar();
+      });
+    }
 
   }
 
@@ -532,15 +560,16 @@
         }
       };
       sentinel.addEventListener("click", loadMore);
-      // Also auto-load when scrolling near bottom
+      // Also auto-load when scrolling near bottom (remove previous listener to prevent leaks)
       const sidebarContent = document.getElementById("sidebar-content");
       if (sidebarContent) {
-        const scrollHandler = () => {
+        if (_sidebarScrollHandler) sidebarContent.removeEventListener("scroll", _sidebarScrollHandler);
+        _sidebarScrollHandler = () => {
           if (sidebarContent.scrollTop + sidebarContent.clientHeight >= sidebarContent.scrollHeight - 100) {
             if (renderedCount < filtered.length) loadMore();
           }
         };
-        sidebarContent.addEventListener("scroll", scrollHandler, { passive: true });
+        sidebarContent.addEventListener("scroll", _sidebarScrollHandler, { passive: true });
       }
     }
   }
@@ -620,7 +649,7 @@
     _sessionAbort = new AbortController();
 
     currentSessionId = sessionId;
-    history.replaceState(null, "", `#${sessionId}`);
+    history.pushState({ view: "conversation", sessionId }, "", `#${sessionId}`);
     $$('#session-list li').forEach(li => {
       li.classList.toggle('active', li.dataset.id === sessionId);
     });
@@ -1220,20 +1249,21 @@
     return (bytes / 1048576).toFixed(1) + "MB";
   }
 
-  function renderMarkdown(text) {
+  function renderMarkdown(text, opts) {
     if (!text) return "";
+    const wrapParagraphs = opts && opts.wrapParagraphs;
     // Extract code blocks BEFORE escaping to preserve raw content
     const codeBlocks = [];
     let s = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
       const idx = codeBlocks.length;
-      codeBlocks.push(`<pre class="md-pre"><code>${esc(code)}</code></pre>`);
+      codeBlocks.push(`<pre${wrapParagraphs ? '' : ' class="md-pre"'}><code>${esc(code)}</code></pre>`);
       return `\x00CB${idx}\x00`;
     });
     // Extract inline code before escaping
     const inlineCode = [];
     s = s.replace(/`([^`]+)`/g, (_, code) => {
       const idx = inlineCode.length;
-      inlineCode.push(`<code class="md-code">${esc(code)}</code>`);
+      inlineCode.push(`<code${wrapParagraphs ? '' : ' class="md-code"'}>${esc(code)}</code>`);
       return `\x00IC${idx}\x00`;
     });
     // Now escape the rest
@@ -1244,12 +1274,23 @@
     s = s.replace(/^### (.+)$/gm, '<h4>$1</h4>');
     s = s.replace(/^## (.+)$/gm, '<h3>$1</h3>');
     s = s.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+    // Horizontal rule (always apply)
+    s = s.replace(/^---$/gm, '<hr>');
     // List items
     s = s.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
     s = s.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
     s = s.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-    // Line breaks
-    s = s.replace(/\n/g, '<br>');
+    // Paragraph wrapping or simple line breaks
+    if (wrapParagraphs) {
+      s = s.replace(/\n{2,}/g, '</p><p>');
+      s = s.replace(/\n/g, '<br>');
+      s = '<p>' + s + '</p>';
+      s = s.replace(/<p>\s*<(h[234]|pre|ul|hr)/g, '<$1');
+      s = s.replace(/<\/(h[234]|pre|ul|hr)>\s*<\/p>/g, '</$1>');
+      s = s.replace(/<p>\s*<\/p>/g, '');
+    } else {
+      s = s.replace(/\n/g, '<br>');
+    }
     // Restore code blocks and inline code
     s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[+i]);
     s = s.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCode[+i]);
@@ -1271,7 +1312,7 @@
     if (e.key === "Escape") {
       if (!kbdHelp.classList.contains("hidden")) { kbdHelp.classList.add("hidden"); return; }
       if (isInput) { searchInput.blur(); searchInput.value = ""; return; }
-      showView("sessions"); history.replaceState(null, "", window.location.pathname);
+      showView("sessions"); history.pushState({ view: "sessions" }, "", window.location.pathname);
       return;
     }
     // Don't handle when typing in input
@@ -1729,50 +1770,9 @@
     el.style.height = Math.min(el.scrollHeight, parseInt(getComputedStyle(el).maxHeight) || 120) + "px";
   }
 
-  /** Markdown renderer — handles code blocks, headings, lists, bold, inline code */
+  /** Markdown renderer with paragraph wrapping (for chat bubbles, modals) */
   function renderMarkdownSimple(text) {
-    // Extract code blocks BEFORE escaping to preserve raw content
-    const codeBlocks = [];
-    let s = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      const idx = codeBlocks.length;
-      codeBlocks.push(`<pre><code>${esc(code)}</code></pre>`);
-      return `\x00CB${idx}\x00`;
-    });
-    // Extract inline code before escaping
-    const inlineCode = [];
-    s = s.replace(/`([^`]+)`/g, (_, code) => {
-      const idx = inlineCode.length;
-      inlineCode.push(`<code>${esc(code)}</code>`);
-      return `\x00IC${idx}\x00`;
-    });
-    // Now escape the rest
-    s = esc(s);
-    // Bold
-    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Headings (### → h4, ## → h3, # → h2)
-    s = s.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-    s = s.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-    s = s.replace(/^# (.+)$/gm, '<h2>$1</h2>');
-    // Horizontal rule
-    s = s.replace(/^---$/gm, '<hr>');
-    // Unordered list items
-    s = s.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
-    // Numbered list items
-    s = s.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-    // Wrap consecutive <li> in <ul>
-    s = s.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-    // Paragraphs
-    s = s.replace(/\n{2,}/g, '</p><p>');
-    s = s.replace(/\n/g, '<br>');
-    s = '<p>' + s + '</p>';
-    // Clean up empty paragraphs and misplaced wraps
-    s = s.replace(/<p>\s*<(h[234]|pre|ul|hr)/g, '<$1');
-    s = s.replace(/<\/(h[234]|pre|ul|hr)>\s*<\/p>/g, '</$1>');
-    s = s.replace(/<p>\s*<\/p>/g, '');
-    // Restore code blocks and inline code
-    s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[+i]);
-    s = s.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCode[+i]);
-    return s;
+    return renderMarkdown(text, { wrapParagraphs: true });
   }
 
   /** Append a chat message bubble to a container */
@@ -2651,6 +2651,17 @@
 
   // ── Chat persistence (localStorage) ───────────────────────────
 
+  let _quotaWarningShown = false;
+  function _showQuotaWarning() {
+    if (_quotaWarningShown) return;
+    _quotaWarningShown = true;
+    const toast = document.createElement("div");
+    toast.style.cssText = "position:fixed;bottom:20px;right:20px;background:#e65100;color:#fff;padding:12px 20px;border-radius:8px;z-index:9999;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:320px";
+    toast.textContent = "Storage quota exceeded — chat history and cache may not persist. Consider clearing old chat sessions.";
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 8000);
+  }
+
   function saveChatToStorage() {
     try {
       // Session chats — prune to last 50 sessions
@@ -2662,7 +2673,11 @@
       // Global chats — keep last 30
       const trimmed = globalChatHistory.slice(0, 30);
       localStorage.setItem("chatview-global-chats", JSON.stringify(trimmed));
-    } catch (e) { /* quota exceeded — silently fail */ }
+    } catch (e) {
+      if (e.name === "QuotaExceededError" || (e.code && e.code === 22)) {
+        _showQuotaWarning();
+      }
+    }
   }
 
   function loadChatFromStorage() {

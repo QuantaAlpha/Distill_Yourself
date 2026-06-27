@@ -126,7 +126,18 @@
   function saveEvolveCache() {
     try {
       localStorage.setItem("chatview-evolve", JSON.stringify(evolveCache));
-    } catch (e) { /* quota */ }
+    } catch (e) {
+      if (e.name === "QuotaExceededError" || (e.code && e.code === 22)) {
+        if (!window._evolveQuotaWarned) {
+          window._evolveQuotaWarned = true;
+          const t = document.createElement("div");
+          t.style.cssText = "position:fixed;bottom:20px;right:20px;background:#e65100;color:#fff;padding:12px 20px;border-radius:8px;z-index:9999;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:320px";
+          t.textContent = "Storage quota exceeded — Evolve cache may not persist.";
+          document.body.appendChild(t);
+          setTimeout(() => t.remove(), 8000);
+        }
+      }
+    }
   }
 
   function getScopeCacheKey(tab) {

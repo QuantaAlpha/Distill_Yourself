@@ -11,6 +11,9 @@
   <div id="app">
     <!-- Top Bar: Logo + Search -->
     <header id="top-bar">
+      <button id="sidebar-toggle" aria-label="Toggle sidebar">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      </button>
       <a id="logo" href="#" title="Home">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span>Chat Viewer</span>
@@ -88,6 +91,7 @@
           </div>
         </div>
       </aside>
+      <div id="sidebar-overlay"></div>
 
       <!-- Right: Content Area -->
       <main id="content">
@@ -175,6 +179,18 @@
             </div>
           </div>
           <div id="twin-body">
+            <div id="twin-persona-card">
+              <div id="twin-persona-avatar" aria-label="Persona avatar animation">
+                <canvas id="twin-persona-rive" width="224" height="224" class="hidden"></canvas>
+                <div id="twin-persona-lottie"></div>
+              </div>
+              <div id="twin-persona-copy">
+                <div id="twin-persona-kicker">Persona Preset</div>
+                <div id="twin-persona-title">等待认知模型</div>
+                <div id="twin-persona-subtitle">点击 Analyze 后会根据认知特质切换动态人物</div>
+                <div id="twin-persona-traits"></div>
+              </div>
+            </div>
             <!-- Overview: stats bar + cards + traits -->
             <div id="twin-stats-bar"></div>
             <div id="twin-overview"></div>
@@ -344,6 +360,8 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/@rive-app/canvas@2.38.3/rive.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.13.0/lottie.min.js"></script>
   <script src="app.js"></script>
   <script src="evolve.js"></script>
   <script src="twin.js"></script>

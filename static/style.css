@@ -75,6 +75,14 @@ body {
   z-index: 10;
   box-shadow: var(--shadow-sm);
 }
+#sidebar-toggle {
+  display: none; background: none; border: none; cursor: pointer; color: var(--text);
+  padding: 4px; border-radius: 6px;
+}
+#sidebar-toggle:hover { background: var(--bg-hover); }
+#sidebar-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 4;
+}
 #logo {
   display: flex; align-items: center; gap: 8px;
   text-decoration: none; color: var(--accent);
@@ -1795,8 +1803,10 @@ body {
 
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
-  #sidebar { width: 100%; max-width: none; position: absolute; z-index: 5; left: -100%; transition: left 0.3s; }
+  #sidebar-toggle { display: block; }
+  #sidebar { width: 80%; max-width: 320px; position: fixed; top: var(--header-height); bottom: 0; z-index: 5; left: -100%; transition: left 0.3s; }
   #sidebar.open { left: 0; }
+  #sidebar.open ~ #sidebar-overlay { display: block; }
   .msg { max-width: 100%; }
   .msg.assistant-turn { margin-left: 0; }
   #outline-panel { display: none; }
@@ -1826,6 +1836,149 @@ body {
 #twin-actions { display: flex; align-items: center; gap: 12px; }
 #twin-last-analyzed { font-size: 12px; color: var(--text-muted); }
 #twin-body { flex: 1; overflow-y: auto; padding: 20px; }
+#twin-persona-card {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+#twin-persona-avatar {
+  width: 112px;
+  height: 112px;
+  position: relative;
+}
+#twin-persona-rive,
+#twin-persona-lottie {
+  width: 112px;
+  height: 112px;
+}
+#twin-persona-rive {
+  display: block;
+}
+#twin-persona-lottie svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#twin-persona-copy { min-width: 0; }
+#twin-persona-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+#twin-persona-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+#twin-persona-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+#twin-persona-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+#twin-persona-traits span {
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 8px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+}
+.persona-fallback {
+  width: 112px;
+  height: 112px;
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 24%, color-mix(in srgb, var(--persona-accent) 18%, transparent), transparent 30%),
+    var(--bg-primary);
+  border: 1px solid color-mix(in srgb, var(--persona-accent) 28%, var(--border-light));
+}
+.persona-orbit {
+  position: absolute;
+  inset: 14px;
+  border: 1px dashed color-mix(in srgb, var(--persona-accent) 45%, transparent);
+  border-radius: 50%;
+  animation: persona-spin 7s linear infinite;
+}
+.persona-head {
+  position: absolute;
+  left: 36px;
+  top: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--persona-accent) 88%, white);
+  animation: persona-bob 2.8s ease-in-out infinite;
+}
+.persona-head span {
+  position: absolute;
+  top: 17px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: white;
+  opacity: 0.9;
+}
+.persona-head span:first-child { left: 11px; }
+.persona-head span:last-child { right: 11px; }
+.persona-body {
+  position: absolute;
+  left: 28px;
+  top: 66px;
+  width: 56px;
+  height: 34px;
+  border-radius: 18px 18px 8px 8px;
+  background: color-mix(in srgb, var(--persona-accent) 70%, var(--bg-surface));
+  animation: persona-breathe 2.8s ease-in-out infinite;
+}
+.persona-console {
+  position: absolute;
+  left: 70px;
+  top: 72px;
+  display: flex;
+  gap: 3px;
+}
+.persona-console span {
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--persona-accent);
+  animation: persona-meter 1.4s ease-in-out infinite;
+}
+.persona-console span:nth-child(2) { animation-delay: 0.18s; }
+.persona-console span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes persona-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes persona-breathe {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(1.05); }
+}
+@keyframes persona-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes persona-meter {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.45; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
 
 /* Twin Pipeline — vertical flow layout */
 .twin-pipeline { position: relative; padding-left: 40px; }

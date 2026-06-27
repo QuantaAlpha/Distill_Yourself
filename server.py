@@ -865,9 +865,11 @@ def build_index(force: bool = False) -> dict:
                     pass
         print(f"  Insight backfill: {backfill_n} sessions in {time.time() - backfill_t:.1f}s")
 
-    # Strip non-serializable insight data before cache write
+    # Strip insight data and heavy text payloads before cache write
+    # (userTexts and assistantSnippets are already in SQLite FTS/messages tables)
     for sid, meta in sessions.items():
-        for k in ("_insight_tools", "_insight_files", "_insight_errors", "_insight_snippets"):
+        for k in ("_insight_tools", "_insight_files", "_insight_errors", "_insight_snippets",
+                   "userTexts", "assistantSnippets"):
             meta.pop(k, None)
 
     # Save to cache
@@ -1055,22 +1057,44 @@ def _fuzzy_match(text_lower: str, query_lower: str, tokens: list):
 
 
 def search_sessions(query: str) -> list:
-    """Search user messages across all sessions with fuzzy matching."""
+    """Search user messages via SQLite FTS5 + title fuzzy fallback."""
     if not query or len(query) < 2:
         return []
 
+    import db as _db
+    results = []
+    seen = set()  # (session_id, idx) dedup
+
+    # 1) FTS5 search on message content (fast, indexed)
+    fts_rows = _db.search_fts(query, limit=100)
+    for row in fts_rows:
+        key = (row["session_id"], row["idx"])
+        if key in seen:
+            continue
+        seen.add(key)
+        text = row.get("text", "")
+        results.append({
+            "sessionId": row["session_id"],
+            "title": row.get("title", "Untitled"),
+            "project": row.get("project_name", ""),
+            "date": row.get("ts", ""),
+            "messageIndex": row["idx"],
+            "snippet": _make_snippet(text, query.lower()),
+            "timestamp": row.get("ts", ""),
+            "matchType": "content",
+            "score": 0.9,
+        })
+
+    # 2) Title fuzzy match (still in-memory, but lightweight — one string per session)
     query_lower = query.lower()
     tokens = _tokenize_query(query_lower)
-    results = []
-
     with _index_lock:
         sessions = dict(_index.get("sessions", {}))
-
     for sid, meta in sessions.items():
         title = meta.get("title", "Untitled")
-        # Match on title
         matched, score = _fuzzy_match(title.lower(), query_lower, tokens)
-        if matched:
+        if matched and (sid, 0) not in seen:
+            seen.add((sid, 0))
             results.append({
                 "sessionId": sid,
                 "title": title,
@@ -1082,23 +1106,7 @@ def search_sessions(query: str) -> list:
                 "matchType": "title",
                 "score": score,
             })
-        # Match on user message content
-        for ut in meta.get("userTexts", []):
-            matched, score = _fuzzy_match(ut["text"].lower(), query_lower, tokens)
-            if matched:
-                results.append({
-                    "sessionId": sid,
-                    "title": title,
-                    "project": meta.get("projectName", ""),
-                    "date": meta.get("date", ""),
-                    "messageIndex": ut["idx"],
-                    "snippet": _make_snippet(ut["text"], query_lower, tokens),
-                    "timestamp": ut.get("ts", ""),
-                    "matchType": "content",
-                    "score": score,
-                })
 
-    # Sort by score desc, then by date desc for same-score results
     results.sort(key=lambda r: (-r.get("score", 0), r.get("date", "")), reverse=False)
     return results[:100]
 
@@ -1255,7 +1263,7 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout):
         cmd = ["codex", "--sandbox", sandbox, "--ask-for-approval", "never",
                "exec", "--json", "--skip-git-repo-check", prompt]
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1, stdin=subprocess.DEVNULL,
         )
     else:  # claude
@@ -1263,7 +1271,7 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout):
                "--allowedTools", "Bash,Read,Grep,Glob,Write,Edit,Agent"]
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, bufsize=1,
+            stderr=subprocess.DEVNULL, text=True, bufsize=1,
         )
         # Write prompt in a thread to avoid blocking on large prompts
         # (macOS pipe buffer is ~64KB, prompt can be 100KB+)
@@ -1443,6 +1451,17 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
     """Handles API requests and serves static files."""
 
     def do_GET(self):
+        try:
+            self._do_GET_inner()
+        except BrokenPipeError:
+            pass
+        except Exception as e:
+            try:
+                self._error(500, f"Internal server error: {type(e).__name__}")
+            except Exception:
+                pass
+
+    def _do_GET_inner(self):
         parsed = urlparse(self.path)
         path = parsed.path
         params = parse_qs(parsed.query)
@@ -1643,10 +1662,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             if path == "/":
                 path = "/index.html"
             file_path = (STATIC_DIR / path.lstrip("/")).resolve()
-            # SECURITY: Ensure resolved path is under STATIC_DIR
-            if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+            # SECURITY: Ensure resolved path is under STATIC_DIR (relative_to raises ValueError if not)
+            try:
+                file_path.relative_to(STATIC_DIR.resolve())
+            except ValueError:
                 self._error(403, "Forbidden")
-            elif file_path.exists() and file_path.is_file():
+                return
+            if file_path.exists() and file_path.is_file():
                 self._serve_file(file_path)
             else:
                 self._error(404, "Not found")
@@ -2546,6 +2568,17 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        try:
+            self._do_POST_inner()
+        except BrokenPipeError:
+            pass
+        except Exception as e:
+            try:
+                self._error(500, f"Internal server error: {type(e).__name__}")
+            except Exception:
+                pass
+
+    def _do_POST_inner(self):
         parsed = urlparse(self.path)
 
         if parsed.path == "/api/chat/stream":
@@ -2561,15 +2594,27 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         else:
             self._error(404, "Not found")
 
+    MAX_POST_BODY = 10 * 1024 * 1024  # 10 MB
+
     def _read_post_body(self):
-        content_len = int(self.headers.get("Content-Length", 0))
+        try:
+            content_len = int(self.headers.get("Content-Length", 0))
+        except (ValueError, TypeError):
+            self._error(400, "Invalid Content-Length")
+            return None
+        if content_len > self.MAX_POST_BODY:
+            self._error(413, f"Request body too large (max {self.MAX_POST_BODY // 1024 // 1024}MB)")
+            return None
         return self.rfile.read(content_len)
 
     def _handle_chat_stream(self):
         """SSE streaming chat endpoint."""
+        raw = self._read_post_body()
+        if raw is None:
+            return  # error already sent
         try:
-            data = json.loads(self._read_post_body())
-        except json.JSONDecodeError:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
             self._error(400, "Invalid JSON")
             return
 
@@ -2605,9 +2650,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
 
     def _handle_chat_legacy(self):
         """Original blocking chat endpoint (kept for compatibility)."""
+        raw = self._read_post_body()
+        if raw is None:
+            return
         try:
-            data = json.loads(self._read_post_body())
-        except json.JSONDecodeError:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
             self._error(400, "Invalid JSON")
             return
 
@@ -2739,12 +2787,13 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 context_parts.append(f"Session file (JSONL): {fp}")
                 context_parts.append(f"User messages: {msg_count}")
 
-                # Include user message previews for quick context
-                user_texts = meta.get("userTexts", [])
-                if user_texts:
+                # Include user message previews for quick context (from DB)
+                import db as _db
+                user_msgs = _db.get_session_messages(session_id, role="user")
+                if user_msgs:
                     context_parts.append("\nConversation outline (user messages preview):")
-                    for i, ut in enumerate(user_texts[:12]):
-                        text = ut.get("text", "")[:200].replace("\n", " ")
+                    for i, msg in enumerate(user_msgs[:12]):
+                        text = (msg.get("text", "") or "")[:200].replace("\n", " ")
                         context_parts.append(f"  [{i+1}] {text}")
 
                 context_parts.append(f"\nPrefer using the CLI tool (python3 {cli_path} read {session_id}) over reading raw JSONL.")
@@ -2873,9 +2922,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
     def _handle_evolve_sync(self):
         """Handle POST /api/evolve/sync — preview or execute sync to Claude Code."""
         import db as _db
+        raw = self._read_post_body()
+        if raw is None:
+            return
         try:
-            data = json.loads(self._read_post_body())
-        except json.JSONDecodeError:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
             self._error(400, "Invalid JSON")
             return
 
