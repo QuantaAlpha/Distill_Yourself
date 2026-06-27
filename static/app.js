@@ -110,7 +110,7 @@
       }
     }).catch(() => {});
 
-    // Restore session from URL hash
+    // Restore session from URL hash (replaceState, not push, to avoid duplicate entry)
     const hash = window.location.hash.slice(1);
     if (hash) {
       const match = allSessions.find(s => s.id === hash);
@@ -118,7 +118,8 @@
         currentSourceFilter = match.source;
         renderSessions(allSessions);
       }
-      loadSession(hash);
+      history.replaceState({ view: "conversation", sessionId: hash }, "", `#${hash}`);
+      loadSession(hash, undefined, false);
     }
   }
 
@@ -317,7 +318,7 @@
     window.addEventListener("popstate", (e) => {
       const state = e.state;
       if (state && state.view === "conversation" && state.sessionId) {
-        loadSession(state.sessionId);
+        loadSession(state.sessionId, undefined, false);
       } else {
         showView("sessions", false);
         currentSessionId = null;
@@ -643,13 +644,15 @@
   }
 
   // ── Load Session ───────────────────────────────────────────────
-  async function loadSession(sessionId, jumpToIndex) {
+  async function loadSession(sessionId, jumpToIndex, pushHistory = true) {
     // Cancel any in-flight session load
     if (_sessionAbort) _sessionAbort.abort();
     _sessionAbort = new AbortController();
 
     currentSessionId = sessionId;
-    history.pushState({ view: "conversation", sessionId }, "", `#${sessionId}`);
+    if (pushHistory) {
+      history.pushState({ view: "conversation", sessionId }, "", `#${sessionId}`);
+    }
     $$('#session-list li').forEach(li => {
       li.classList.toggle('active', li.dataset.id === sessionId);
     });

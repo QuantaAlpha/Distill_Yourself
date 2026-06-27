@@ -373,10 +373,24 @@ def get_user_queries(session_ids=None, limit=200) -> list:
     return [dict(r) for r in rows]
 
 
+def _sanitize_fts_query(query: str) -> str:
+    """Sanitize a user query for FTS5 MATCH: wrap each token in double quotes."""
+    import re
+    # Strip FTS5 operators and split into tokens
+    tokens = re.split(r'[\s,;]+', query.strip())
+    sanitized = []
+    for t in tokens:
+        # Remove FTS5 metacharacters from each token
+        clean = re.sub(r'["\*\(\)\{\}\[\]^~:]', '', t)
+        if clean:
+            sanitized.append(f'"{clean}"')
+    return ' '.join(sanitized) if sanitized else ''
+
+
 def search_fts(query: str, limit=50) -> list:
     """Full-text search on messages. Returns dicts with message + session info."""
     conn = get_conn()
-    sql = """
+    fts_sql = """
         SELECT m.id, m.session_id, m.idx, m.role, m.text, m.ts,
                s.title, s.project_name, s.source
         FROM messages_fts fts
@@ -386,11 +400,30 @@ def search_fts(query: str, limit=50) -> list:
         ORDER BY rank
         LIMIT ?
     """
+    # Try sanitized FTS query first
+    safe_query = _sanitize_fts_query(query)
+    if safe_query:
+        try:
+            rows = conn.execute(fts_sql, [safe_query, limit]).fetchall()
+            if rows:
+                return [dict(r) for r in rows]
+        except sqlite3.OperationalError:
+            pass
+
+    # Fallback: LIKE-based search for queries FTS can't handle
+    like_sql = """
+        SELECT m.id, m.session_id, m.idx, m.role, m.text, m.ts,
+               s.title, s.project_name, s.source
+        FROM messages m
+        JOIN sessions s ON m.session_id = s.id
+        WHERE m.text LIKE ?
+        ORDER BY m.ts DESC
+        LIMIT ?
+    """
     try:
-        rows = conn.execute(sql, [query, limit]).fetchall()
+        rows = conn.execute(like_sql, [f'%{query}%', limit]).fetchall()
         return [dict(r) for r in rows]
     except sqlite3.OperationalError:
-        # Invalid FTS query syntax — return empty
         return []
 
 

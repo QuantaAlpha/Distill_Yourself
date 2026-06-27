@@ -865,11 +865,11 @@ def build_index(force: bool = False) -> dict:
                     pass
         print(f"  Insight backfill: {backfill_n} sessions in {time.time() - backfill_t:.1f}s")
 
-    # Strip insight data and heavy text payloads before cache write
-    # (userTexts and assistantSnippets are already in SQLite FTS/messages tables)
+    # Strip non-serializable insight data before cache write
+    # NOTE: userTexts/assistantSnippets kept for now — analyze.py subprocess still reads them.
+    # They can be stripped after analyze.py is refactored to use DB queries directly.
     for sid, meta in sessions.items():
-        for k in ("_insight_tools", "_insight_files", "_insight_errors", "_insight_snippets",
-                   "userTexts", "assistantSnippets"):
+        for k in ("_insight_tools", "_insight_files", "_insight_errors", "_insight_snippets"):
             meta.pop(k, None)
 
     # Save to cache
@@ -2602,7 +2602,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         except (ValueError, TypeError):
             self._error(400, "Invalid Content-Length")
             return None
-        if content_len > self.MAX_POST_BODY:
+        if content_len < 0 or content_len > self.MAX_POST_BODY:
             self._error(413, f"Request body too large (max {self.MAX_POST_BODY // 1024 // 1024}MB)")
             return None
         return self.rfile.read(content_len)
