@@ -6,6 +6,310 @@
 (function () {
   "use strict";
 
+  // ── Cognitive Avatar ──
+  // Persona ID → PNG slug mapping (16 personas, variant "a" default)
+  const PERSONA_SLUGS = {
+    P01: "deep-researcher", P02: "feedback-iterator", P03: "systems-architect",
+    P04: "skeptical-debugger", P05: "minimal-decision-maker", P06: "chaotic-creative-maker",
+    P07: "taste-curator", P08: "evidence-analyst", P09: "human-centered-facilitator",
+    P10: "consensus-translator", P11: "ai-orchestrator", P12: "explorer-strategist",
+    P13: "reliable-operator", P14: "quiet-engineer", P15: "contrarian-reframer",
+    P16: "tone-calibrator",
+  };
+  const USER_PERSONA_SELECTION_KEY = "twin:user-persona-selection:v1";
+  const COGNITIVE_MODEL_OPTIONS = [
+    { id: "cm_001", name: "问题定界者", personaId: "P03", personaName: "系统架构者" },
+    { id: "cm_002", name: "本质追问者", personaId: "P15", personaName: "反常识重构者" },
+    { id: "cm_003", name: "隐含前提拆解者", personaId: "P15", personaName: "反常识重构者" },
+    { id: "cm_004", name: "语境敏感者", personaId: "P09", personaName: "人本协调者" },
+    { id: "cm_005", name: "边界敏感者", personaId: "P03", personaName: "系统架构者" },
+    { id: "cm_006", name: "问题重构者", personaId: "P15", personaName: "反常识重构者" },
+    { id: "cm_007", name: "因果追踪者", personaId: "P01", personaName: "深度研究者" },
+    { id: "cm_008", name: "第一性原理者", personaId: "P15", personaName: "反常识重构者" },
+    { id: "cm_009", name: "结构推演者", personaId: "P03", personaName: "系统架构者" },
+    { id: "cm_010", name: "模式归纳者", personaId: "P08", personaName: "证据分析者" },
+    { id: "cm_011", name: "类比迁移者", personaId: "P06", personaName: "混沌创意建造者" },
+    { id: "cm_012", name: "约束反推者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_013", name: "稳妥决策者", personaId: "P13", personaName: "可靠运营者" },
+    { id: "cm_014", name: "风险收敛者", personaId: "P04", personaName: "怀疑型调试者" },
+    { id: "cm_015", name: "证据锚定者", personaId: "P08", personaName: "证据分析者" },
+    { id: "cm_016", name: "最小代价选择者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_017", name: "长期权衡者", personaId: "P03", personaName: "系统架构者" },
+    { id: "cm_018", name: "可逆试错者", personaId: "P02", personaName: "反馈迭代者" },
+    { id: "cm_019", name: "复杂度克制者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_020", name: "本质极简者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_021", name: "冗余厌恶者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_022", name: "秩序建立者", personaId: "P13", personaName: "可靠运营者" },
+    { id: "cm_023", name: "结构收束者", personaId: "P03", personaName: "系统架构者" },
+    { id: "cm_024", name: "依赖敏感者", personaId: "P03", personaName: "系统架构者" },
+    { id: "cm_025", name: "可控性优先者", personaId: "P13", personaName: "可靠运营者" },
+    { id: "cm_026", name: "验证闭环者", personaId: "P14", personaName: "安静工程师" },
+    { id: "cm_027", name: "异常预判者", personaId: "P04", personaName: "怀疑型调试者" },
+    { id: "cm_028", name: "失控厌恶者", personaId: "P13", personaName: "可靠运营者" },
+    { id: "cm_029", name: "后果敏感者", personaId: "P09", personaName: "人本协调者" },
+    { id: "cm_030", name: "失败预演者", personaId: "P04", personaName: "怀疑型调试者" },
+    { id: "cm_031", name: "小步推进者", personaId: "P02", personaName: "反馈迭代者" },
+    { id: "cm_032", name: "稳态执行者", personaId: "P13", personaName: "可靠运营者" },
+    { id: "cm_033", name: "闭环完成者", personaId: "P13", personaName: "可靠运营者" },
+    { id: "cm_034", name: "路径校准者", personaId: "P02", personaName: "反馈迭代者" },
+    { id: "cm_035", name: "目标反推者", personaId: "P12", personaName: "探索战略者" },
+    { id: "cm_036", name: "实用落地者", personaId: "P13", personaName: "可靠运营者" },
+    { id: "cm_037", name: "噪声过滤者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_038", name: "信息压缩者", personaId: "P08", personaName: "证据分析者" },
+    { id: "cm_039", name: "信号捕捉者", personaId: "P08", personaName: "证据分析者" },
+    { id: "cm_040", name: "细节校准者", personaId: "P14", personaName: "安静工程师" },
+    { id: "cm_041", name: "重点提炼者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_042", name: "脉络梳理者", personaId: "P01", personaName: "深度研究者" },
+    { id: "cm_043", name: "实质锚定者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_044", name: "克制表达者", personaId: "P16", personaName: "语气校准者" },
+    { id: "cm_045", name: "清晰度维护者", personaId: "P09", personaName: "人本协调者" },
+    { id: "cm_046", name: "语言密度追求者", personaId: "P05", personaName: "极简决策者" },
+    { id: "cm_047", name: "结构表达者", personaId: "P03", personaName: "系统架构者" },
+    { id: "cm_048", name: "质感表达者", personaId: "P07", personaName: "审美策展者" },
+  ];
+  const AVATAR_STYLE_OPTIONS = [
+    { avatarId: "P01-A", personaId: "P01", personaName: "深度研究者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p01-a-deep-researcher.png" },
+    { avatarId: "P01-B", personaId: "P01", personaName: "深度研究者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p01-b-deep-researcher.png" },
+    { avatarId: "P02-A", personaId: "P02", personaName: "反馈迭代者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png" },
+    { avatarId: "P02-B", personaId: "P02", personaName: "反馈迭代者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png" },
+    { avatarId: "P03-A", personaId: "P03", personaName: "系统架构者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png" },
+    { avatarId: "P03-B", personaId: "P03", personaName: "系统架构者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png" },
+    { avatarId: "P04-A", personaId: "P04", personaName: "怀疑型调试者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png" },
+    { avatarId: "P04-B", personaId: "P04", personaName: "怀疑型调试者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png" },
+    { avatarId: "P05-A", personaId: "P05", personaName: "极简决策者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png" },
+    { avatarId: "P05-B", personaId: "P05", personaName: "极简决策者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png" },
+    { avatarId: "P06-A", personaId: "P06", personaName: "混沌创意建造者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p06-a-chaotic-creative-maker.png" },
+    { avatarId: "P06-B", personaId: "P06", personaName: "混沌创意建造者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p06-b-chaotic-creative-maker.png" },
+    { avatarId: "P07-A", personaId: "P07", personaName: "审美策展者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p07-a-taste-curator.png" },
+    { avatarId: "P07-B", personaId: "P07", personaName: "审美策展者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p07-b-taste-curator.png" },
+    { avatarId: "P08-A", personaId: "P08", personaName: "证据分析者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png" },
+    { avatarId: "P08-B", personaId: "P08", personaName: "证据分析者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png" },
+    { avatarId: "P09-A", personaId: "P09", personaName: "人本协调者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png" },
+    { avatarId: "P09-B", personaId: "P09", personaName: "人本协调者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png" },
+    { avatarId: "P10-A", personaId: "P10", personaName: "共识翻译者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p10-a-consensus-translator.png" },
+    { avatarId: "P10-B", personaId: "P10", personaName: "共识翻译者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p10-b-consensus-translator.png" },
+    { avatarId: "P11-A", personaId: "P11", personaName: "AI 编排者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p11-a-ai-orchestrator.png" },
+    { avatarId: "P11-B", personaId: "P11", personaName: "AI 编排者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p11-b-ai-orchestrator.png" },
+    { avatarId: "P12-A", personaId: "P12", personaName: "探索战略者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p12-a-explorer-strategist.png" },
+    { avatarId: "P12-B", personaId: "P12", personaName: "探索战略者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p12-b-explorer-strategist.png" },
+    { avatarId: "P13-A", personaId: "P13", personaName: "可靠运营者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png" },
+    { avatarId: "P13-B", personaId: "P13", personaName: "可靠运营者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png" },
+    { avatarId: "P14-A", personaId: "P14", personaName: "安静工程师", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p14-a-quiet-engineer.png" },
+    { avatarId: "P14-B", personaId: "P14", personaName: "安静工程师", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p14-b-quiet-engineer.png" },
+    { avatarId: "P15-A", personaId: "P15", personaName: "反常识重构者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png" },
+    { avatarId: "P15-B", personaId: "P15", personaName: "反常识重构者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png" },
+    { avatarId: "P16-A", personaId: "P16", personaName: "语气校准者", styleName: "风格 A", image: "assets/cognitive-avatars/v2/images/p16-a-tone-calibrator.png" },
+    { avatarId: "P16-B", personaId: "P16", personaName: "语气校准者", styleName: "风格 B", image: "assets/cognitive-avatars/v2/images/p16-b-tone-calibrator.png" },
+  ];
+  let cachedAvatarSelection = null;
+  let userPersonaSelection = loadUserPersonaSelection();
+  let currentPersonaTraits = [];
+
+  function personaAvatarPath(personaId) {
+    const slug = PERSONA_SLUGS[personaId] || "systems-architect";
+    const num = (personaId || "P03").replace("P", "").padStart(2, "0");
+    return `assets/cognitive-avatars/v2/images/p${num}-a-${slug}.png`;
+  }
+
+  function loadUserPersonaSelection() {
+    try {
+      const raw = localStorage.getItem(USER_PERSONA_SELECTION_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && parsed.avatarId) return parsed;
+      if (parsed && parsed.modelId) {
+        const model = findModelOption(parsed.modelId);
+        return model ? { avatarId: `${model.personaId}-A` } : null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveUserPersonaSelection(option) {
+    userPersonaSelection = option ? { avatarId: option.avatarId } : null;
+    try {
+      if (userPersonaSelection) {
+        localStorage.setItem(USER_PERSONA_SELECTION_KEY, JSON.stringify(userPersonaSelection));
+      } else {
+        localStorage.removeItem(USER_PERSONA_SELECTION_KEY);
+      }
+    } catch {
+      // Ignore storage failures; the in-memory choice still updates this view.
+    }
+  }
+
+  function findModelOption(modelId) {
+    return COGNITIVE_MODEL_OPTIONS.find(o => o.id === modelId) || null;
+  }
+
+  function findAvatarOption(avatarId) {
+    return AVATAR_STYLE_OPTIONS.find(o => o.avatarId === avatarId) || null;
+  }
+
+  function avatarOptionForPersona(personaId) {
+    return AVATAR_STYLE_OPTIONS.find(o => o.personaId === personaId && o.avatarId.endsWith("-A"))
+      || AVATAR_STYLE_OPTIONS.find(o => o.personaId === personaId)
+      || null;
+  }
+
+  function groupAvatarOptions() {
+    const groups = [];
+    for (const option of AVATAR_STYLE_OPTIONS) {
+      let group = groups.find(g => g.personaId === option.personaId);
+      if (!group) {
+        group = { personaId: option.personaId, personaName: option.personaName, options: [] };
+        groups.push(group);
+      }
+      group.options.push(option);
+    }
+    return groups;
+  }
+
+  function renderPersonaAvatar(traits, avatarSelection) {
+    const titleEl = document.getElementById("twin-persona-title");
+    const subtitleEl = document.getElementById("twin-persona-subtitle");
+    const traitsEl = document.getElementById("twin-persona-traits");
+    const imgEl = document.getElementById("twin-persona-img");
+    const avatarEl = document.getElementById("twin-persona-avatar");
+    if (!titleEl || !subtitleEl || !traitsEl) return;
+    if (avatarEl) {
+      avatarEl.onclick = openPersonaOptions;
+      avatarEl.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openPersonaOptions();
+        }
+      };
+    }
+
+    currentPersonaTraits = traits || [];
+    const topTraits = (traits || []).slice(0, 3);
+    traitsEl.innerHTML = topTraits.length
+      ? topTraits.map(t => `<span>${esc(t.name || t.category || "认知特质")}</span>`).join("")
+      : "<span>等待分析</span>";
+
+    // Default avatar shown during loading
+    const defaultAvatar = personaAvatarPath("P03");
+
+    const sel = avatarSelection || cachedAvatarSelection;
+    const manualOption = userPersonaSelection ? findAvatarOption(userPersonaSelection.avatarId) : null;
+    const selectedAvatarPath = manualOption ? manualOption.image : null;
+
+    if (sel && sel.persona_id) {
+      titleEl.textContent = sel.persona_title || sel.model_name || "认知模型";
+      subtitleEl.textContent = sel.rationale || "";
+      if (imgEl) {
+        imgEl.src = selectedAvatarPath || personaAvatarPath(sel.persona_id);
+        imgEl.alt = manualOption ? `${manualOption.personaName} ${manualOption.styleName}` : (sel.persona_title || sel.model_name || "");
+      }
+      cachedAvatarSelection = sel;
+      renderPersonaOptions(sel, manualOption ? manualOption.avatarId : "");
+      return;
+    }
+
+    titleEl.textContent = "认知模型";
+    subtitleEl.textContent = traits && traits.length ? "匹配中..." : "等待分析";
+    if (imgEl) { imgEl.src = selectedAvatarPath || defaultAvatar; imgEl.alt = manualOption ? `${manualOption.personaName} ${manualOption.styleName}` : ""; }
+    renderPersonaOptions(sel, manualOption ? manualOption.avatarId : "");
+
+    if (traits && traits.length) {
+      fetch("/api/twin/avatar-selection")
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data && data.persona_id) {
+            cachedAvatarSelection = data;
+            renderPersonaAvatar(traits, data);
+          } else {
+            subtitleEl.textContent = "点击 Analyze 后匹配认知模型";
+          }
+        })
+        .catch(() => { subtitleEl.textContent = "点击 Analyze 后匹配认知模型"; });
+    }
+  }
+
+  function renderPersonaOptions(avatarSelection, selectedAvatarId) {
+    const container = document.getElementById("twin-persona-options");
+    if (!container) return;
+    const aiAvatar = avatarSelection && avatarSelection.persona_id
+      ? avatarOptionForPersona(avatarSelection.persona_id)
+      : null;
+    const aiAvatarId = aiAvatar ? aiAvatar.avatarId : "";
+    const manualAvatarId = userPersonaSelection ? userPersonaSelection.avatarId : "";
+    const activeAvatarId = selectedAvatarId || manualAvatarId || aiAvatarId;
+
+    container.innerHTML = `<div class="twin-persona-options-backdrop" data-close-persona-options></div>
+      <div class="twin-persona-options-panel">
+        <div class="twin-persona-options-head">
+          <div>
+            <div id="twin-persona-options-title">选择头像风格</div>
+            <div class="twin-persona-options-subtitle">相同头像已合并；同一视觉画像的不同风格会分别展示。</div>
+          </div>
+          <div class="twin-persona-options-actions">
+            ${manualAvatarId ? '<button type="button" id="twin-persona-reset">使用 AI 匹配</button>' : ""}
+            <button type="button" id="twin-persona-close" aria-label="关闭">×</button>
+          </div>
+        </div>
+        <div class="twin-persona-option-grid">
+          ${groupAvatarOptions().map(group => `<section class="twin-persona-group" data-persona-id="${esc(group.personaId)}">
+            <div class="twin-persona-group-title">${esc(group.personaName)}</div>
+            <div class="twin-persona-style-options">
+              ${group.options.map(option => {
+                const active = option.avatarId === activeAvatarId ? " active" : "";
+                const aiMatched = option.avatarId === aiAvatarId ? '<span class="twin-persona-badge">AI 匹配</span>' : "";
+                const selected = option.avatarId === manualAvatarId ? '<span class="twin-persona-badge selected">已选择</span>' : "";
+                return `<button type="button" class="twin-persona-option${active}" data-avatar-id="${esc(option.avatarId)}">
+                  <img src="${esc(option.image)}" alt="${esc(option.personaName)} ${esc(option.styleName)}">
+                  <span class="twin-persona-option-persona">${esc(option.styleName)}</span>
+                  ${selected || aiMatched}
+                </button>`;
+              }).join("")}
+            </div>
+          </section>`).join("")}
+        </div>
+      </div>`;
+
+    const resetBtn = document.getElementById("twin-persona-reset");
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        saveUserPersonaSelection(null);
+        renderPersonaAvatar(currentPersonaTraits, cachedAvatarSelection);
+        closePersonaOptions();
+      };
+    }
+    const closeBtn = document.getElementById("twin-persona-close");
+    if (closeBtn) closeBtn.onclick = closePersonaOptions;
+    container.querySelectorAll("[data-close-persona-options]").forEach(el => {
+      el.onclick = closePersonaOptions;
+    });
+    container.querySelectorAll(".twin-persona-option").forEach(btn => {
+      btn.onclick = () => {
+        const option = findAvatarOption(btn.getAttribute("data-avatar-id"));
+        if (!option) return;
+        saveUserPersonaSelection(option);
+        renderPersonaAvatar(currentPersonaTraits, cachedAvatarSelection);
+        closePersonaOptions();
+      };
+    });
+  }
+
+  function openPersonaOptions() {
+    const container = document.getElementById("twin-persona-options");
+    if (!container) return;
+    if (!container.innerHTML.trim()) {
+      renderPersonaOptions(cachedAvatarSelection, userPersonaSelection ? userPersonaSelection.avatarId : "");
+    }
+    container.classList.remove("hidden");
+    container.setAttribute("aria-hidden", "false");
+  }
+
+  function closePersonaOptions() {
+    const container = document.getElementById("twin-persona-options");
+    if (!container) return;
+    container.classList.add("hidden");
+    container.setAttribute("aria-hidden", "true");
+  }
+
   // Trait categories for display
   const TRAIT_CATEGORIES = [
     { key: "价值取向",   icon: "⚖️", color: "#0f766e" },
@@ -51,6 +355,9 @@
     };
     if (btnSync) btnSync.onclick = startSync;
     if (btnProgress) btnProgress.onclick = toggleProgressView;
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closePersonaOptions();
+    });
   }
 
   /** Toggle between analysis progress view and overview */
@@ -111,8 +418,19 @@
     // (otherwise the stale-callback guard blocks state reset)
     analysisRunning = false;
     _updateAnalyzeButton();
+    _restoreOverviewAfterStoppedAnalysis();
     const updatedEl = document.getElementById("twin-last-analyzed");
     if (updatedEl) { updatedEl.textContent = "已停止"; updatedEl.classList.remove("loading"); }
+  }
+
+  function _restoreOverviewAfterStoppedAnalysis() {
+    const progress = document.getElementById("twin-analysis-progress");
+    if (progress) progress.innerHTML = "";
+    if (overviewData) {
+      renderOverview(overviewData);
+    } else {
+      loadOverview();
+    }
   }
 
   // ── Overview: Vertical Pipeline Layout ──
@@ -150,6 +468,9 @@
     const cardCount = cardsInfo.count || 0;
     const traitCount = traitsInfo.count || 0;
     const traitItems = traitsInfo.items || [];
+
+    // Render persona avatar (uses cached selection or lazy-fetches)
+    renderPersonaAvatar(traitItems, data.avatar_selection || null);
 
     if (evtCount === 0 && cardCount === 0 && traitCount === 0) {
       renderOverviewEmpty(); return;
@@ -347,6 +668,7 @@
   function renderOverviewEmpty() {
     const container = document.getElementById("twin-overview");
     if (!container) return;
+    renderPersonaAvatar([]);
     const bar = document.getElementById("twin-stats-bar");
     if (bar) bar.innerHTML = "";
     container.innerHTML = `<div class="twin-empty-state">
@@ -720,45 +1042,8 @@
     analysisAbort = abortCtrl;
 
     fetch("/api/twin/analyze", { method: "POST", signal: abortCtrl.signal })
-      .then((response) => {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        function pump() {
-          return reader.read().then(({ done, value }) => {
-            if (done) {
-              _finishAnalysis(streamState, streamState.failed);
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop();
-            for (const part of parts) {
-              const lines = part.split("\n");
-              for (const line of lines) {
-                if (!line.startsWith("data: ")) continue;
-                try {
-                  const evt = JSON.parse(line.slice(6));
-                  _handleStreamEvent(evt, streamState);
-                } catch (e) { /* skip */ }
-              }
-            }
-            // Also handle single \n separated events (server may not double-newline)
-            const singleLines = buffer.split("\n");
-            buffer = singleLines.pop() || "";
-            for (const line of singleLines) {
-              if (!line.startsWith("data: ")) continue;
-              try {
-                const evt = JSON.parse(line.slice(6));
-                _handleStreamEvent(evt, streamState);
-              } catch (e) { /* skip */ }
-            }
-            return pump();
-          });
-        }
-        return pump();
-      })
+      .then((response) => window.readSseStream(response, evt => _handleStreamEvent(evt, streamState)))
+      .then(() => _finishAnalysis(streamState, streamState.failed))
       .catch((e) => {
         if (e.name === "AbortError") {
           if (analysisAbort === abortCtrl) { analysisRunning = false; _updateAnalyzeButton(); }

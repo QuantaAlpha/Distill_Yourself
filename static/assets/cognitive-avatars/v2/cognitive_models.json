@@ -1,0 +1,3795 @@
+{
+  "taxonomy_name": "用户思维模式分类",
+  "version": "0.5",
+  "description": "用于从大量用户对话中抽取具有概括性的思维模式。该分类关注用户如何理解问题、推理、决策、处理复杂度、控制风险、执行、处理信息和表达，而不是人格判断或工程职责命名。",
+  "design_principles": [
+    "分类名应体现用户的思考逻辑，而不是工程动作",
+    "优先描述认知路径、判断偏好和问题处理方式",
+    "允许多标签共存，不强制把用户归为单一类型",
+    "避免临床化、人格化、价值评判式命名",
+    "命名应简洁、有辨识度、可解释"
+  ],
+  "persona_preset_reference": {
+    "name": "系统架构型",
+    "traits": [
+      "先拆边界，再稳妥推进",
+      "极简主义者",
+      "反火力不足恐惧症",
+      "可观测可控至上",
+      "实质优先",
+      "表达有品味"
+    ],
+    "mapped_primary_models": [
+      "问题定界者",
+      "边界敏感者",
+      "复杂度克制者",
+      "可控性优先者",
+      "验证闭环者",
+      "实质锚定者",
+      "克制表达者"
+    ]
+  },
+  "classification_axes": [
+    {
+      "id": "problem_understanding",
+      "name": "问题理解方式",
+      "description": "用户如何识别问题的范围、本质、前提和语境。"
+    },
+    {
+      "id": "reasoning_style",
+      "name": "推理方式",
+      "description": "用户如何从信息中形成判断和解释。"
+    },
+    {
+      "id": "decision_style",
+      "name": "决策方式",
+      "description": "用户如何在多个选项、风险和约束之间做选择。"
+    },
+    {
+      "id": "complexity_handling",
+      "name": "复杂度处理方式",
+      "description": "用户如何面对复杂系统、冗余信息和不确定结构。"
+    },
+    {
+      "id": "risk_control",
+      "name": "风险与控制方式",
+      "description": "用户如何处理不确定性、失败、验证和可控性。"
+    },
+    {
+      "id": "execution_style",
+      "name": "执行方式",
+      "description": "用户如何推进任务、校准路径和完成闭环。"
+    },
+    {
+      "id": "information_processing",
+      "name": "信息处理方式",
+      "description": "用户如何筛选、压缩、组织和提炼信息。"
+    },
+    {
+      "id": "expression_style",
+      "name": "表达方式",
+      "description": "用户如何偏好输出的语言、结构、密度和质感。"
+    }
+  ],
+  "models": [
+    {
+      "id": "cm_001",
+      "name": "问题定界者",
+      "axis": "problem_understanding",
+      "summary": "习惯先明确问题范围、边界和不做什么，再进入解决方案。",
+      "thinking_mode": [
+        "先界定范围",
+        "再识别目标",
+        "最后选择动作"
+      ],
+      "signals": [
+        "经常问边界是什么",
+        "强调不要做无关内容",
+        "喜欢先定义输入输出"
+      ],
+      "best_response_strategy": [
+        "先声明假设",
+        "明确范围",
+        "列出不会触碰的部分"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P03",
+          "persona_name": "系统架构者",
+          "core_cognitive_action": "划结构边界"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P05",
+            "persona_name": "极简决策者",
+            "core_cognitive_action": "删到主线"
+          }
+        ],
+        "binding_rationale": "问题定界依赖模块、输入输出和边界定义，最接近“划结构边界”的系统架构者；极简决策者作为次级，因为它也会排除不做什么。",
+        "cognitive_action": "划结构边界",
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_002",
+      "name": "本质追问者",
+      "axis": "problem_understanding",
+      "summary": "不满足表层问题，倾向追问真正的问题是什么。",
+      "thinking_mode": [
+        "剥离表象",
+        "追问根因",
+        "寻找核心矛盾"
+      ],
+      "signals": [
+        "问为什么是这个问题",
+        "要求回到底层逻辑",
+        "反感只处理症状"
+      ],
+      "best_response_strategy": [
+        "先指出表层问题",
+        "再提炼本质问题",
+        "给出核心判断"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P15",
+          "persona_name": "反常识重构者",
+          "core_cognitive_action": "重写问题"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P01",
+            "persona_name": "深度研究者",
+            "core_cognitive_action": "追溯上下文"
+          }
+        ],
+        "binding_rationale": "本质追问会重新定义表层问题，主视觉应体现“重写问题”；深度研究者作为次级用于表达追问根因。",
+        "cognitive_action": "重写问题",
+        "visual_anchors": [
+          "翻转问题卡",
+          "错位框架",
+          "划掉旧定义",
+          "新模型卡"
+        ],
+        "traits": [
+          "反常识",
+          "聪明",
+          "有挑战性",
+          "框架感强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P15-A",
+            "image": "assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P15-B",
+            "image": "assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_003",
+      "name": "隐含前提拆解者",
+      "axis": "problem_understanding",
+      "summary": "擅长发现问题中没有明说但影响判断的前提。",
+      "thinking_mode": [
+        "识别默认假设",
+        "拆开隐含条件",
+        "判断前提是否成立"
+      ],
+      "signals": [
+        "经常质疑默认设定",
+        "要求说明依据",
+        "会追问前提条件"
+      ],
+      "best_response_strategy": [
+        "列出显性信息",
+        "补充隐含假设",
+        "区分事实和推断"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P15",
+          "persona_name": "反常识重构者",
+          "core_cognitive_action": "重写问题"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P04",
+            "persona_name": "怀疑型调试者",
+            "core_cognitive_action": "复现并定位"
+          }
+        ],
+        "binding_rationale": "隐含前提拆解的关键动作是翻转默认假设，主视觉采用反常识重构者；怀疑型调试者作为次级表达质疑依据。",
+        "cognitive_action": "重写问题",
+        "visual_anchors": [
+          "翻转问题卡",
+          "错位框架",
+          "划掉旧定义",
+          "新模型卡"
+        ],
+        "traits": [
+          "反常识",
+          "聪明",
+          "有挑战性",
+          "框架感强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P15-A",
+            "image": "assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P15-B",
+            "image": "assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_004",
+      "name": "语境敏感者",
+      "axis": "problem_understanding",
+      "summary": "理解问题时高度依赖场景、人际关系、组织背景和表达语境。",
+      "thinking_mode": [
+        "先还原场景",
+        "再判断关系",
+        "最后选择表达或动作"
+      ],
+      "signals": [
+        "关注别人会怎么理解",
+        "重视场合和身份",
+        "要求语气得体"
+      ],
+      "best_response_strategy": [
+        "先确认语境",
+        "给不同语气版本",
+        "指出潜在误读"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P09",
+          "persona_name": "人本协调者",
+          "core_cognitive_action": "降低接受阻力"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P16",
+            "persona_name": "语气校准者",
+            "core_cognitive_action": "调协作温度"
+          },
+          {
+            "persona_id": "P10",
+            "persona_name": "共识翻译者",
+            "core_cognitive_action": "整合立场"
+          }
+        ],
+        "binding_rationale": "语境敏感关注场景、人际和表达接受度，主视觉采用人本协调者；语气校准者和共识翻译者补充语气与组织语境。",
+        "cognitive_action": "降低接受阻力",
+        "visual_anchors": [
+          "stakeholder 卡片",
+          "改写前后文本块",
+          "阻力降低箭头",
+          "柔和手势"
+        ],
+        "traits": [
+          "温和",
+          "务实",
+          "会换位",
+          "重落地"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P09-A",
+            "image": "assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P09-B",
+            "image": "assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_005",
+      "name": "边界敏感者",
+      "axis": "problem_understanding",
+      "summary": "对职责边界、权限边界、风险边界和认知边界高度敏感。",
+      "thinking_mode": [
+        "先看边界",
+        "再看责任",
+        "最后看行动空间"
+      ],
+      "signals": [
+        "强调不要越界",
+        "关注权限和影响范围",
+        "偏好可控动作"
+      ],
+      "best_response_strategy": [
+        "明确边界",
+        "说明影响面",
+        "必要时请求确认"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P03",
+          "persona_name": "系统架构者",
+          "core_cognitive_action": "划结构边界"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P13",
+            "persona_name": "可靠运营者",
+            "core_cognitive_action": "推进闭环"
+          }
+        ],
+        "binding_rationale": "边界敏感需要明确职责、权限和影响范围，主视觉采用系统架构者；可靠运营者补充可控行动边界。",
+        "cognitive_action": "划结构边界",
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_006",
+      "name": "问题重构者",
+      "axis": "problem_understanding",
+      "summary": "倾向重新定义问题，使原本混乱的问题变得更可解。",
+      "thinking_mode": [
+        "重写问题",
+        "改变观察角度",
+        "压缩成可处理形式"
+      ],
+      "signals": [
+        "要求换一种说法",
+        "喜欢重新框定问题",
+        "关注问题是否问对"
+      ],
+      "best_response_strategy": [
+        "先复述原问题",
+        "再给重构版本",
+        "说明为什么更可解"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P15",
+          "persona_name": "反常识重构者",
+          "core_cognitive_action": "重写问题"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P03",
+            "persona_name": "系统架构者",
+            "core_cognitive_action": "划结构边界"
+          }
+        ],
+        "binding_rationale": "问题重构直接对应“重写问题”，同时需要结构化后的可解框架。",
+        "cognitive_action": "重写问题",
+        "visual_anchors": [
+          "翻转问题卡",
+          "错位框架",
+          "划掉旧定义",
+          "新模型卡"
+        ],
+        "traits": [
+          "反常识",
+          "聪明",
+          "有挑战性",
+          "框架感强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P15-A",
+            "image": "assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P15-B",
+            "image": "assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_007",
+      "name": "因果追踪者",
+      "axis": "reasoning_style",
+      "summary": "习惯沿着原因、结果和中间机制追踪问题。",
+      "thinking_mode": [
+        "识别原因",
+        "连接机制",
+        "推导后果"
+      ],
+      "signals": [
+        "问为什么会这样",
+        "关注机制链条",
+        "不满足现象描述"
+      ],
+      "best_response_strategy": [
+        "给因果链",
+        "区分直接原因和根因",
+        "指出不确定环节"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P01",
+          "persona_name": "深度研究者",
+          "core_cognitive_action": "追溯上下文"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P04",
+            "persona_name": "怀疑型调试者",
+            "core_cognitive_action": "复现并定位"
+          }
+        ],
+        "binding_rationale": "因果追踪更像沿历史脉络和机制链追溯上下文；怀疑型调试者补充根因定位。",
+        "cognitive_action": "追溯上下文",
+        "visual_anchors": [
+          "档案夹",
+          "长文批注",
+          "时间线",
+          "原始资料"
+        ],
+        "traits": [
+          "耐心",
+          "重上下文",
+          "重原始资料",
+          "慢决策"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P01-A",
+            "image": "assets/cognitive-avatars/v2/images/p01-a-deep-researcher.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p01-a-deep-researcher.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P01-B",
+            "image": "assets/cognitive-avatars/v2/images/p01-b-deep-researcher.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p01-b-deep-researcher.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_008",
+      "name": "第一性原理者",
+      "axis": "reasoning_style",
+      "summary": "喜欢回到不可再分的基本事实和约束重新推导。",
+      "thinking_mode": [
+        "拆掉惯例",
+        "寻找基本事实",
+        "重新推导方案"
+      ],
+      "signals": [
+        "质疑行业惯例",
+        "问为什么一定要这样",
+        "偏好底层逻辑"
+      ],
+      "best_response_strategy": [
+        "先拆假设",
+        "给基本约束",
+        "再推导结论"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P15",
+          "persona_name": "反常识重构者",
+          "core_cognitive_action": "重写问题"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P05",
+            "persona_name": "极简决策者",
+            "core_cognitive_action": "删到主线"
+          }
+        ],
+        "binding_rationale": "第一性原理会拆掉惯例和重新推导，主视觉采用反常识重构者；极简决策者补充基本事实和必要约束。",
+        "cognitive_action": "重写问题",
+        "visual_anchors": [
+          "翻转问题卡",
+          "错位框架",
+          "划掉旧定义",
+          "新模型卡"
+        ],
+        "traits": [
+          "反常识",
+          "聪明",
+          "有挑战性",
+          "框架感强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P15-A",
+            "image": "assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P15-B",
+            "image": "assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_009",
+      "name": "结构推演者",
+      "axis": "reasoning_style",
+      "summary": "通过层级、模块、关系和结构变化来推演结果。",
+      "thinking_mode": [
+        "拆结构",
+        "看关系",
+        "推演变化"
+      ],
+      "signals": [
+        "喜欢框架图和层级",
+        "关注模块关系",
+        "偏好结构化解释"
+      ],
+      "best_response_strategy": [
+        "用层级结构回答",
+        "说明关系",
+        "避免散点式描述"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P03",
+          "persona_name": "系统架构者",
+          "core_cognitive_action": "划结构边界"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "结构推演直接对应模块、层级、关系和结构变化。",
+        "cognitive_action": "划结构边界",
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_010",
+      "name": "模式归纳者",
+      "axis": "reasoning_style",
+      "summary": "通过大量案例和重复现象归纳出规律。",
+      "thinking_mode": [
+        "观察案例",
+        "提取共性",
+        "形成模式"
+      ],
+      "signals": [
+        "喜欢案例",
+        "问有没有类似情况",
+        "从经验中找规律"
+      ],
+      "best_response_strategy": [
+        "先给案例",
+        "再总结模式",
+        "说明适用边界"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P08",
+          "persona_name": "证据分析者",
+          "core_cognitive_action": "量化比较"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P01",
+            "persona_name": "深度研究者",
+            "core_cognitive_action": "追溯上下文"
+          }
+        ],
+        "binding_rationale": "模式归纳依赖大量样本对比和规律提炼，主视觉采用证据分析者；深度研究者补充材料积累。",
+        "cognitive_action": "量化比较",
+        "visual_anchors": [
+          "评分矩阵",
+          "A/B 样本",
+          "指标刻度",
+          "证据对照"
+        ],
+        "traits": [
+          "理性",
+          "精确",
+          "可验证",
+          "比较型"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P08-A",
+            "image": "assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P08-B",
+            "image": "assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_011",
+      "name": "类比迁移者",
+      "axis": "reasoning_style",
+      "summary": "通过跨领域类比来理解新问题或生成新方案。",
+      "thinking_mode": [
+        "寻找相似结构",
+        "跨场景映射",
+        "迁移解决方式"
+      ],
+      "signals": [
+        "喜欢打比方",
+        "常引用其他领域",
+        "通过类比理解抽象概念"
+      ],
+      "best_response_strategy": [
+        "使用类比",
+        "说明类比边界",
+        "再落回当前问题"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P06",
+          "persona_name": "混沌创意建造者",
+          "core_cognitive_action": "快速发散建造"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P12",
+            "persona_name": "探索战略者",
+            "core_cognitive_action": "选择下一站"
+          }
+        ],
+        "binding_rationale": "类比迁移偏跨域发散和生成新方案，主视觉采用混沌创意建造者；探索战略者补充新路径。",
+        "cognitive_action": "快速发散建造",
+        "visual_anchors": [
+          "半成品原型",
+          "拼贴材料",
+          "涂鸦草图",
+          "工具散落"
+        ],
+        "traits": [
+          "高能量",
+          "跳跃",
+          "动手快",
+          "发散"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P06-A",
+            "image": "assets/cognitive-avatars/v2/images/p06-a-chaotic-creative-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p06-a-chaotic-creative-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P06-B",
+            "image": "assets/cognitive-avatars/v2/images/p06-b-chaotic-creative-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p06-b-chaotic-creative-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_012",
+      "name": "约束反推者",
+      "axis": "reasoning_style",
+      "summary": "从限制条件、不可行项和硬约束反推出可行路径。",
+      "thinking_mode": [
+        "先找约束",
+        "排除不可行",
+        "反推出方案"
+      ],
+      "signals": [
+        "关注限制条件",
+        "喜欢先排雷",
+        "要求现实可行"
+      ],
+      "best_response_strategy": [
+        "先列约束",
+        "再给可行路径",
+        "说明取舍"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P03",
+            "persona_name": "系统架构者",
+            "core_cognitive_action": "划结构边界"
+          }
+        ],
+        "binding_rationale": "约束反推会从不可行项删到可行路径，主视觉采用极简决策者；系统架构者补充硬约束边界。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_013",
+      "name": "稳妥决策者",
+      "axis": "decision_style",
+      "summary": "偏好低风险、可解释、可验证的决策方式。",
+      "thinking_mode": [
+        "比较风险",
+        "选择稳态路径",
+        "保留调整空间"
+      ],
+      "signals": [
+        "不喜欢激进方案",
+        "要求稳妥推进",
+        "关注失败代价"
+      ],
+      "best_response_strategy": [
+        "推荐保守方案",
+        "说明风险",
+        "给验证方式"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P13",
+          "persona_name": "可靠运营者",
+          "core_cognitive_action": "推进闭环"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P08",
+            "persona_name": "证据分析者",
+            "core_cognitive_action": "量化比较"
+          }
+        ],
+        "binding_rationale": "稳妥决策强调可解释、可验证、低风险，主视觉采用可靠运营者；证据分析者补充验证依据。",
+        "cognitive_action": "推进闭环",
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_014",
+      "name": "风险收敛者",
+      "axis": "decision_style",
+      "summary": "做判断时优先压缩风险面，而不是追求最大收益。",
+      "thinking_mode": [
+        "识别风险",
+        "降低影响面",
+        "再推进"
+      ],
+      "signals": [
+        "关注不可逆后果",
+        "要求说明风险",
+        "偏好小范围试点"
+      ],
+      "best_response_strategy": [
+        "先列风险",
+        "区分可逆和不可逆",
+        "给低风险路径"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P04",
+          "persona_name": "怀疑型调试者",
+          "core_cognitive_action": "复现并定位"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P13",
+            "persona_name": "可靠运营者",
+            "core_cognitive_action": "推进闭环"
+          }
+        ],
+        "binding_rationale": "风险收敛优先压缩失败面，主视觉采用怀疑型调试者；可靠运营者补充闭环控制。",
+        "cognitive_action": "复现并定位",
+        "visual_anchors": [
+          "失败用例",
+          "报错路径",
+          "断点",
+          "异常标记"
+        ],
+        "traits": [
+          "敏锐",
+          "谨慎",
+          "反例驱动",
+          "问题定位强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P04-A",
+            "image": "assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P04-B",
+            "image": "assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_015",
+      "name": "证据锚定者",
+      "axis": "decision_style",
+      "summary": "需要通过证据、数据、测试或来源来支撑判断。",
+      "thinking_mode": [
+        "找证据",
+        "评估可信度",
+        "形成结论"
+      ],
+      "signals": [
+        "问依据是什么",
+        "要求验证结果",
+        "不接受空泛判断"
+      ],
+      "best_response_strategy": [
+        "区分事实和推断",
+        "提供证据",
+        "说明不确定性"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P08",
+          "persona_name": "证据分析者",
+          "core_cognitive_action": "量化比较"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "证据锚定直接对应评分、证据链、数据和来源支撑。",
+        "cognitive_action": "量化比较",
+        "visual_anchors": [
+          "评分矩阵",
+          "A/B 样本",
+          "指标刻度",
+          "证据对照"
+        ],
+        "traits": [
+          "理性",
+          "精确",
+          "可验证",
+          "比较型"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P08-A",
+            "image": "assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P08-B",
+            "image": "assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_016",
+      "name": "最小代价选择者",
+      "axis": "decision_style",
+      "summary": "倾向选择成本最低、扰动最小、收益足够的路径。",
+      "thinking_mode": [
+        "比较成本",
+        "避免过度投入",
+        "选择足够好的方案"
+      ],
+      "signals": [
+        "问有没有更简单办法",
+        "不喜欢大动干戈",
+        "重视投入产出比"
+      ],
+      "best_response_strategy": [
+        "给最小方案",
+        "说明为什么足够",
+        "避免额外扩展"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "最小代价选择者的核心是删到低成本、低扰动的主路径。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_017",
+      "name": "长期权衡者",
+      "axis": "decision_style",
+      "summary": "决策时不只看当前效果，也看长期维护、演化和隐性成本。",
+      "thinking_mode": [
+        "看短期收益",
+        "评估长期代价",
+        "选择平衡点"
+      ],
+      "signals": [
+        "关注后续维护",
+        "问长期会怎样",
+        "不喜欢短视方案"
+      ],
+      "best_response_strategy": [
+        "列短期和长期影响",
+        "说明维护成本",
+        "给平衡建议"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P03",
+          "persona_name": "系统架构者",
+          "core_cognitive_action": "划结构边界"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P12",
+            "persona_name": "探索战略者",
+            "core_cognitive_action": "选择下一站"
+          }
+        ],
+        "binding_rationale": "长期权衡关注维护、演化和隐性成本，主视觉采用系统架构者；探索战略者补充长期路线。",
+        "cognitive_action": "划结构边界",
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_018",
+      "name": "可逆试错者",
+      "axis": "decision_style",
+      "summary": "愿意试错，但前提是动作可回退、损失可控。",
+      "thinking_mode": [
+        "小范围试验",
+        "观察反馈",
+        "可逆调整"
+      ],
+      "signals": [
+        "接受先试一版",
+        "但要求能回滚",
+        "关注试错成本"
+      ],
+      "best_response_strategy": [
+        "给试点方案",
+        "明确回退方式",
+        "设置观察指标"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P02",
+          "persona_name": "反馈迭代者",
+          "core_cognitive_action": "逐轮改进"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P13",
+            "persona_name": "可靠运营者",
+            "core_cognitive_action": "推进闭环"
+          }
+        ],
+        "binding_rationale": "可逆试错的动作是先做小版本再回退/调整，主视觉采用反馈迭代者；可靠运营者补充损失可控。",
+        "cognitive_action": "逐轮改进",
+        "visual_anchors": [
+          "版本卡片",
+          "回环箭头",
+          "草稿对比",
+          "轻松反馈手势"
+        ],
+        "traits": [
+          "温和",
+          "实践导向",
+          "接受草稿",
+          "持续改进"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P02-A",
+            "image": "assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P02-B",
+            "image": "assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_019",
+      "name": "复杂度克制者",
+      "axis": "complexity_handling",
+      "summary": "面对复杂问题时，优先删除不必要复杂度。",
+      "thinking_mode": [
+        "识别复杂来源",
+        "删除非必要项",
+        "保留核心结构"
+      ],
+      "signals": [
+        "反感过度设计",
+        "强调简单",
+        "要求最小充分解"
+      ],
+      "best_response_strategy": [
+        "压缩方案",
+        "避免新依赖",
+        "只保留必要机制"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "复杂度克制直接对应删除不必要复杂度。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_020",
+      "name": "本质极简者",
+      "axis": "complexity_handling",
+      "summary": "追求清楚、必要、足够，不因焦虑而堆能力。",
+      "thinking_mode": [
+        "追问必要性",
+        "砍掉冗余",
+        "保持清爽"
+      ],
+      "signals": [
+        "反火力不足恐惧症",
+        "不喜欢功能堆叠",
+        "偏好少而准"
+      ],
+      "best_response_strategy": [
+        "说明不做什么",
+        "给极简方案",
+        "拒绝无必要扩展"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "本质极简追求必要、足够、清楚，最适合极简决策者。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_021",
+      "name": "冗余厌恶者",
+      "axis": "complexity_handling",
+      "summary": "对重复、废话、无用配置和多余步骤高度敏感。",
+      "thinking_mode": [
+        "发现重复",
+        "压缩表达",
+        "减少路径"
+      ],
+      "signals": [
+        "要求删掉废话",
+        "不喜欢重复解释",
+        "关注是否多余"
+      ],
+      "best_response_strategy": [
+        "去重",
+        "压缩输出",
+        "保持高信息密度"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P13",
+            "persona_name": "可靠运营者",
+            "core_cognitive_action": "推进闭环"
+          }
+        ],
+        "binding_rationale": "冗余厌恶会删除重复步骤和无用配置，主视觉采用极简决策者；可靠运营者补充流程清理。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_022",
+      "name": "秩序建立者",
+      "axis": "complexity_handling",
+      "summary": "面对混乱信息时，会先建立分类、层级和顺序。",
+      "thinking_mode": [
+        "分类",
+        "排序",
+        "建立层级"
+      ],
+      "signals": [
+        "喜欢框架",
+        "要求分类清楚",
+        "反感混乱堆叠"
+      ],
+      "best_response_strategy": [
+        "先给分类",
+        "再给细节",
+        "保持层级稳定"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P13",
+          "persona_name": "可靠运营者",
+          "core_cognitive_action": "推进闭环"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P03",
+            "persona_name": "系统架构者",
+            "core_cognitive_action": "划结构边界"
+          }
+        ],
+        "binding_rationale": "秩序建立者把混乱信息变成分类、层级和顺序，主视觉采用可靠运营者；系统架构者补充结构化。",
+        "cognitive_action": "推进闭环",
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_023",
+      "name": "结构收束者",
+      "axis": "complexity_handling",
+      "summary": "善于把发散的问题重新收束到少数核心结构上。",
+      "thinking_mode": [
+        "发散接收",
+        "结构压缩",
+        "提炼主线"
+      ],
+      "signals": [
+        "要求归纳",
+        "希望收敛",
+        "不喜欢无限发散"
+      ],
+      "best_response_strategy": [
+        "先总结主线",
+        "压成少数类别",
+        "给优先级"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P03",
+          "persona_name": "系统架构者",
+          "core_cognitive_action": "划结构边界"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P05",
+            "persona_name": "极简决策者",
+            "core_cognitive_action": "删到主线"
+          }
+        ],
+        "binding_rationale": "结构收束把发散问题收回核心结构，主视觉采用系统架构者；极简决策者补充收敛。",
+        "cognitive_action": "划结构边界",
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_024",
+      "name": "依赖敏感者",
+      "axis": "complexity_handling",
+      "summary": "理解问题时会特别关注事物之间的依赖和连锁影响。",
+      "thinking_mode": [
+        "识别依赖",
+        "判断影响链",
+        "避免误伤"
+      ],
+      "signals": [
+        "问会影响什么",
+        "关注上下游",
+        "担心连锁反应"
+      ],
+      "best_response_strategy": [
+        "说明依赖关系",
+        "标注影响范围",
+        "避免孤立建议"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P03",
+          "persona_name": "系统架构者",
+          "core_cognitive_action": "划结构边界"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "依赖敏感直接对应依赖线、连锁影响和结构边界。",
+        "cognitive_action": "划结构边界",
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_025",
+      "name": "可控性优先者",
+      "axis": "risk_control",
+      "summary": "认为事情不仅要能做，还要能观察、解释、控制和回退。",
+      "thinking_mode": [
+        "先看控制面",
+        "再看执行",
+        "最后看验证"
+      ],
+      "signals": [
+        "要求可观测可控",
+        "关注回滚",
+        "不喜欢黑盒结果"
+      ],
+      "best_response_strategy": [
+        "说明状态变化",
+        "给控制点",
+        "提供回退路径"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P13",
+          "persona_name": "可靠运营者",
+          "core_cognitive_action": "推进闭环"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P14",
+            "persona_name": "安静工程师",
+            "core_cognitive_action": "低噪声修复"
+          }
+        ],
+        "binding_rationale": "可控性优先强调观察、解释、控制和回退，主视觉采用可靠运营者；安静工程师补充可测试可靠性。",
+        "cognitive_action": "推进闭环",
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_026",
+      "name": "验证闭环者",
+      "axis": "risk_control",
+      "summary": "认为完成必须有检查、测试或证据闭环。",
+      "thinking_mode": [
+        "定义成功标准",
+        "执行验证",
+        "反馈证据"
+      ],
+      "signals": [
+        "问怎么证明",
+        "要求跑测试",
+        "不接受口头保证"
+      ],
+      "best_response_strategy": [
+        "列验证命令",
+        "报告结果",
+        "说明未验证部分"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P14",
+          "persona_name": "安静工程师",
+          "core_cognitive_action": "低噪声修复"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P08",
+            "persona_name": "证据分析者",
+            "core_cognitive_action": "量化比较"
+          }
+        ],
+        "binding_rationale": "验证闭环需要检查、测试和证据闭环，主视觉采用安静工程师；证据分析者补充依据。",
+        "cognitive_action": "低噪声修复",
+        "visual_anchors": [
+          "测试结果",
+          "小修补工具",
+          "边界 case",
+          "安静工位"
+        ],
+        "traits": [
+          "细致",
+          "低调",
+          "质量优先",
+          "风险敏感"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P14-A",
+            "image": "assets/cognitive-avatars/v2/images/p14-a-quiet-engineer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p14-a-quiet-engineer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P14-B",
+            "image": "assets/cognitive-avatars/v2/images/p14-b-quiet-engineer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p14-b-quiet-engineer.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_027",
+      "name": "异常预判者",
+      "axis": "risk_control",
+      "summary": "习惯提前思考异常、失败路径和边界情况。",
+      "thinking_mode": [
+        "预判异常",
+        "设计兜底",
+        "降低失败损失"
+      ],
+      "signals": [
+        "问失败怎么办",
+        "关注边界条件",
+        "要求兜底方案"
+      ],
+      "best_response_strategy": [
+        "列异常场景",
+        "说明处理方式",
+        "不夸大稳定性"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P04",
+          "persona_name": "怀疑型调试者",
+          "core_cognitive_action": "复现并定位"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P14",
+            "persona_name": "安静工程师",
+            "core_cognitive_action": "低噪声修复"
+          }
+        ],
+        "binding_rationale": "异常预判聚焦失败路径和边界情况，主视觉采用怀疑型调试者；安静工程师补充边界修复。",
+        "cognitive_action": "复现并定位",
+        "visual_anchors": [
+          "失败用例",
+          "报错路径",
+          "断点",
+          "异常标记"
+        ],
+        "traits": [
+          "敏锐",
+          "谨慎",
+          "反例驱动",
+          "问题定位强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P04-A",
+            "image": "assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P04-B",
+            "image": "assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_028",
+      "name": "失控厌恶者",
+      "axis": "risk_control",
+      "summary": "对不可解释、不可回退、不可监控的状态有强烈排斥。",
+      "thinking_mode": [
+        "识别失控点",
+        "增加可见性",
+        "保留干预权"
+      ],
+      "signals": [
+        "不喜欢自动乱改",
+        "强调权限和确认",
+        "关注不可逆动作"
+      ],
+      "best_response_strategy": [
+        "避免擅自扩大动作",
+        "先说明影响",
+        "必要时停下确认"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P13",
+          "persona_name": "可靠运营者",
+          "core_cognitive_action": "推进闭环"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P04",
+            "persona_name": "怀疑型调试者",
+            "core_cognitive_action": "复现并定位"
+          }
+        ],
+        "binding_rationale": "失控厌恶关注监控、回退和可解释状态，主视觉采用可靠运营者；怀疑型调试者补充风险扫描。",
+        "cognitive_action": "推进闭环",
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_029",
+      "name": "后果敏感者",
+      "axis": "risk_control",
+      "summary": "做事前会优先考虑后果、代价和外溢影响。",
+      "thinking_mode": [
+        "预测后果",
+        "估算代价",
+        "控制外溢"
+      ],
+      "signals": [
+        "问会带来什么影响",
+        "关注长期后果",
+        "不轻易做高风险动作"
+      ],
+      "best_response_strategy": [
+        "说明后果",
+        "区分短期和长期",
+        "给低外溢方案"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P09",
+          "persona_name": "人本协调者",
+          "core_cognitive_action": "降低接受阻力"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P13",
+            "persona_name": "可靠运营者",
+            "core_cognitive_action": "推进闭环"
+          }
+        ],
+        "binding_rationale": "后果敏感会考虑外溢影响和对象反应，主视觉采用人本协调者；可靠运营者补充代价闭环。",
+        "cognitive_action": "降低接受阻力",
+        "visual_anchors": [
+          "stakeholder 卡片",
+          "改写前后文本块",
+          "阻力降低箭头",
+          "柔和手势"
+        ],
+        "traits": [
+          "温和",
+          "务实",
+          "会换位",
+          "重落地"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P09-A",
+            "image": "assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P09-B",
+            "image": "assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_030",
+      "name": "失败预演者",
+      "axis": "risk_control",
+      "summary": "习惯提前模拟失败，借此增强方案可靠性。",
+      "thinking_mode": [
+        "假设失败",
+        "倒查原因",
+        "补强方案"
+      ],
+      "signals": [
+        "问哪里可能出错",
+        "喜欢预案",
+        "关注脆弱点"
+      ],
+      "best_response_strategy": [
+        "给失败清单",
+        "指出脆弱点",
+        "提供补强动作"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P04",
+          "persona_name": "怀疑型调试者",
+          "core_cognitive_action": "复现并定位"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P14",
+            "persona_name": "安静工程师",
+            "core_cognitive_action": "低噪声修复"
+          }
+        ],
+        "binding_rationale": "失败预演通过模拟失败增强可靠性，主视觉采用怀疑型调试者；安静工程师补充修复验证。",
+        "cognitive_action": "复现并定位",
+        "visual_anchors": [
+          "失败用例",
+          "报错路径",
+          "断点",
+          "异常标记"
+        ],
+        "traits": [
+          "敏锐",
+          "谨慎",
+          "反例驱动",
+          "问题定位强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P04-A",
+            "image": "assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P04-B",
+            "image": "assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_031",
+      "name": "小步推进者",
+      "axis": "execution_style",
+      "summary": "偏好小步、连续、低风险地推进，而不是一次性大改。",
+      "thinking_mode": [
+        "拆小步",
+        "逐步确认",
+        "持续校准"
+      ],
+      "signals": [
+        "要求一步一步来",
+        "不喜欢大范围重构",
+        "关注每步验证"
+      ],
+      "best_response_strategy": [
+        "给短步骤",
+        "每步有检查",
+        "避免一次性大动作"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P02",
+          "persona_name": "反馈迭代者",
+          "core_cognitive_action": "逐轮改进"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "小步推进直接对应版本草稿、反馈回环和低风险连续推进。",
+        "cognitive_action": "逐轮改进",
+        "visual_anchors": [
+          "版本卡片",
+          "回环箭头",
+          "草稿对比",
+          "轻松反馈手势"
+        ],
+        "traits": [
+          "温和",
+          "实践导向",
+          "接受草稿",
+          "持续改进"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P02-A",
+            "image": "assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P02-B",
+            "image": "assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_032",
+      "name": "稳态执行者",
+      "axis": "execution_style",
+      "summary": "执行时重视节奏稳定、扰动可控和结果可靠。",
+      "thinking_mode": [
+        "保持稳定",
+        "减少扰动",
+        "按计划推进"
+      ],
+      "signals": [
+        "强调稳妥推进",
+        "希望过程可控",
+        "不喜欢冒进"
+      ],
+      "best_response_strategy": [
+        "给稳定路径",
+        "说明扰动范围",
+        "按阶段汇报"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P13",
+          "persona_name": "可靠运营者",
+          "core_cognitive_action": "推进闭环"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P14",
+            "persona_name": "安静工程师",
+            "core_cognitive_action": "低噪声修复"
+          }
+        ],
+        "binding_rationale": "稳态执行重视稳定节奏和可靠结果，主视觉采用可靠运营者；安静工程师补充质量稳定。",
+        "cognitive_action": "推进闭环",
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_033",
+      "name": "闭环完成者",
+      "axis": "execution_style",
+      "summary": "关注任务是否真正收尾，而不是停在分析或半成品。",
+      "thinking_mode": [
+        "定义完成",
+        "执行到底",
+        "验证收尾"
+      ],
+      "signals": [
+        "要求别只分析",
+        "关注最终交付",
+        "希望有完成声明和证据"
+      ],
+      "best_response_strategy": [
+        "推进到交付物",
+        "给完成标准",
+        "说明验证结果"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P13",
+          "persona_name": "可靠运营者",
+          "core_cognitive_action": "推进闭环"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "闭环完成直接对应状态板、完成章和收尾动作。",
+        "cognitive_action": "推进闭环",
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_034",
+      "name": "路径校准者",
+      "axis": "execution_style",
+      "summary": "执行中不断根据反馈修正方向和优先级。",
+      "thinking_mode": [
+        "先走一段",
+        "观察反馈",
+        "调整路径"
+      ],
+      "signals": [
+        "喜欢迭代",
+        "会根据结果改方向",
+        "不坚持僵硬计划"
+      ],
+      "best_response_strategy": [
+        "给可调整计划",
+        "标出检查点",
+        "保留修正空间"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P02",
+          "persona_name": "反馈迭代者",
+          "core_cognitive_action": "逐轮改进"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P12",
+            "persona_name": "探索战略者",
+            "core_cognitive_action": "选择下一站"
+          }
+        ],
+        "binding_rationale": "路径校准是在执行中根据反馈调整方向，主视觉采用反馈迭代者；探索战略者补充路线选择。",
+        "cognitive_action": "逐轮改进",
+        "visual_anchors": [
+          "版本卡片",
+          "回环箭头",
+          "草稿对比",
+          "轻松反馈手势"
+        ],
+        "traits": [
+          "温和",
+          "实践导向",
+          "接受草稿",
+          "持续改进"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P02-A",
+            "image": "assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P02-B",
+            "image": "assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_035",
+      "name": "目标反推者",
+      "axis": "execution_style",
+      "summary": "从最终目标倒推必要步骤和最短路径。",
+      "thinking_mode": [
+        "明确目标",
+        "倒推路径",
+        "删掉无关动作"
+      ],
+      "signals": [
+        "问最终要什么",
+        "关注产出物",
+        "不喜欢过程空转"
+      ],
+      "best_response_strategy": [
+        "先确认目标",
+        "倒推步骤",
+        "删除旁支"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P12",
+          "persona_name": "探索战略者",
+          "core_cognitive_action": "选择下一站"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P05",
+            "persona_name": "极简决策者",
+            "core_cognitive_action": "删到主线"
+          }
+        ],
+        "binding_rationale": "目标反推从终局倒推路径，主视觉采用探索战略者；极简决策者补充最短路径。",
+        "cognitive_action": "选择下一站",
+        "visual_anchors": [
+          "岔路地图",
+          "阶段路线",
+          "远景目标",
+          "指南针"
+        ],
+        "traits": [
+          "远景感",
+          "方向感",
+          "机会敏感",
+          "开放"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P12-A",
+            "image": "assets/cognitive-avatars/v2/images/p12-a-explorer-strategist.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p12-a-explorer-strategist.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P12-B",
+            "image": "assets/cognitive-avatars/v2/images/p12-b-explorer-strategist.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p12-b-explorer-strategist.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_036",
+      "name": "实用落地者",
+      "axis": "execution_style",
+      "summary": "偏好能真实使用、真实交付、真实解决问题的方案。",
+      "thinking_mode": [
+        "看可行性",
+        "看落地成本",
+        "看实际效果"
+      ],
+      "signals": [
+        "问能不能用",
+        "不喜欢纸面方案",
+        "关注实际产出"
+      ],
+      "best_response_strategy": [
+        "给可执行方案",
+        "少讲空泛理论",
+        "说明落地条件"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P13",
+          "persona_name": "可靠运营者",
+          "core_cognitive_action": "推进闭环"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P09",
+            "persona_name": "人本协调者",
+            "core_cognitive_action": "降低接受阻力"
+          }
+        ],
+        "binding_rationale": "实用落地强调真实交付和解决问题，主视觉采用可靠运营者；人本协调者补充现实接受度。",
+        "cognitive_action": "推进闭环",
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_037",
+      "name": "噪声过滤者",
+      "axis": "information_processing",
+      "summary": "善于从大量信息中排除无关、重复和低价值内容。",
+      "thinking_mode": [
+        "识别噪声",
+        "过滤冗余",
+        "保留信号"
+      ],
+      "signals": [
+        "要求别说废话",
+        "喜欢高密度总结",
+        "反感信息堆砌"
+      ],
+      "best_response_strategy": [
+        "压缩内容",
+        "只保留关键点",
+        "避免泛泛背景"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P08",
+            "persona_name": "证据分析者",
+            "core_cognitive_action": "量化比较"
+          }
+        ],
+        "binding_rationale": "噪声过滤的动作是删掉无关信息，主视觉采用极简决策者；证据分析者补充信号判断。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_038",
+      "name": "信息压缩者",
+      "axis": "information_processing",
+      "summary": "倾向把复杂信息压缩成摘要、结构、表格或判断。",
+      "thinking_mode": [
+        "提取重点",
+        "压缩表达",
+        "形成摘要"
+      ],
+      "signals": [
+        "要求总结",
+        "喜欢 JSON 或表格",
+        "希望快速抓重点"
+      ],
+      "best_response_strategy": [
+        "给摘要",
+        "用结构化格式",
+        "先结论后细节"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P08",
+          "persona_name": "证据分析者",
+          "core_cognitive_action": "量化比较"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P05",
+            "persona_name": "极简决策者",
+            "core_cognitive_action": "删到主线"
+          }
+        ],
+        "binding_rationale": "信息压缩常表现为摘要、结构、表格和判断，主视觉采用证据分析者；极简决策者补充压缩主线。",
+        "cognitive_action": "量化比较",
+        "visual_anchors": [
+          "评分矩阵",
+          "A/B 样本",
+          "指标刻度",
+          "证据对照"
+        ],
+        "traits": [
+          "理性",
+          "精确",
+          "可验证",
+          "比较型"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P08-A",
+            "image": "assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P08-B",
+            "image": "assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_039",
+      "name": "信号捕捉者",
+      "axis": "information_processing",
+      "summary": "关注混乱信息中真正有预测力或决策价值的信号。",
+      "thinking_mode": [
+        "扫描信息",
+        "识别关键变化",
+        "捕捉高价值信号"
+      ],
+      "signals": [
+        "问重点是什么",
+        "关注异常信号",
+        "喜欢趋势判断"
+      ],
+      "best_response_strategy": [
+        "指出关键信号",
+        "说明为什么重要",
+        "避免平均用力"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P08",
+          "persona_name": "证据分析者",
+          "core_cognitive_action": "量化比较"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P12",
+            "persona_name": "探索战略者",
+            "core_cognitive_action": "选择下一站"
+          }
+        ],
+        "binding_rationale": "信号捕捉关注预测力和决策价值，主视觉采用证据分析者；探索战略者补充机会信号。",
+        "cognitive_action": "量化比较",
+        "visual_anchors": [
+          "评分矩阵",
+          "A/B 样本",
+          "指标刻度",
+          "证据对照"
+        ],
+        "traits": [
+          "理性",
+          "精确",
+          "可验证",
+          "比较型"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P08-A",
+            "image": "assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P08-B",
+            "image": "assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_040",
+      "name": "细节校准者",
+      "axis": "information_processing",
+      "summary": "对细节、格式、命名、准确性和一致性高度敏感。",
+      "thinking_mode": [
+        "逐项检查",
+        "校准误差",
+        "保持一致"
+      ],
+      "signals": [
+        "纠正措辞",
+        "要求格式准确",
+        "关注细小不一致"
+      ],
+      "best_response_strategy": [
+        "保持格式稳定",
+        "用词准确",
+        "避免随意改名"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P14",
+          "persona_name": "安静工程师",
+          "core_cognitive_action": "低噪声修复"
+        },
+        "secondary_visual_personas": [],
+        "binding_rationale": "细节校准直接对应测试、命名、格式和一致性修复。",
+        "cognitive_action": "低噪声修复",
+        "visual_anchors": [
+          "测试结果",
+          "小修补工具",
+          "边界 case",
+          "安静工位"
+        ],
+        "traits": [
+          "细致",
+          "低调",
+          "质量优先",
+          "风险敏感"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P14-A",
+            "image": "assets/cognitive-avatars/v2/images/p14-a-quiet-engineer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p14-a-quiet-engineer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P14-B",
+            "image": "assets/cognitive-avatars/v2/images/p14-b-quiet-engineer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p14-b-quiet-engineer.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_041",
+      "name": "重点提炼者",
+      "axis": "information_processing",
+      "summary": "善于从复杂内容中提炼最重要的判断和行动点。",
+      "thinking_mode": [
+        "识别主次",
+        "提炼重点",
+        "转成行动"
+      ],
+      "signals": [
+        "要求抓重点",
+        "不喜欢面面俱到",
+        "关注最关键的几件事"
+      ],
+      "best_response_strategy": [
+        "列出最重要事项",
+        "给优先级",
+        "减少次要细节"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P08",
+            "persona_name": "证据分析者",
+            "core_cognitive_action": "量化比较"
+          }
+        ],
+        "binding_rationale": "重点提炼是把复杂内容删到关键判断和行动点，主视觉采用极简决策者。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_042",
+      "name": "脉络梳理者",
+      "axis": "information_processing",
+      "summary": "理解信息时重视前因后果、发展顺序和上下文脉络。",
+      "thinking_mode": [
+        "还原背景",
+        "梳理顺序",
+        "连接上下文"
+      ],
+      "signals": [
+        "问来龙去脉",
+        "需要上下文",
+        "关注信息之间的关系"
+      ],
+      "best_response_strategy": [
+        "先给脉络",
+        "再给结论",
+        "说明关键转折"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P01",
+          "persona_name": "深度研究者",
+          "core_cognitive_action": "追溯上下文"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P03",
+            "persona_name": "系统架构者",
+            "core_cognitive_action": "划结构边界"
+          }
+        ],
+        "binding_rationale": "脉络梳理重视前因后果和上下文顺序，主视觉采用深度研究者；系统架构者补充结构。",
+        "cognitive_action": "追溯上下文",
+        "visual_anchors": [
+          "档案夹",
+          "长文批注",
+          "时间线",
+          "原始资料"
+        ],
+        "traits": [
+          "耐心",
+          "重上下文",
+          "重原始资料",
+          "慢决策"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P01-A",
+            "image": "assets/cognitive-avatars/v2/images/p01-a-deep-researcher.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p01-a-deep-researcher.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P01-B",
+            "image": "assets/cognitive-avatars/v2/images/p01-b-deep-researcher.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p01-b-deep-researcher.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_043",
+      "name": "实质锚定者",
+      "axis": "expression_style",
+      "summary": "表达时优先关注内容是否有实质，而不是形式是否热闹。",
+      "thinking_mode": [
+        "先判断价值",
+        "删除空话",
+        "保留实质"
+      ],
+      "signals": [
+        "反感套话",
+        "要求有内容",
+        "喜欢直接但不粗糙"
+      ],
+      "best_response_strategy": [
+        "先给有用信息",
+        "避免空泛修饰",
+        "保持表达密度"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P08",
+            "persona_name": "证据分析者",
+            "core_cognitive_action": "量化比较"
+          }
+        ],
+        "binding_rationale": "实质锚定关注内容是否有实质，主视觉采用极简决策者；证据分析者补充依据。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_044",
+      "name": "克制表达者",
+      "axis": "expression_style",
+      "summary": "偏好干净、准确、不过度煽动或堆砌的表达。",
+      "thinking_mode": [
+        "压低噪声",
+        "控制语气",
+        "保持准确"
+      ],
+      "signals": [
+        "不喜欢夸张表达",
+        "偏好简洁",
+        "要求语气稳"
+      ],
+      "best_response_strategy": [
+        "减少修饰",
+        "避免浮夸",
+        "保持冷静清楚"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P16",
+          "persona_name": "语气校准者",
+          "core_cognitive_action": "调协作温度"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P05",
+            "persona_name": "极简决策者",
+            "core_cognitive_action": "删到主线"
+          }
+        ],
+        "binding_rationale": "克制表达关注语气、分寸和不过度煽动，主视觉采用语气校准者；极简决策者补充干净表达。",
+        "cognitive_action": "调协作温度",
+        "visual_anchors": [
+          "语气波形",
+          "节奏刻度",
+          "偏好记忆卡",
+          "温度旋钮"
+        ],
+        "traits": [
+          "敏感",
+          "共情",
+          "偏好明确",
+          "沟通节奏感强"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P16-A",
+            "image": "assets/cognitive-avatars/v2/images/p16-a-tone-calibrator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p16-a-tone-calibrator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P16-B",
+            "image": "assets/cognitive-avatars/v2/images/p16-b-tone-calibrator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p16-b-tone-calibrator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_045",
+      "name": "清晰度维护者",
+      "axis": "expression_style",
+      "summary": "重视读者能否快速理解，不接受含混、绕弯或结构混乱。",
+      "thinking_mode": [
+        "理顺结构",
+        "消除歧义",
+        "降低理解成本"
+      ],
+      "signals": [
+        "要求说清楚",
+        "指出歧义",
+        "喜欢明确结构"
+      ],
+      "best_response_strategy": [
+        "用短句",
+        "分层说明",
+        "避免模糊代词和含混判断"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P09",
+          "persona_name": "人本协调者",
+          "core_cognitive_action": "降低接受阻力"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P10",
+            "persona_name": "共识翻译者",
+            "core_cognitive_action": "整合立场"
+          }
+        ],
+        "binding_rationale": "清晰度维护关注读者理解和表达接受度，主视觉采用人本协调者；共识翻译者补充跨对象解释。",
+        "cognitive_action": "降低接受阻力",
+        "visual_anchors": [
+          "stakeholder 卡片",
+          "改写前后文本块",
+          "阻力降低箭头",
+          "柔和手势"
+        ],
+        "traits": [
+          "温和",
+          "务实",
+          "会换位",
+          "重落地"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P09-A",
+            "image": "assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P09-B",
+            "image": "assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_046",
+      "name": "语言密度追求者",
+      "axis": "expression_style",
+      "summary": "偏好每句话都有信息量，反感低密度铺垫。",
+      "thinking_mode": [
+        "压缩语言",
+        "提高信息密度",
+        "保留必要细节"
+      ],
+      "signals": [
+        "要求不要废话",
+        "喜欢短而准",
+        "不喜欢长篇铺陈"
+      ],
+      "best_response_strategy": [
+        "直接进入重点",
+        "减少背景说明",
+        "保留关键判断"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P05",
+          "persona_name": "极简决策者",
+          "core_cognitive_action": "删到主线"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P16",
+            "persona_name": "语气校准者",
+            "core_cognitive_action": "调协作温度"
+          }
+        ],
+        "binding_rationale": "语言密度追求反感低密度铺垫，主视觉采用极简决策者；语气校准者补充表达颗粒度。",
+        "cognitive_action": "删到主线",
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_047",
+      "name": "结构表达者",
+      "axis": "expression_style",
+      "summary": "偏好用结构承载表达，让内容层次、关系和优先级清楚。",
+      "thinking_mode": [
+        "先组织结构",
+        "再填充内容",
+        "最后校准顺序"
+      ],
+      "signals": [
+        "喜欢列表、表格、JSON",
+        "要求层级清楚",
+        "偏好结构化输出"
+      ],
+      "best_response_strategy": [
+        "使用稳定结构",
+        "先总后分",
+        "字段命名清晰"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P03",
+          "persona_name": "系统架构者",
+          "core_cognitive_action": "划结构边界"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P10",
+            "persona_name": "共识翻译者",
+            "core_cognitive_action": "整合立场"
+          }
+        ],
+        "binding_rationale": "结构表达用结构承载内容层次和关系，主视觉采用系统架构者；共识翻译者补充对外说明。",
+        "cognitive_action": "划结构边界",
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      }
+    },
+    {
+      "id": "cm_048",
+      "name": "质感表达者",
+      "axis": "expression_style",
+      "summary": "不仅要求表达准确，也要求语言有审美、分寸和高级感。",
+      "thinking_mode": [
+        "先保证实质",
+        "再调整语感",
+        "避免廉价表达"
+      ],
+      "signals": [
+        "要求有品味",
+        "不喜欢模板腔",
+        "关注措辞质感"
+      ],
+      "best_response_strategy": [
+        "保持克制",
+        "避免俗套",
+        "用自然但有分寸的语言"
+      ],
+      "avatar_binding": {
+        "primary_visual_persona": {
+          "persona_id": "P07",
+          "persona_name": "审美策展者",
+          "core_cognitive_action": "筛选气质"
+        },
+        "secondary_visual_personas": [
+          {
+            "persona_id": "P16",
+            "persona_name": "语气校准者",
+            "core_cognitive_action": "调协作温度"
+          }
+        ],
+        "binding_rationale": "质感表达要求审美、分寸和高级感，主视觉采用审美策展者；语气校准者补充表达温度。",
+        "cognitive_action": "筛选气质",
+        "visual_anchors": [
+          "moodboard",
+          "材质样本",
+          "风格对照",
+          "筛选手势"
+        ],
+        "traits": [
+          "审美敏感",
+          "挑剔",
+          "重一致性",
+          "重质感"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P07-A",
+            "image": "assets/cognitive-avatars/v2/images/p07-a-taste-curator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p07-a-taste-curator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P07-B",
+            "image": "assets/cognitive-avatars/v2/images/p07-b-taste-curator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p07-b-taste-curator.png"
+          }
+        }
+      }
+    }
+  ],
+  "recommended_profile_schema": {
+    "user_id": "string",
+    "primary_models": [
+      {
+        "model_id": "string",
+        "confidence": "number_0_to_1"
+      }
+    ],
+    "secondary_models": [
+      {
+        "model_id": "string",
+        "confidence": "number_0_to_1"
+      }
+    ],
+    "evidence": [
+      "short behavioral evidence from user messages"
+    ],
+    "response_preferences": {
+      "structure": "preferred output structure",
+      "tone": "preferred language style",
+      "risk_policy": "how cautious the assistant should be",
+      "detail_level": "preferred level of detail"
+    },
+    "avatar_selection": {
+      "selected_model_id": "cm_015",
+      "selected_visual_persona_id": "P08",
+      "selected_avatar_id": "P08-A",
+      "gender_expression": "feminine_leaning | masculine_leaning",
+      "image": "assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png",
+      "selection_basis": "根据 primary_models / secondary_models 的权重选择主视觉画像；如果多个模型映射到同一视觉画像，可提高该画像权重。"
+    }
+  },
+  "example_current_user_profile": {
+    "primary_models": [
+      {
+        "model_id": "cm_001",
+        "name": "问题定界者",
+        "confidence": 0.92
+      },
+      {
+        "model_id": "cm_019",
+        "name": "复杂度克制者",
+        "confidence": 0.9
+      },
+      {
+        "model_id": "cm_025",
+        "name": "可控性优先者",
+        "confidence": 0.88
+      }
+    ],
+    "secondary_models": [
+      {
+        "model_id": "cm_026",
+        "name": "验证闭环者",
+        "confidence": 0.84
+      },
+      {
+        "model_id": "cm_043",
+        "name": "实质锚定者",
+        "confidence": 0.82
+      },
+      {
+        "model_id": "cm_044",
+        "name": "克制表达者",
+        "confidence": 0.8
+      },
+      {
+        "model_id": "cm_048",
+        "name": "质感表达者",
+        "confidence": 0.78
+      }
+    ],
+    "summary": "该用户偏系统架构型，重视边界、极简、可控、验证和表达质感。回复时应先定界，再给稳妥路径，避免过度设计和空泛表达。"
+  },
+  "avatar_asset_reference": {
+    "version": "v2",
+    "asset_base": "assets/cognitive-avatars/v2",
+    "source_manifest": "/Users/wanghuacan/Desktop/proj/指南/persona-avatars/data/avatar_manifest_v2.json",
+    "static_asset_directory": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2",
+    "contact_sheet": "assets/cognitive-avatars/v2/boards/persona-avatar-contact-sheet-v2.png",
+    "boards": {
+      "feminine_leaning": "assets/cognitive-avatars/v2/boards/persona-board-v2-a-feminine.png",
+      "masculine_leaning": "assets/cognitive-avatars/v2/boards/persona-board-v2-b-masculine.png"
+    },
+    "binding_strategy": "48 个细粒度 cognitive models 映射到 16 个视觉认知画像；每个模型绑定一个主视觉画像和可选次级画像，并提供 feminine/masculine 两个头像版本。",
+    "visual_personas": [
+      {
+        "persona_id": "P01",
+        "persona_name": "深度研究者",
+        "english_name": "Deep Researcher",
+        "core_cognitive_action": "追溯上下文",
+        "background": "把复杂问题放回历史、材料和原始语境中理解，倾向先建立完整上下文再判断。",
+        "traits": [
+          "耐心",
+          "重上下文",
+          "重原始资料",
+          "慢决策"
+        ],
+        "behavior_patterns": [
+          "要求先补背景",
+          "要求读取完整材料",
+          "追问历史脉络和来源",
+          "先理解再产出"
+        ],
+        "matching_signals": [
+          "经常说先不要急着结论",
+          "要求完整文档/原始资料/上下文",
+          "对缺失背景敏感"
+        ],
+        "visual_anchors": [
+          "档案夹",
+          "长文批注",
+          "时间线",
+          "原始资料"
+        ],
+        "avoid_confusion": [
+          "评分矩阵",
+          "报错日志",
+          "测试图标"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P01-A",
+            "image": "assets/cognitive-avatars/v2/images/p01-a-deep-researcher.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p01-a-deep-researcher.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P01-B",
+            "image": "assets/cognitive-avatars/v2/images/p01-b-deep-researcher.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p01-b-deep-researcher.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P02",
+        "persona_name": "反馈迭代者",
+        "english_name": "Feedback Iterator",
+        "core_cognitive_action": "逐轮改进",
+        "background": "相信先做出一个可讨论版本，再通过反馈循环持续靠近目标。",
+        "traits": [
+          "温和",
+          "实践导向",
+          "接受草稿",
+          "持续改进"
+        ],
+        "behavior_patterns": [
+          "先要草稿",
+          "多轮修正",
+          "保留可用方向并局部调整",
+          "用反馈推动前进"
+        ],
+        "matching_signals": [
+          "经常说这个方向可以再改",
+          "要求先给 v0/初稿",
+          "频繁做小步调整"
+        ],
+        "visual_anchors": [
+          "版本卡片",
+          "回环箭头",
+          "草稿对比",
+          "轻松反馈手势"
+        ],
+        "avoid_confusion": [
+          "checklist",
+          "测试设备",
+          "流程状态板"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P02-A",
+            "image": "assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-a-feedback-iterator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P02-B",
+            "image": "assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p02-b-feedback-iterator.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P03",
+        "persona_name": "系统架构者",
+        "english_name": "Systems Architect",
+        "core_cognitive_action": "划结构边界",
+        "background": "先建立模块、接口和依赖关系，再进入细节实现。",
+        "traits": [
+          "结构化",
+          "稳定",
+          "边界意识强",
+          "长期主义"
+        ],
+        "behavior_patterns": [
+          "先拆模块",
+          "定义接口和依赖",
+          "关心数据流和层级",
+          "追问维护边界"
+        ],
+        "matching_signals": [
+          "要求先画架构/分层/模块关系",
+          "关注接口、依赖、职责边界",
+          "不急于写实现细节"
+        ],
+        "visual_anchors": [
+          "分层模块",
+          "接口线",
+          "依赖边界",
+          "结构白板"
+        ],
+        "avoid_confusion": [
+          "agent 编排链",
+          "评分表",
+          "多方共识节点"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P03-A",
+            "image": "assets/cognitive-avatars/v2/images/p03-a-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-a-systems-architect.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P03-B",
+            "image": "assets/cognitive-avatars/v2/images/p03-b-systems-architect.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p03-b-systems-architect.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P04",
+        "persona_name": "怀疑型调试者",
+        "english_name": "Skeptical Debugger",
+        "core_cognitive_action": "复现并定位",
+        "background": "默认不轻信，先找失败样例、异常路径和根因。",
+        "traits": [
+          "敏锐",
+          "谨慎",
+          "反例驱动",
+          "问题定位强"
+        ],
+        "behavior_patterns": [
+          "要求复现步骤",
+          "查看日志",
+          "追问边界条件",
+          "定位最小失败样例"
+        ],
+        "matching_signals": [
+          "经常要求复现/日志/测试输出",
+          "主动指出可能错误",
+          "要求不要猜测先验证"
+        ],
+        "visual_anchors": [
+          "失败用例",
+          "报错路径",
+          "断点",
+          "异常标记"
+        ],
+        "avoid_confusion": [
+          "评分矩阵",
+          "长文档档案",
+          "问题框架翻转"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P04-A",
+            "image": "assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-a-skeptical-debugger.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P04-B",
+            "image": "assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p04-b-skeptical-debugger.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P05",
+        "persona_name": "极简决策者",
+        "english_name": "Minimal Decision Maker",
+        "core_cognitive_action": "删到主线",
+        "background": "通过删除噪声和非必要选项，让决策回到最关键路径。",
+        "traits": [
+          "果断",
+          "克制",
+          "高判断力",
+          "讨厌复杂"
+        ],
+        "behavior_patterns": [
+          "要求一句话结论",
+          "砍掉多余功能",
+          "只保留最小可行路径",
+          "快速收敛"
+        ],
+        "matching_signals": [
+          "经常要求简单点/主线是什么",
+          "主动删需求和选项",
+          "偏好最小方案"
+        ],
+        "visual_anchors": [
+          "大留白",
+          "单一路径",
+          "删除线",
+          "关键按钮"
+        ],
+        "avoid_confusion": [
+          "复杂架构图",
+          "路线地图",
+          "看板"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P05-A",
+            "image": "assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-a-minimal-decision-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P05-B",
+            "image": "assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p05-b-minimal-decision-maker.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P06",
+        "persona_name": "混沌创意建造者",
+        "english_name": "Chaotic Creative Maker",
+        "core_cognitive_action": "快速发散建造",
+        "background": "把大量想法快速变成可见原型，通过试出来判断方向。",
+        "traits": [
+          "高能量",
+          "跳跃",
+          "动手快",
+          "发散"
+        ],
+        "behavior_patterns": [
+          "一次要多个方向",
+          "快速做 demo",
+          "跨风格拼接",
+          "边试边改"
+        ],
+        "matching_signals": [
+          "经常要求多风格/多版本/多 demo",
+          "频繁改变方向探索",
+          "先要看东西再判断"
+        ],
+        "visual_anchors": [
+          "半成品原型",
+          "拼贴材料",
+          "涂鸦草图",
+          "工具散落"
+        ],
+        "avoid_confusion": [
+          "精致 moodboard",
+          "路线图",
+          "流程闭环"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P06-A",
+            "image": "assets/cognitive-avatars/v2/images/p06-a-chaotic-creative-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p06-a-chaotic-creative-maker.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P06-B",
+            "image": "assets/cognitive-avatars/v2/images/p06-b-chaotic-creative-maker.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p06-b-chaotic-creative-maker.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P07",
+        "persona_name": "审美策展者",
+        "english_name": "Taste Curator",
+        "core_cognitive_action": "筛选气质",
+        "background": "通过风格、质感和整体气质筛选方案，关注是否有选择欲。",
+        "traits": [
+          "审美敏感",
+          "挑剔",
+          "重一致性",
+          "重质感"
+        ],
+        "behavior_patterns": [
+          "比较多个视觉方向",
+          "指出过时和不高级",
+          "调整色调和风格体系",
+          "按感觉筛选"
+        ],
+        "matching_signals": [
+          "经常评价质感/风格/过时感",
+          "要求不同视觉体系供选择",
+          "对没选择欲很敏感"
+        ],
+        "visual_anchors": [
+          "moodboard",
+          "材质样本",
+          "风格对照",
+          "筛选手势"
+        ],
+        "avoid_confusion": [
+          "半成品工具堆",
+          "指标表",
+          "业务看板"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P07-A",
+            "image": "assets/cognitive-avatars/v2/images/p07-a-taste-curator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p07-a-taste-curator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P07-B",
+            "image": "assets/cognitive-avatars/v2/images/p07-b-taste-curator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p07-b-taste-curator.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P08",
+        "persona_name": "证据分析者",
+        "english_name": "Evidence Analyst",
+        "core_cognitive_action": "量化比较",
+        "background": "用标准、指标、样本对比和证据链支撑判断。",
+        "traits": [
+          "理性",
+          "精确",
+          "可验证",
+          "比较型"
+        ],
+        "behavior_patterns": [
+          "要求评分表",
+          "做样本对照",
+          "追问证据链",
+          "用指标决策"
+        ],
+        "matching_signals": [
+          "经常要求表格/评分/引用/对照",
+          "要求量化判断",
+          "不满足于主观建议"
+        ],
+        "visual_anchors": [
+          "评分矩阵",
+          "A/B 样本",
+          "指标刻度",
+          "证据对照"
+        ],
+        "avoid_confusion": [
+          "报错日志",
+          "档案时间线",
+          "模块图"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P08-A",
+            "image": "assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-a-evidence-analyst.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P08-B",
+            "image": "assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p08-b-evidence-analyst.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P09",
+        "persona_name": "人本协调者",
+        "english_name": "Human-centered Facilitator",
+        "core_cognitive_action": "降低接受阻力",
+        "background": "把方案转成具体对象更容易理解、接受和执行的表达。",
+        "traits": [
+          "温和",
+          "务实",
+          "会换位",
+          "重落地"
+        ],
+        "behavior_patterns": [
+          "改写措辞",
+          "模拟对象反应",
+          "降低攻击性",
+          "让方案更易转述"
+        ],
+        "matching_signals": [
+          "经常要求面向某人改写",
+          "关注接受度和阻力",
+          "关心表达是否合适"
+        ],
+        "visual_anchors": [
+          "stakeholder 卡片",
+          "改写前后文本块",
+          "阻力降低箭头",
+          "柔和手势"
+        ],
+        "avoid_confusion": [
+          "多方网络图",
+          "语气波形",
+          "技术屏幕"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P09-A",
+            "image": "assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-a-human-centered-facilitator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P09-B",
+            "image": "assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p09-b-human-centered-facilitator.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P10",
+        "persona_name": "共识翻译者",
+        "english_name": "Consensus Translator",
+        "core_cognitive_action": "整合立场",
+        "background": "在多方观点之间翻译语言、提炼共同方向和共识。",
+        "traits": [
+          "连接型",
+          "组织感",
+          "善总结",
+          "跨角色理解"
+        ],
+        "behavior_patterns": [
+          "总结会议",
+          "整合多方意见",
+          "翻译不同群体语言",
+          "提炼共识"
+        ],
+        "matching_signals": [
+          "经常要求汇总多人观点",
+          "要求面向不同角色说明",
+          "关注共识和对齐"
+        ],
+        "visual_anchors": [
+          "多方节点",
+          "分组意见",
+          "桥接符号",
+          "共识箭头"
+        ],
+        "avoid_confusion": [
+          "单人情绪波形",
+          "改写前后文本",
+          "模块架构图"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P10-A",
+            "image": "assets/cognitive-avatars/v2/images/p10-a-consensus-translator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p10-a-consensus-translator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P10-B",
+            "image": "assets/cognitive-avatars/v2/images/p10-b-consensus-translator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p10-b-consensus-translator.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P11",
+        "persona_name": "AI 编排者",
+        "english_name": "AI Orchestrator",
+        "core_cognitive_action": "组合工具链",
+        "background": "把 AI、agent、脚本、插件和自动化看成可编排系统。",
+        "traits": [
+          "工具链意识强",
+          "自动化导向",
+          "实验性",
+          "效率敏感"
+        ],
+        "behavior_patterns": [
+          "要求多 agent 分工",
+          "组合 Codex/Claude/脚本",
+          "设计自动化闭环",
+          "询问工具能力边界"
+        ],
+        "matching_signals": [
+          "主动要求派 agent/review/自动化",
+          "经常设计工作流",
+          "把 AI 当系统组件使用"
+        ],
+        "visual_anchors": [
+          "agent 节点",
+          "插件块",
+          "脚本触发器",
+          "自动化闭环"
+        ],
+        "avoid_confusion": [
+          "静态架构图",
+          "复古键盘",
+          "普通代码屏幕"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P11-A",
+            "image": "assets/cognitive-avatars/v2/images/p11-a-ai-orchestrator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p11-a-ai-orchestrator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P11-B",
+            "image": "assets/cognitive-avatars/v2/images/p11-b-ai-orchestrator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p11-b-ai-orchestrator.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P12",
+        "persona_name": "探索战略者",
+        "english_name": "Explorer Strategist",
+        "core_cognitive_action": "选择下一站",
+        "background": "面向机会、路径和阶段目标，寻找下一步去哪里。",
+        "traits": [
+          "远景感",
+          "方向感",
+          "机会敏感",
+          "开放"
+        ],
+        "behavior_patterns": [
+          "要求路线图",
+          "比较备选路径",
+          "做阶段目标",
+          "排序机会"
+        ],
+        "matching_signals": [
+          "经常问还有哪些可能",
+          "要求 roadmap/路径/阶段",
+          "关注趋势和下一步"
+        ],
+        "visual_anchors": [
+          "岔路地图",
+          "阶段路线",
+          "远景目标",
+          "指南针"
+        ],
+        "avoid_confusion": [
+          "随机涂鸦",
+          "删除线",
+          "大量便签"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P12-A",
+            "image": "assets/cognitive-avatars/v2/images/p12-a-explorer-strategist.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p12-a-explorer-strategist.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P12-B",
+            "image": "assets/cognitive-avatars/v2/images/p12-b-explorer-strategist.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p12-b-explorer-strategist.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P13",
+        "persona_name": "可靠运营者",
+        "english_name": "Reliable Operator",
+        "core_cognitive_action": "推进闭环",
+        "background": "把想法变成流程、责任、状态和稳定交付。",
+        "traits": [
+          "稳定",
+          "执行强",
+          "流程化",
+          "闭环意识"
+        ],
+        "behavior_patterns": [
+          "列 checklist",
+          "确认责任人",
+          "跟进状态",
+          "固化 SOP"
+        ],
+        "matching_signals": [
+          "经常要求清单/状态/负责人/下一步",
+          "关注怎么落地和收口",
+          "偏好流程化推进"
+        ],
+        "visual_anchors": [
+          "checklist",
+          "状态板",
+          "责任标签",
+          "完成章"
+        ],
+        "avoid_confusion": [
+          "版本草稿",
+          "测试台",
+          "社交共识网络"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P13-A",
+            "image": "assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-a-reliable-operator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P13-B",
+            "image": "assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p13-b-reliable-operator.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P14",
+        "persona_name": "安静工程师",
+        "english_name": "Quiet Engineer",
+        "core_cognitive_action": "低噪声修复",
+        "background": "低调处理细节、测试、边界情况和可靠性问题。",
+        "traits": [
+          "细致",
+          "低调",
+          "质量优先",
+          "风险敏感"
+        ],
+        "behavior_patterns": [
+          "补测试",
+          "修边界",
+          "优化小问题",
+          "减少风险"
+        ],
+        "matching_signals": [
+          "经常关注测试/边界/可靠性",
+          "偏好小而稳的修复",
+          "不追求炫技"
+        ],
+        "visual_anchors": [
+          "测试结果",
+          "小修补工具",
+          "边界 case",
+          "安静工位"
+        ],
+        "avoid_confusion": [
+          "报错追凶姿态",
+          "反馈回环",
+          "运营看板"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P14-A",
+            "image": "assets/cognitive-avatars/v2/images/p14-a-quiet-engineer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p14-a-quiet-engineer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P14-B",
+            "image": "assets/cognitive-avatars/v2/images/p14-b-quiet-engineer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p14-b-quiet-engineer.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P15",
+        "persona_name": "反常识重构者",
+        "english_name": "Contrarian Reframer",
+        "core_cognitive_action": "重写问题",
+        "background": "不满足于既有问题定义，倾向翻转前提和提出新框架。",
+        "traits": [
+          "反常识",
+          "聪明",
+          "有挑战性",
+          "框架感强"
+        ],
+        "behavior_patterns": [
+          "质疑前提",
+          "改写问题",
+          "提出新模型",
+          "从反方向看"
+        ],
+        "matching_signals": [
+          "经常问为什么一定要这样",
+          "要求重构问题定义",
+          "主动挑战分类和假设"
+        ],
+        "visual_anchors": [
+          "翻转问题卡",
+          "错位框架",
+          "划掉旧定义",
+          "新模型卡"
+        ],
+        "avoid_confusion": [
+          "报错日志",
+          "路线图",
+          "普通创意涂鸦"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P15-A",
+            "image": "assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-a-contrarian-reframer.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P15-B",
+            "image": "assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p15-b-contrarian-reframer.png"
+          }
+        }
+      },
+      {
+        "persona_id": "P16",
+        "persona_name": "语气校准者",
+        "english_name": "Tone Calibrator",
+        "core_cognitive_action": "调协作温度",
+        "background": "感知语气、节奏、偏好和隐含情绪，让 AI 协作更贴合本人。",
+        "traits": [
+          "敏感",
+          "共情",
+          "偏好明确",
+          "沟通节奏感强"
+        ],
+        "behavior_patterns": [
+          "调整语气",
+          "要求记住偏好",
+          "控制颗粒度",
+          "指出不舒服或不对味"
+        ],
+        "matching_signals": [
+          "经常要求更直接/更温和/更克制",
+          "关注 AI 是否懂偏好",
+          "会纠正表达节奏"
+        ],
+        "visual_anchors": [
+          "语气波形",
+          "节奏刻度",
+          "偏好记忆卡",
+          "温度旋钮"
+        ],
+        "avoid_confusion": [
+          "会议网络",
+          "stakeholder 卡",
+          "研究档案"
+        ],
+        "avatars": {
+          "feminine_leaning": {
+            "avatar_id": "P16-A",
+            "image": "assets/cognitive-avatars/v2/images/p16-a-tone-calibrator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p16-a-tone-calibrator.png"
+          },
+          "masculine_leaning": {
+            "avatar_id": "P16-B",
+            "image": "assets/cognitive-avatars/v2/images/p16-b-tone-calibrator.png",
+            "absolute_image_path": "/Users/wanghuacan/Desktop/proj/claude_chat_view/static/assets/cognitive-avatars/v2/images/p16-b-tone-calibrator.png"
+          }
+        }
+      }
+    ]
+  }
+}

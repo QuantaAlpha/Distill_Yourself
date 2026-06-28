@@ -9,15 +9,17 @@
 </head>
 <body>
   <div id="app">
-    <!-- Top Bar: Logo + Search -->
+    <!-- Top Bar: Logo (left) + Search (center) + Engine (right) -->
     <header id="top-bar">
-      <button id="sidebar-toggle" aria-label="Toggle sidebar">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-      </button>
-      <a id="logo" href="#" title="Home">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span>Chat Viewer</span>
-      </a>
+      <div class="topbar-left">
+        <button id="sidebar-toggle" aria-label="Toggle sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+        <a id="logo" href="#" title="Home">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Chat Viewer</span>
+        </a>
+      </div>
       <div class="search-wrapper">
         <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
@@ -25,6 +27,12 @@
         <input type="text" id="global-search" placeholder="搜索对话内容…" autocomplete="off">
         <span id="search-stats" class="search-stats"></span>
         <kbd class="kbd-hint">/</kbd>
+      </div>
+      <div class="topbar-right">
+        <select id="global-engine-select" title="AI Engine">
+          <option value="claude">Claude</option>
+        </select>
+        <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">◐</button>
       </div>
     </header>
 
@@ -180,17 +188,17 @@
           </div>
           <div id="twin-body">
             <div id="twin-persona-card">
-              <div id="twin-persona-avatar" aria-label="Persona avatar animation">
-                <canvas id="twin-persona-rive" width="224" height="224" class="hidden"></canvas>
-                <div id="twin-persona-lottie"></div>
+              <div id="twin-persona-avatar" role="button" tabindex="0" title="选择认知类型">
+                <img id="twin-persona-img" src="" alt="Cognitive avatar" />
               </div>
               <div id="twin-persona-copy">
-                <div id="twin-persona-kicker">Persona Preset</div>
+                <div id="twin-persona-kicker">Cognitive Model</div>
                 <div id="twin-persona-title">等待认知模型</div>
-                <div id="twin-persona-subtitle">点击 Analyze 后会根据认知特质切换动态人物</div>
+                <div id="twin-persona-subtitle">点击 Analyze 后匹配认知模型</div>
                 <div id="twin-persona-traits"></div>
               </div>
             </div>
+            <div id="twin-persona-options" class="hidden" role="dialog" aria-modal="true" aria-labelledby="twin-persona-options-title"></div>
             <!-- Overview: stats bar + cards + traits -->
             <div id="twin-stats-bar"></div>
             <div id="twin-overview"></div>
@@ -231,6 +239,7 @@
                 </div>
               </div>
             </div>
+            <div class="resize-handle" data-target="ai-chat-panel"></div>
             <div id="ai-chat-panel">
               <div id="ai-chat-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-light)">
                 <span style="font-weight:600;font-size:14px">💬 AI Analysis</span>
@@ -263,6 +272,7 @@
           </div>
           <div id="conv-body">
             <div id="messages-container"></div>
+            <div class="resize-handle" data-target="right-panel"></div>
             <aside id="right-panel">
               <!-- Tab switcher for right panel -->
               <div id="rp-tabs">
@@ -346,9 +356,9 @@
         <tr><td><kbd>/</kbd></td><td>Focus search</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Close / blur search</td></tr>
         <tr><td><kbd>1</kbd></td><td>Home</td></tr>
-        <tr><td><kbd>2</kbd></td><td>Sessions</td></tr>
+        <tr><td><kbd>2</kbd></td><td>AI Evolve</td></tr>
         <tr><td><kbd>3</kbd></td><td>Insights</td></tr>
-        <tr><td><kbd>4</kbd></td><td>AI page</td></tr>
+        <tr><td><kbd>4</kbd></td><td>Distill Yourself</td></tr>
         <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Next / previous session</td></tr>
         <tr><td><kbd>Enter</kbd></td><td>Open selected session</td></tr>
         <tr><td><kbd>h</kbd></td><td>Go back to Home</td></tr>
@@ -360,8 +370,6 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/@rive-app/canvas@2.38.3/rive.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.13.0/lottie.min.js"></script>
   <script src="app.js"></script>
   <script src="evolve.js"></script>
   <script src="twin.js"></script>

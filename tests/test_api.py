@@ -44,6 +44,22 @@ def _make_session_jsonl(session_id="test-api-sess-001"):
     ]
 
 
+def _make_codex_jsonl(session_id="019f-search-refresh-test", text="fresh codex search phrase"):
+    """Return JSONL dicts for a minimal Codex rollout session."""
+    return [
+        {
+            "timestamp": "2026-06-10T11:00:00Z",
+            "type": "session_meta",
+            "payload": {"id": session_id, "cwd": str(Path.cwd())},
+        },
+        {
+            "timestamp": "2026-06-10T11:00:01Z",
+            "type": "event_msg",
+            "payload": {"type": "user_message", "message": text},
+        },
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Test fixture: spin up a server on an ephemeral port
 # ---------------------------------------------------------------------------
@@ -190,6 +206,41 @@ class TestSearch(APITestCase):
         code, body = self._get("/api/search?q=")
         self.assertEqual(code, 200)
         self.assertEqual(body, [])
+
+    def test_session_check_refreshes_stale_index_for_new_codex_session(self):
+        code, before = self._get("/api/sessions/check")
+        self.assertEqual(code, 200)
+
+        os.makedirs(server.CODEX_SESSIONS_DIR, exist_ok=True)
+        session_file = server.CODEX_SESSIONS_DIR / "rollout-2026-06-10T11-00-00-019f-search-refresh-test.jsonl"
+        fresh_text = "fresh codex search phrase"
+        with open(session_file, "w", encoding="utf-8") as f:
+            for obj in _make_codex_jsonl(text=fresh_text):
+                f.write(json.dumps(obj) + "\n")
+
+        code, _ = self._get("/api/sessions/check")
+        self.assertEqual(code, 200)
+
+        deadline = time.time() + 5
+        latest = before
+        while time.time() < deadline:
+            code, latest = self._get("/api/sessions/check")
+            self.assertEqual(code, 200)
+            if latest.get("count", 0) > before.get("count", 0):
+                break
+            time.sleep(0.05)
+        self.assertGreater(latest.get("count", 0), before.get("count", 0))
+
+        while time.time() < deadline:
+            code, body = self._get("/api/search?q=fresh%20codex%20search%20phrase")
+            self.assertEqual(code, 200)
+            if any(fresh_text in result.get("snippet", "") for result in body):
+                break
+            time.sleep(0.05)
+        self.assertTrue(
+            any(fresh_text in result.get("snippet", "") for result in body),
+            f"Expected session polling to refresh new Codex session, got {body}",
+        )
 
 
 class TestGetStats(APITestCase):

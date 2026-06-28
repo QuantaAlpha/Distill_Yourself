@@ -140,29 +140,35 @@
     }
   }
 
-  function getScopeCacheKey(tab) {
-    const scope = getEvolveScope();
+  function getScopeCacheKey(tab, scope) {
+    const s = scope || getEvolveScope();
     return [
       tab,
-      scope.source || "all",
-      scope.date || "7d",
-      scope.project || "",
-      scope.engine || "auto",
+      s.source || "all",
+      s.date || "7d",
+      s.project || "",
+      s.engine || "auto",
     ].join("::");
   }
 
-  function getCachedTab(tab) {
-    return evolveCache[getScopeCacheKey(tab)] || null;
+  function getCachedTab(tab, scope) {
+    return evolveCache[getScopeCacheKey(tab, scope)] || null;
   }
 
-  function setCachedTab(tab, data) {
-    evolveCache[getScopeCacheKey(tab)] = {
+  function setCachedTab(tab, data, scope) {
+    const writeScope = scope || getEvolveScope();
+    evolveCache[getScopeCacheKey(tab, writeScope)] = {
       updatedAt: new Date().toISOString(),
-      scope: getEvolveScope(),
+      scope: writeScope,
       data,
     };
     saveEvolveCache();
     updateSyncButtonState();
+  }
+
+  function isCurrentScopeKey(tab, scopeOrKey) {
+    const key = typeof scopeOrKey === "string" ? scopeOrKey : getScopeCacheKey(tab, scopeOrKey);
+    return key === getScopeCacheKey(tab, getEvolveScope());
   }
 
   // ── Scope (reads from shared global state set by initAiPage in app.js) ──
@@ -262,16 +268,18 @@
       engine: scope.engine || "auto",
     });
     tabs.forEach(tab => {
-      if (getCachedTab(tab)) return; // already in localStorage
+      if (getCachedTab(tab, scope)) return; // already in localStorage
       fetch(`/api/evolve/${tab}?${params}`)
         .then(r => r.json())
         .then(data => {
-          if (data && !data._error && (data.categories?.length || data.nodes?.length || data.rules?.length || data.timeline?.length || data.bubbles?.length)) {
+          if (data && !data._error && (data.categories?.length || data.nodes?.length || data.rules?.length || data.timeline?.length || data.events?.length || data.bubbles?.length)) {
             const normalized = normalizeEvolveData(tab, data);
-            setCachedTab(tab, normalized);
-            const panel = _ensureTabPanel(tab);
-            _renderTabPanel(tab, panel);
-            updateEvolveOverviewBar();
+            setCachedTab(tab, normalized, scope);
+            if (isCurrentScopeKey(tab, scope)) {
+              const panel = _ensureTabPanel(tab);
+              _renderTabPanel(tab, panel);
+              updateEvolveOverviewBar();
+            }
           }
         })
         .catch(() => {}); // silent — server cache is optional
@@ -295,25 +303,29 @@
     // AI tabs use SSE streaming for real-time progress
     if (AI_TABS.has(tab)) {
       params.set("stream", "1");
-      return _fetchEvolveTabStream(tab, params);
+      return _fetchEvolveTabStream(tab, params, scope);
     }
 
     return fetch(`/api/evolve/${tab}?${params}`)
       .then(r => r.json())
       .then(data => {
         const normalized = normalizeEvolveData(tab, data);
-        setCachedTab(tab, normalized);
+        setCachedTab(tab, normalized, scope);
         // Re-render this tab's panel
-        const panel = _ensureTabPanel(tab);
-        _renderTabPanel(tab, panel);
-        updateEvolveOverviewBar();
+        if (isCurrentScopeKey(tab, scope)) {
+          const panel = _ensureTabPanel(tab);
+          _renderTabPanel(tab, panel);
+          updateEvolveOverviewBar();
+        }
       });
   }
 
   /** Stream SSE events for AI evolve tabs with live progress */
-  function _fetchEvolveTabStream(tab, params) {
+  function _fetchEvolveTabStream(tab, params, scope) {
     const updatedEl = $("#evolve-tab-updated");
     const esc = window.esc || String;
+    const requestScope = scope || getEvolveScope();
+    const requestCacheKey = getScopeCacheKey(tab, requestScope);
 
     // Ensure tab panel exists and set up streaming container inside it
     const panel = _ensureTabPanel(tab);
@@ -322,7 +334,7 @@
     }
     if (tab === evolveActiveTab && updatedEl) { updatedEl.textContent = "AI 启动中…"; updatedEl.classList.add("loading"); }
 
-    const streamState = { blockText: "", textBlock: null, runningCards: [], stepCount: 0, currentToolGroup: null, toolGroupCounts: {}, toolGroupRunning: 0, toolGroupTotal: 0, toolGroupCollapseTimer: null };
+    const streamState = { blockText: "", textBlock: null, runningCards: [], stepCount: 0, currentToolGroup: null, toolGroupCounts: {}, toolGroupRunning: 0, toolGroupTotal: 0, toolGroupCollapseTimer: null, requestScope, requestCacheKey };
 
     // Create abort controller for this tab's stream
     if (evolveStreamAborts[tab]) evolveStreamAborts[tab].abort();
@@ -331,33 +343,11 @@
     _setEvolveRefreshButton();
 
     return fetch(`/api/evolve/${tab}?${params}`, { signal: abortCtrl.signal })
-      .then(response => {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        function pump() {
-          return reader.read().then(({done, value}) => {
-            if (done) return;
-            buffer += decoder.decode(value, {stream: true});
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop();
-            for (const part of parts) {
-              const lines = part.split("\n");
-              for (const line of lines) {
-                if (!line.startsWith("data: ")) continue;
-                try {
-                  const evt = JSON.parse(line.slice(6));
-                  _handleEvolveStreamEvent(evt, tab, streamState);
-                } catch (e) { /* skip */ }
-              }
-            }
-            return pump();
-          });
-        }
-        return pump();
-      })
-      .finally(() => { delete evolveStreamAborts[tab]; _setEvolveRefreshButton(); });
+      .then(response => window.readSseStream(response, evt => _handleEvolveStreamEvent(evt, tab, streamState)))
+      .finally(() => {
+        if (evolveStreamAborts[tab] === abortCtrl) delete evolveStreamAborts[tab];
+        _setEvolveRefreshButton();
+      });
   }
 
   function _setEvolveRefreshButton() {
@@ -374,6 +364,9 @@
     _setEvolveRefreshButton();
     const updatedEl = $("#evolve-tab-updated");
     if (updatedEl) { updatedEl.textContent = "已停止"; updatedEl.classList.remove("loading"); }
+    const panel = _ensureTabPanel(tab);
+    _renderTabPanel(tab, panel);
+    updateEvolveOverviewBar();
   }
 
   /** Show a "thinking" indicator below the last text block */
@@ -430,6 +423,7 @@
   }
 
   function _handleEvolveStreamEvent(evt, tab, state) {
+    const streamState = state;
     const container = document.getElementById(`evolve-stream-${tab}`);
     const updatedEl = $("#evolve-tab-updated");
     const esc = window.esc || String;
@@ -539,12 +533,14 @@
       case "evolve_result": {
         _finalizeToolGroup(state);
         const normalized = normalizeEvolveData(tab, evt.data);
-        setCachedTab(tab, normalized);
+        setCachedTab(tab, normalized, streamState.requestScope);
         // Re-render this tab's panel with the final visualization
-        const panel = _ensureTabPanel(tab);
-        _renderTabPanel(tab, panel);
-        updateEvolveOverviewBar();
-        if (isActiveTab && updatedEl) { updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`; updatedEl.classList.remove("loading"); }
+        if (isCurrentScopeKey(tab, streamState.requestCacheKey)) {
+          const panel = _ensureTabPanel(tab);
+          _renderTabPanel(tab, panel);
+          updateEvolveOverviewBar();
+          if (isActiveTab && updatedEl) { updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`; updatedEl.classList.remove("loading"); }
+        }
         break;
       }
       case "done":
@@ -1524,6 +1520,13 @@
 
   // ── Public API for app.js linkage ──
   window.getEvolveScope = getEvolveScope;
+
+  window.abortEvolveStreams = function () {
+    Object.values(evolveStreamAborts).forEach(ctrl => ctrl.abort());
+    evolveStreamAborts = {};
+    evolveLoadingTabs = {};
+    _setEvolveRefreshButton();
+  };
 
   window.navigateToEvolveTab = function (tab, data) {
     if (data) setCachedTab(tab, data);

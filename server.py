@@ -13,6 +13,8 @@ import time
 import hashlib
 import threading
 import subprocess
+import signal
+import uuid
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
@@ -46,6 +48,10 @@ _codex_titles = {}  # session_id -> thread_name
 # Result cache for heavy endpoints (invalidated on index rebuild)
 _result_cache = {}   # key -> (index_gen, result)
 _index_gen = 0       # bumped on each build_index()
+_index_refresh_lock = threading.Lock()
+_index_refresh_running = False
+_last_index_stale_check = 0.0
+INDEX_STALE_CHECK_INTERVAL = float(os.environ.get("INDEX_STALE_CHECK_INTERVAL", "10"))
 
 def _cached(key, compute_fn):
     """Return cached result if index hasn't changed, else compute and cache."""
@@ -56,6 +62,81 @@ def _cached(key, compute_fn):
     result = compute_fn()
     _result_cache[key] = (gen, result)
     return result
+
+
+def _session_source_mtimes() -> dict:
+    """Return source JSONL file mtimes for Claude and Codex sessions."""
+    files = {}
+    if PROJECTS_DIR.exists():
+        for proj_dir in PROJECTS_DIR.iterdir():
+            if not proj_dir.is_dir():
+                continue
+            for jsonl_file in proj_dir.glob("*.jsonl"):
+                try:
+                    files[str(jsonl_file)] = os.path.getmtime(jsonl_file)
+                except OSError:
+                    pass
+    if CODEX_SESSIONS_DIR.exists():
+        for jsonl_file in CODEX_SESSIONS_DIR.rglob("*.jsonl"):
+            try:
+                files[str(jsonl_file)] = os.path.getmtime(jsonl_file)
+            except OSError:
+                pass
+    if CODEX_ARCHIVED_DIR.exists():
+        for jsonl_file in CODEX_ARCHIVED_DIR.glob("*.jsonl"):
+            try:
+                files[str(jsonl_file)] = os.path.getmtime(jsonl_file)
+            except OSError:
+                pass
+    return files
+
+
+def _index_sources_changed() -> bool:
+    """Check whether source files differ from the current in-memory index."""
+    current = _session_source_mtimes()
+    with _index_lock:
+        indexed = dict(_index.get("_file_mtimes", {}))
+    if len(current) != len(indexed):
+        return True
+    for path, mtime in current.items():
+        if indexed.get(path) != mtime:
+            return True
+    return False
+
+
+def _index_refresh_worker(reason: str):
+    global _index_refresh_running
+    try:
+        t0 = time.time()
+        build_index()
+        print(f"Index refreshed ({reason}) in {time.time() - t0:.1f}s")
+    except Exception as e:
+        print(f"Index refresh error ({reason}): {e}")
+    finally:
+        with _index_refresh_lock:
+            _index_refresh_running = False
+
+
+def schedule_index_refresh_if_stale(reason: str = "stale-check", force_check: bool = False) -> bool:
+    """Start a background index refresh if source JSONL files changed."""
+    global _index_refresh_running, _last_index_stale_check
+    now = time.time()
+    with _index_refresh_lock:
+        if _index_refresh_running:
+            return False
+        if not force_check and now - _last_index_stale_check < INDEX_STALE_CHECK_INTERVAL:
+            return False
+        _last_index_stale_check = now
+
+    if not _index_sources_changed():
+        return False
+
+    with _index_refresh_lock:
+        if _index_refresh_running:
+            return False
+        _index_refresh_running = True
+    threading.Thread(target=_index_refresh_worker, args=(reason,), daemon=True).start()
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +903,10 @@ def build_index(force: bool = False) -> dict:
         "_file_mtimes": current_files,
     }
 
+    pruned_count = _db.prune_stale_sessions(current_files.keys())
+    if pruned_count:
+        print(f"DB prune: {pruned_count} stale sessions")
+
     # Backfill DB from cached sessions (only if DB is missing entries)
     db_count = _db.get_conn().execute("SELECT count(*) FROM sessions").fetchone()[0]
     if db_count < len(sessions):
@@ -886,7 +971,7 @@ def build_index(force: bool = False) -> dict:
         _result_cache.clear()
 
     # Rebuild DB FTS + aggregates if anything changed
-    if to_parse or codex_to_parse:
+    if new_sessions or codex_new or pruned_count:
         try:
             _db.rebuild_fts()
             _db.refresh_aggregates()
@@ -1056,7 +1141,7 @@ def _fuzzy_match(text_lower: str, query_lower: str, tokens: list):
     return False, 0
 
 
-def search_sessions(query: str) -> list:
+def search_sessions(query: str, refresh_on_empty: bool = True) -> list:
     """Search user messages via SQLite FTS5 + title fuzzy fallback."""
     if not query or len(query) < 2:
         return []
@@ -1108,6 +1193,8 @@ def search_sessions(query: str) -> list:
             })
 
     results.sort(key=lambda r: (-r.get("score", 0), r.get("date", "")), reverse=False)
+    if not results and refresh_on_empty:
+        schedule_index_refresh_if_stale(reason="search-empty")
     return results[:100]
 
 
@@ -1155,6 +1242,56 @@ def _normalize_ai_engine(engine: str) -> str:
     return engine
 
 
+def _kill_process_group(proc):
+    if not proc or proc.poll() is not None:
+        return
+    try:
+        if os.name == "posix":
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=2)
+    except Exception:
+        try:
+            if os.name == "posix":
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except Exception:
+            pass
+
+
+def _drain_text_pipe(pipe, sink, limit=12000):
+    if not pipe:
+        return
+    try:
+        for line in pipe:
+            sink.append(line)
+            while sum(len(s) for s in sink) > limit and sink:
+                sink.pop(0)
+    except Exception:
+        pass
+
+
+def _run_ai_command(cmd, *, prompt_input=None, timeout=300):
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE if prompt_input is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=(os.name == "posix"),
+    )
+    try:
+        stdout, stderr = proc.communicate(input=prompt_input, timeout=timeout)
+        return stdout, stderr, proc.returncode
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=1)
+        except Exception:
+            stdout, stderr = "", ""
+        return stdout or "", (stderr or "") + f"\nTimeout after {timeout}s", 124
 
 
 def _detect_ai_engine():
@@ -1164,10 +1301,11 @@ def _detect_ai_engine():
         return _ai_engine_cache
     for name, cmd in [("claude", ["claude", "--version"]), ("codex", ["codex", "--version"])]:
         try:
-            subprocess.run(cmd, capture_output=True, timeout=5)
-            _ai_engine_cache = name
-            print(f"AI engine: {name}")
-            return _ai_engine_cache
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            if result.returncode == 0:
+                _ai_engine_cache = name
+                print(f"AI engine: {name}")
+                return _ai_engine_cache
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             continue
     _ai_engine_cache = ""
@@ -1182,25 +1320,23 @@ def _run_ai_engine(prompt, allow_write=False, timeout=300, engine_override="auto
     engine = engine_override if engine_override != "auto" else _detect_ai_engine()
     if engine == "codex":
         sandbox = "workspace-write" if allow_write else "read-only"
-        r = subprocess.run(
+        stdout, stderr, rc = _run_ai_command(
             ["codex", "--sandbox", sandbox, "--ask-for-approval", "never",
              "exec", "--skip-git-repo-check", prompt],
-            capture_output=True, text=True, timeout=timeout,
-            stdin=subprocess.DEVNULL,
+            timeout=timeout,
         )
         # Fallback: if codex failed and engine was auto-detected, try claude
-        if r.returncode != 0 and engine_override in ("auto", "", None):
-            print(f"Codex failed (rc={r.returncode}), falling back to claude")
+        if rc != 0 and engine_override in ("auto", "", None):
+            print(f"Codex failed (rc={rc}), falling back to claude")
             engine = "claude"
         else:
-            return r.stdout, r.stderr, r.returncode
+            return stdout, stderr, rc
     if engine == "claude":
-        r = subprocess.run(
+        return _run_ai_command(
             ["claude", "-p"],
-            input=prompt,
-            capture_output=True, text=True, timeout=timeout,
+            prompt_input=prompt,
+            timeout=timeout,
         )
-        return r.stdout, r.stderr, r.returncode
     raise FileNotFoundError(
         "No AI engine found. Install Codex (npm i -g @openai/codex) "
         "or Claude Code (npm i -g @anthropic-ai/claude-code)."
@@ -1263,15 +1399,17 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout):
         cmd = ["codex", "--sandbox", sandbox, "--ask-for-approval", "never",
                "exec", "--json", "--skip-git-repo-check", prompt]
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, stdin=subprocess.DEVNULL,
+            start_new_session=(os.name == "posix"),
         )
     else:  # claude
         cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose",
                "--allowedTools", "Bash,Read,Grep,Glob,Write,Edit,Agent"]
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, bufsize=1,
+            stderr=subprocess.PIPE, text=True, bufsize=1,
+            start_new_session=(os.name == "posix"),
         )
         # Write prompt in a thread to avoid blocking on large prompts
         # (macOS pipe buffer is ~64KB, prompt can be 100KB+)
@@ -1285,13 +1423,16 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout):
         threading.Thread(target=_feed_stdin, daemon=True).start()
 
     accumulated_text = ""
+    stderr_tail = []
+    stderr_thread = threading.Thread(target=_drain_text_pipe, args=(proc.stderr, stderr_tail), daemon=True)
+    stderr_thread.start()
     try:
         import select as _select
         deadline = time.time() + timeout
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
-                proc.kill()
+                _kill_process_group(proc)
                 yield {"type": "timeout", "content": accumulated_text,
                        "message": f"Timeout ({timeout // 60} min limit)"}
                 return
@@ -1329,10 +1470,156 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout):
         yield {"type": "error", "message": str(e)}
     finally:
         if proc.poll() is None:
-            proc.kill()
+            _kill_process_group(proc)
         proc.wait()
+        stderr_thread.join(timeout=1)
+
+    if proc.returncode not in (0, None):
+        stderr_text = "".join(stderr_tail).strip()
+        detail = f": {stderr_text[:1000]}" if stderr_text else ""
+        yield {"type": "error", "message": f"{engine} exited with code {proc.returncode}{detail}"}
+        return
 
     yield {"type": "done", "content": accumulated_text}
+
+
+def _select_cognitive_avatar(force=False, run_id=""):
+    """Select cognitive avatar via AI. Returns selection dict or None.
+
+    Checks evolve_cache for existing selection; if stale or missing, calls AI
+    with traits + stripped cognitive_models.json to pick the best match.
+    """
+    import db as _db
+    _db.init_db()
+
+    CACHE_TAB = "twin_avatar"
+    CACHE_SCOPE = {"source": "all", "date_range": "all", "project": run_id or "", "engine": "auto"}
+
+    # Check if traits exist
+    where = "status IN ('confirmed','emerging')"
+    params = ()
+    if run_id:
+        where += " AND run_id=?"
+        params = (run_id,)
+    traits = _db.cm_get_all("cognitive_traits",
+                            where=where, params=params,
+                            order="strength DESC", limit=15)
+    if not traits:
+        return None
+
+    # Check freshness: compare traits updated_at vs cache updated_at
+    if not force:
+        cached = _db.evolve_get(CACHE_TAB, **CACHE_SCOPE)
+        if cached:
+            traits_max_updated = max(
+                (t.get("updated_at") or "" for t in traits), default=""
+            )
+            if not traits_max_updated or cached["updated_at"] >= traits_max_updated:
+                return cached["data"]
+
+    # Load cognitive models JSON (stripped for prompt)
+    models_path = Path(__file__).resolve().parent / "static" / "assets" / "cognitive-avatars" / "v2" / "cognitive_models.json"
+    try:
+        with open(models_path, "r", encoding="utf-8") as f:
+            models_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+    compact_models = []
+    for m in models_data.get("models", []):
+        binding = m.get("avatar_binding", {})
+        primary = binding.get("primary_visual_persona", {})
+        compact_models.append({
+            "id": m["id"],
+            "axis": m.get("axis", ""),
+            "summary": m.get("summary", ""),
+            "signals": m.get("signals", []),
+            "thinking_mode": m.get("thinking_mode", []),
+            "persona_id": primary.get("persona_id", ""),
+        })
+
+    traits_json = json.dumps([{
+        "name": t.get("name", ""),
+        "category": t.get("category", ""),
+        "description": t.get("description", ""),
+        "strength": t.get("strength", 0.65),
+        "status": t.get("status", ""),
+    } for t in traits], ensure_ascii=False)
+
+    models_json = json.dumps(compact_models, ensure_ascii=False)
+
+    prompt = f"""你是一个认知模型匹配专家。根据用户的认知特质，从 48 个认知模型中选出最匹配的。
+
+## 用户认知特质
+
+{traits_json}
+
+## 可选认知模型（48 个）
+
+{models_json}
+
+## 任务
+
+选出最匹配用户认知特质的 TOP 3 模型。考虑：
+- 分类轴与特质类别的对应关系
+- signals 与用户行为描述的语义相似度
+- thinking_mode 与用户思维模式的匹配度
+
+同时为排名第一的模型生成一个**个性化的类型名称**（persona_title），不要照搬模型名，而是根据用户特质组合起一个更贴切的称呼（4-8个字，比如"极简架构师"、"证据驱动的实用派"）。
+
+## 输出格式（仅输出 JSON，不要其他文字）
+
+{{"persona_title": "个性化类型名称", "selections": [{{"model_id": "cm_XXX", "confidence": 0.9, "rationale": "一句话理由"}}, {{"model_id": "cm_XXX", "confidence": 0.7, "rationale": "一句话理由"}}, {{"model_id": "cm_XXX", "confidence": 0.5, "rationale": "一句话理由"}}]}}"""
+
+    try:
+        stdout, stderr, rc = _run_ai_engine(prompt, allow_write=False, timeout=120)
+    except FileNotFoundError:
+        return None
+
+    if rc != 0 or not stdout:
+        return None
+
+    # Parse AI response — extract JSON from output
+    text = stdout.strip()
+    # Try to find JSON in the output
+    json_start = text.find("{")
+    json_end = text.rfind("}") + 1
+    if json_start < 0 or json_end <= json_start:
+        return None
+
+    try:
+        result = json.loads(text[json_start:json_end])
+    except json.JSONDecodeError:
+        return None
+
+    selections = result.get("selections", [])
+    if not selections:
+        return None
+
+    # Validate primary model_id and look up full model info from original JSON
+    primary = selections[0]
+    model_id = primary.get("model_id", "")
+    full_lookup = {m["id"]: m for m in models_data.get("models", [])}
+    prompt_ids = {m["id"] for m in compact_models}
+    if model_id not in prompt_ids or model_id not in full_lookup:
+        return None
+
+    full_model = full_lookup[model_id]
+    persona_id = full_model.get("avatar_binding", {}).get("primary_visual_persona", {}).get("persona_id", "")
+    selection = {
+        "model_id": model_id,
+        "model_name": full_model.get("name", ""),
+        "persona_id": persona_id,
+        "persona_name": full_model.get("avatar_binding", {}).get("primary_visual_persona", {}).get("persona_name", ""),
+        "persona_title": result.get("persona_title", ""),
+        "confidence": primary.get("confidence", 0),
+        "rationale": primary.get("rationale", ""),
+        "runner_up_ids": [s["model_id"] for s in selections[1:] if s.get("model_id") in prompt_ids],
+    }
+
+    # Persist to evolve_cache
+    _db.evolve_upsert(CACHE_TAB, **CACHE_SCOPE, data_json=json.dumps(selection, ensure_ascii=False))
+    return selection
 
 
 def _parse_stream_event(engine: str, line: str) -> dict:
@@ -1498,6 +1785,24 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             self._json_response(_cached(f"evolution:{fp}", lambda: self._get_file_evolution(fp)))
         elif path == "/api/project-health":
             self._json_response(self._get_project_health())
+        elif path == "/api/sessions/check":
+            schedule_index_refresh_if_stale(reason="sessions-check", force_check=True)
+            # Lightweight response: build, if needed, runs in the background.
+            with _index_lock:
+                gen = _index_gen
+                count = len(_index.get("sessions", {}))
+            self._json_response({"gen": gen, "count": count})
+        elif path == "/api/engines":
+            # Detect available AI engines
+            engines = []
+            for name, cmd in [("claude", ["claude", "--version"]), ("codex", ["codex", "--version"])]:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, timeout=5)
+                    if result.returncode == 0:
+                        engines.append(name)
+                except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                    pass
+            self._json_response({"engines": engines, "default": engines[0] if engines else "claude"})
         elif path == "/api/refresh":
             build_index()
             self._json_response({"ok": True})
@@ -1547,7 +1852,22 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 overview["events"] = {"count": event_count, "items": event_items}
             except Exception:
                 overview["events"] = {"count": 0, "items": []}
+            # Include cached avatar selection if available
+            try:
+                cached = _db.evolve_latest("twin_avatar")
+                overview["avatar_selection"] = cached["data"] if cached else None
+            except Exception:
+                overview["avatar_selection"] = None
             self._json_response(overview)
+        elif path == "/api/twin/avatar-selection":
+            import db as _db
+            _db.init_db()
+            # Return cached selection, or trigger AI selection if missing/stale
+            selection = _select_cognitive_avatar(force=False)
+            if selection:
+                self._json_response(selection)
+            else:
+                self._error(404, "No traits available for avatar selection")
         elif path == "/api/twin/events":
             import db as _db
             signal = params.get("signal_type", [None])[0]
@@ -1758,11 +2078,14 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._evolve_fallback(tab, str(e))
 
-        # If not refreshing, serve from DB
+        # If not refreshing, serve from DB only (never trigger AI)
         if not refresh:
-            row = _db.evolve_get(tab, source, date, project, engine)
-            if row:
-                return row["data"]
+            # Try exact match, then other engines for same scope
+            for eng in dict.fromkeys([engine, "auto", "claude", "codex"]):
+                row = _db.evolve_get(tab, source, date, project, eng)
+                if row:
+                    return row["data"]
+            return self._evolve_fallback(tab, "no_cache")
 
         if tab in self._DIRECT_TABS:
             return self._evolve_direct(tab, source, date, project)
@@ -3001,13 +3324,15 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         """POST /api/twin/analyze — run 4-stage cognitive handbook extraction via AI."""
         import db as _db
         cli_path = str(Path(__file__).resolve().parent / "analyze.py")
+        run_id = "run_" + uuid.uuid4().hex[:12]
 
         self._start_sse()
+        self._sse_event({"type": "text", "content": f"Twin run_id: {run_id}\n"})
 
         # Stage 1: Evidence event extraction
-        self._sse_event({"type": "text", "content": "Stage 1/4: 从对话历史中提取决策事件 (Evidence Events)...\n"})
+        self._sse_event({"type": "text", "content": "Stage 1/5: 从对话历史中提取决策事件 (Evidence Events)...\n"})
 
-        stage1_prompt = self._build_twin_stage1_prompt(cli_path)
+        stage1_prompt = self._build_twin_stage1_prompt(cli_path, run_id)
         try:
             if not self._run_twin_ai_stage(stage1_prompt, "Stage 1"):
                 return
@@ -3015,9 +3340,9 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             return
 
         # Stage 2: Judgment card distillation
-        self._sse_event({"type": "text", "content": "\n\nStage 2/4: 从事件中蒸馏判断卡 (Judgment Cards)...\n"})
+        self._sse_event({"type": "text", "content": "\n\nStage 2/5: 从事件中蒸馏判断卡 (Judgment Cards)...\n"})
 
-        stage2_prompt = self._build_twin_stage2_prompt(cli_path)
+        stage2_prompt = self._build_twin_stage2_prompt(cli_path, run_id)
         try:
             if not self._run_twin_ai_stage(stage2_prompt, "Stage 2"):
                 return
@@ -3025,9 +3350,9 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             return
 
         # Stage 3: Cognitive trait inference
-        self._sse_event({"type": "text", "content": "\n\nStage 3/4: 从判断卡归纳认知特质 (Cognitive Traits)...\n"})
+        self._sse_event({"type": "text", "content": "\n\nStage 3/5: 从判断卡归纳认知特质 (Cognitive Traits)...\n"})
 
-        stage3_prompt = self._build_twin_stage3_prompt(cli_path)
+        stage3_prompt = self._build_twin_stage3_prompt(cli_path, run_id)
         try:
             if not self._run_twin_ai_stage(stage3_prompt, "Stage 3"):
                 return
@@ -3035,10 +3360,10 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             return
 
         # Stage 4: Compile Runtime Pack (pure Python, no AI)
-        self._sse_event({"type": "text", "content": "\n\nStage 4/4: 编译 Runtime Pack (twin-compile)...\n"})
+        self._sse_event({"type": "text", "content": "\n\nStage 4/5: 编译 Runtime Pack (twin-compile)...\n"})
         try:
             r = subprocess.run(
-                [sys.executable, cli_path, "twin-compile"],
+                [sys.executable, cli_path, "twin-compile", "--run-id", run_id],
                 capture_output=True, text=True, timeout=30,
             )
             self._sse_event({"type": "text", "content": r.stdout or "(no output)"})
@@ -3049,6 +3374,17 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             self._sse_event({"type": "error", "message": f"Stage 4 failed: {e}"})
             return
+
+        # Stage 5: AI-based cognitive avatar selection
+        self._sse_event({"type": "text", "content": "\n\nStage 5/5: 匹配认知模型头像...\n"})
+        try:
+            avatar = _select_cognitive_avatar(force=True, run_id=run_id)
+            if avatar:
+                self._sse_event({"type": "text", "content": f"匹配结果: {avatar.get('model_name','')} ({avatar.get('persona_id','')})"})
+            else:
+                self._sse_event({"type": "text", "content": "未能匹配认知模型（可稍后重试）"})
+        except Exception as e:
+            self._sse_event({"type": "text", "content": f"头像匹配跳过: {e}"})
 
         # Summary
         _db.init_db()
@@ -3067,7 +3403,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         except BrokenPipeError:
             pass
 
-    def _build_twin_stage1_prompt(self, cli_path: str) -> str:
+    def _build_twin_stage1_prompt(self, cli_path: str, run_id: str) -> str:
         """Build prompt for Stage 1: Evidence event extraction from conversation history."""
         digest = self._collect_profile_digest("all", "all", "", cli_path)
 
@@ -3096,6 +3432,12 @@ Commands for writing:
   twin-add events       — Add a new event (JSON from stdin, auto-generates ID)
   twin-edit events <id> — Edit an existing event (JSON from stdin, overwrites)
   twin-batch            — Execute multiple add/edit operations in one call
+  twin-candidates       — Validate candidate operations without writing
+
+# Current Run Scope
+
+Run ID: {run_id}
+All writes in this run MUST use `twin-batch` with top-level `"run_id": "{run_id}"`.
 
 # Pre-computed Profile Digest
 
@@ -3136,7 +3478,7 @@ EOF
 
 # Or use batch for multiple operations at once:
 python3 {cli_path} twin-batch <<'EOF'
-{{"operations": [
+{{"run_id": "{run_id}", "operations": [
   {{"resource": "events", "action": "add", "data": {{...}}}},
   {{"resource": "events", "action": "edit", "id": "ev_xxx", "data": {{...}}}}
 ]}}
@@ -3149,17 +3491,19 @@ Quality requirements:
 - lesson: write as a reusable insight, not specific to one case
 - Balance: include BOTH correction episodes AND acceptance episodes (positive signals)
 - IMPORTANT: Always check existing events first. If a similar event exists, use twin-edit to enrich it rather than creating a duplicate with twin-add.
+- IMPORTANT: For this run, use only `twin-batch` with run_id `{run_id}` for writes.
 - All text in Chinese
 """
 
-    def _build_twin_stage2_prompt(self, cli_path: str) -> str:
+    def _build_twin_stage2_prompt(self, cli_path: str, run_id: str) -> str:
         """Build prompt for Stage 2: Judgment card distillation from evidence events."""
         import db as _db
         _db.init_db()
 
-        # Get existing cards for dedup
-        existing_cards = _db.cm_get_all("judgment_cards", limit=100)
-        events = _db.cm_get_all("evidence_events", order="created_at DESC", limit=100)
+        # Get current-run cards/events only; cross-run data is not Stage 2 input.
+        existing_cards = _db.cm_get_all("judgment_cards", where="run_id=?", params=(run_id,), limit=100)
+        events = _db.cm_get_all("evidence_events", where="run_id=?", params=(run_id,),
+                                order="created_at DESC", limit=100)
         events_json = json.dumps([dict(e) for e in events], ensure_ascii=False, default=str)
 
         # Get latest Profile/Memory as supplementary input from SQLite.
@@ -3211,6 +3555,11 @@ Commands for writing:
   twin-edit cards <id>  — Edit an existing card (JSON from stdin, overwrites)
   twin-link <event_id> <card_id>  — Link an event to a card
   twin-batch            — Execute multiple operations in one call
+
+# Current Run Scope
+
+Run ID: {run_id}
+All writes/links in this stage MUST use `twin-batch` with top-level `"run_id": "{run_id}"`.
 
 # Evidence Events (input data)
 
@@ -3268,7 +3617,7 @@ python3 {cli_path} twin-link ev_xxx jc_yyy
 
 # Or batch multiple operations:
 python3 {cli_path} twin-batch <<'EOF'
-{{"operations": [
+{{"run_id": "{run_id}", "operations": [
   {{"resource": "cards", "action": "add", "data": {{...}}}},
   {{"resource": "cards", "action": "edit", "id": "jc_xxx", "data": {{...}}}},
   {{"resource": "link", "action": "link", "from": "ev_xxx", "to": "jc_yyy"}}
@@ -3285,15 +3634,16 @@ EOF
 - **Dedup carefully**: Two events about "不要改无关文件" and "只改必要代码" should merge into one card, not create two. Use `twin-edit` to merge, not `twin-add` to duplicate.
 """
 
-    def _build_twin_stage3_prompt(self, cli_path: str) -> str:
+    def _build_twin_stage3_prompt(self, cli_path: str, run_id: str) -> str:
         """Build prompt for Stage 3: Cognitive trait inference from judgment cards."""
         import db as _db
         _db.init_db()
 
-        cards = _db.cm_get_all("judgment_cards", order="confidence DESC", limit=100)
+        cards = _db.cm_get_all("judgment_cards", where="run_id=?", params=(run_id,),
+                               order="confidence DESC", limit=100)
         cards_json = json.dumps([dict(c) for c in cards], ensure_ascii=False, default=str)
 
-        existing_traits = _db.cm_get_all("cognitive_traits", limit=50)
+        existing_traits = _db.cm_get_all("cognitive_traits", where="run_id=?", params=(run_id,), limit=50)
         existing_str = ""
         if existing_traits:
             lines = []
@@ -3325,6 +3675,11 @@ Commands for writing:
   twin-edit traits <id>  — Edit an existing trait (JSON from stdin, overwrites)
   twin-link <card_id> <trait_id>  — Link a card to a trait
   twin-batch             — Execute multiple operations in one call
+
+# Current Run Scope
+
+Run ID: {run_id}
+All writes/links in this stage MUST use `twin-batch` with top-level `"run_id": "{run_id}"`.
 
 # Judgment Cards (input data)
 
@@ -3747,17 +4102,39 @@ def _kill_existing(port):
 
 def main():
     print(f"Claude Chat Viewer")
-    print(f"Scanning {PROJECTS_DIR} ...")
 
     _kill_existing(PORT)
 
-    t0 = time.time()
-    build_index()
-    print(f"Index built in {time.time() - t0:.1f}s")
+    # Load cached index synchronously (fast — just JSON read)
+    global _index, _index_gen
+    if INDEX_CACHE.exists():
+        try:
+            with open(INDEX_CACHE) as f:
+                cached = json.load(f)
+            with _index_lock:
+                _index = cached
+                _index_gen += 1
+            sessions_n = len(cached.get("sessions", {}))
+            print(f"Loaded {sessions_n} sessions from cache")
+        except Exception as e:
+            print(f"Cache load error: {e}")
 
+    # Start server immediately so it can serve from cache
     ThreadingHTTPServer.allow_reuse_address = True
     server = ThreadingHTTPServer(("127.0.0.1", PORT), ChatViewerHandler)
     print(f"\n  → http://localhost:{PORT}\n")
+
+    # Build/refresh index in background
+    def _bg_index():
+        global _index_refresh_running
+        with _index_refresh_lock:
+            _index_refresh_running = True
+        _index_refresh_worker("startup")
+        while True:
+            time.sleep(INDEX_STALE_CHECK_INTERVAL)
+            schedule_index_refresh_if_stale(reason="background")
+
+    threading.Thread(target=_bg_index, daemon=True).start()
 
     try:
         server.serve_forever()

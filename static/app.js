@@ -24,6 +24,7 @@
   let currentView = "sessions"; // sessions|conversation|search|insights|ai
   let viewHistory = []; // for back navigation
   let currentSidebarPanel = "sessions";
+  const MAIN_VIEW_HASHES = new Set(["sessions", "insights", "ai", "twin"]);
 
   // Chat state — dual surface: session AI (right panel) + global AI (standalone view)
   let globalChatHistory = []; // [{id, title, messages:[{role,content}]}]
@@ -38,7 +39,8 @@
   let globalScopeSource = "all";
   let globalScopeDate = "7d";
   let globalScopeProject = "";
-  let globalScopeEngine = "auto";
+  let globalScopeEngine = "claude";
+  let availableEngines = []; // populated by detectEngines()
   let chatTimeout = parseInt(localStorage.getItem("chatview-timeout") || "900", 10); // seconds
 
   // Insights page state
@@ -77,8 +79,24 @@
     return resp.json();
   }
 
+  function initThemeToggle() {
+    const btn = $("#theme-toggle");
+    const stored = localStorage.getItem("chatview-theme") || "";
+    const initial = stored || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.dataset.theme = initial;
+    if (btn) btn.textContent = initial === "dark" ? "☀" : "◐";
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("chatview-theme", next);
+      btn.textContent = next === "dark" ? "☀" : "◐";
+    });
+  }
+
   // ── Init ───────────────────────────────────────────────────────
   async function init() {
+    initThemeToggle();
     bindEvents();
     // Show loading state immediately
     sessionList.innerHTML = '<li class="loading-placeholder"><div class="skeleton-line" style="width:70%"></div><div class="skeleton-line short"></div></li>'.repeat(8);
@@ -94,33 +112,85 @@
     renderSessions(sessions);
     searchStats.textContent = `${sessions.length} sessions`;
     updateWelcomeStats(sessions, projects);
-    // Background refresh: rebuild index and re-render if data changed
-    api("/api/refresh").then(() => Promise.all([
-      api("/api/projects"),
-      api("/api/sessions"),
-    ])).then(([p, s]) => {
-      if (s.length !== allSessions.length) {
-        allSessions = s;
-        renderProjects(p);
-        renderSessions(s);
-        searchStats.textContent = `${s.length} sessions`;
-        updateWelcomeStats(s, p);
-        // Invalidate insights cache so new sessions are reflected
-        insightsDataCache = { analytics: null, health: null, snippets: null };
-      }
-    }).catch(() => {});
+    restoreViewFromHash() || restoreSessionFromHash();
 
-    // Restore session from URL hash (replaceState, not push, to avoid duplicate entry)
-    const hash = window.location.hash.slice(1);
-    if (hash) {
-      const match = allSessions.find(s => s.id === hash);
-      if (match && match.source) {
-        currentSourceFilter = match.source;
-        renderSessions(allSessions);
+    // Start adaptive session polling
+    startSessionPolling();
+    // Detect available AI engines in background
+    detectEngines();
+  }
+
+  // ── Adaptive session polling ──────────────────────────────────
+  let _lastKnownGen = 0;
+  let _pollTimer = null;
+  const POLL_INTERVAL_ACTIVE = 30000;  // 30s when tab visible
+  const POLL_INTERVAL_HIDDEN = 120000; // 2min when tab hidden
+
+  function startSessionPolling() {
+    schedulePoll();
+    document.addEventListener("visibilitychange", () => {
+      clearTimeout(_pollTimer);
+      if (!document.hidden) pollOnce(); // immediate check when tab regains focus
+      schedulePoll();
+    });
+  }
+
+  function schedulePoll() {
+    clearTimeout(_pollTimer);
+    const interval = document.hidden ? POLL_INTERVAL_HIDDEN : POLL_INTERVAL_ACTIVE;
+    _pollTimer = setTimeout(async () => {
+      await pollOnce();
+      schedulePoll();
+    }, interval);
+  }
+
+  async function pollOnce() {
+    try {
+      const check = await api("/api/sessions/check");
+      if (check.gen !== _lastKnownGen && _lastKnownGen !== 0) {
+        // Generation changed — refresh session list
+        const [projects, sessions] = await Promise.all([
+          api("/api/projects"),
+          api("/api/sessions"),
+        ]);
+        allSessions = sessions;
+        renderProjects(projects);
+        renderSessions(sessions);
+        searchStats.textContent = `${sessions.length} sessions`;
+        updateWelcomeStats(sessions, projects);
+        insightsDataCache = { analytics: null, health: null, snippets: null };
+        if (currentView === "search" && searchInput.value.trim()) {
+          doSearch(searchInput.value.trim());
+        }
       }
-      history.replaceState({ view: "conversation", sessionId: hash }, "", `#${hash}`);
-      loadSession(hash, undefined, false);
-    }
+      _lastKnownGen = check.gen;
+    } catch (e) { /* silent */ }
+  }
+
+  // ── Engine detection ───────────────────────────────────────────
+  async function detectEngines() {
+    try {
+      const data = await api("/api/engines");
+      availableEngines = data.engines || [];
+      // Update header engine selector with only available engines
+      const sel = $("#global-engine-select");
+      if (sel) {
+        sel.innerHTML = "";
+        for (const eng of availableEngines) {
+          const opt = document.createElement("option");
+          opt.value = eng;
+          opt.textContent = eng.charAt(0).toUpperCase() + eng.slice(1);
+          sel.appendChild(opt);
+        }
+        // Default to first available (claude preferred)
+        if (availableEngines.length > 0) {
+          globalScopeEngine = availableEngines[0];
+          sel.value = globalScopeEngine;
+        }
+        // If only one engine, disable the selector
+        sel.disabled = availableEngines.length <= 1;
+      }
+    } catch (e) { /* silent — keep default "claude" */ }
   }
 
   // ── Event Bindings ─────────────────────────────────────────────
@@ -158,6 +228,19 @@
       });
     }
 
+    // Global engine selector (header)
+    const globalEngineSelect = $("#global-engine-select");
+    if (globalEngineSelect) {
+      globalEngineSelect.value = globalScopeEngine;
+      globalEngineSelect.addEventListener("change", () => {
+        globalScopeEngine = globalEngineSelect.value;
+        // Sync with AI page scope bar selector if it exists
+        const scopeEngine = $("#ai-scope-engine");
+        if (scopeEngine) scopeEngine.value = globalScopeEngine;
+        if (typeof notifyEvolveScopeChanged === "function") notifyEvolveScopeChanged();
+      });
+    }
+
     // Global search
     searchInput.addEventListener("input", () => {
       clearTimeout(searchDebounceTimer);
@@ -178,7 +261,7 @@
 
     // Logo → sessions
     const logo = $("#logo");
-    if (logo) logo.addEventListener("click", (e) => { e.preventDefault(); showView("sessions"); history.replaceState(null, "", window.location.pathname); });
+    if (logo) logo.addEventListener("click", (e) => { e.preventDefault(); showView("sessions"); });
 
     // Top nav items
     document.querySelectorAll(".sidebar-nav-item").forEach(btn => {
@@ -275,7 +358,7 @@
     });
     if (sessionAiInput) {
       sessionAiInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
           e.preventDefault();
           if (sessionAiLoading && sessionAiHandle) { _stopSessionAi(); } else { submitSessionAi(); }
         }
@@ -295,7 +378,7 @@
     });
     if (chatInput) {
       chatInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
           e.preventDefault();
           if (globalAiLoading && globalAiHandle) { _stopGlobalAi(); } else { submitGlobalAi(); }
         }
@@ -319,8 +402,10 @@
       const state = e.state;
       if (state && state.view === "conversation" && state.sessionId) {
         loadSession(state.sessionId, undefined, false);
+      } else if (state && MAIN_VIEW_HASHES.has(state.view)) {
+        restoreMainView(state.view, false);
       } else {
-        showView("sessions", false);
+        restoreViewFromHash() || restoreSessionFromHash() || showView("sessions", false);
         currentSessionId = null;
       }
     });
@@ -348,6 +433,9 @@
       if (viewHistory.length > 50) viewHistory = viewHistory.slice(-20);
     }
     currentView = name;
+    if (pushHistory && MAIN_VIEW_HASHES.has(name) && window.location.hash !== `#${name}`) {
+      history.pushState({ view: name }, "", `#${name}`);
+    }
     const twinView = $("#twin-view");
     const views = {conversation: convView, search: searchResults,
       insights: insightsView, ai: aiView, twin: twinView};
@@ -372,7 +460,42 @@
   function goBack() {
     const prev = viewHistory.pop() || "sessions";
     showView(prev, false);
-    if (prev === "sessions") history.replaceState(null, "", window.location.pathname);
+    if (MAIN_VIEW_HASHES.has(prev)) {
+      history.replaceState({ view: prev }, "", `#${prev}`);
+    }
+  }
+
+  function restoreViewFromHash() {
+    const hash = window.location.hash.slice(1);
+    if (!MAIN_VIEW_HASHES.has(hash)) return false;
+    restoreMainView(hash, false);
+    history.replaceState({ view: hash }, "", `#${hash}`);
+    return true;
+  }
+
+  function restoreMainView(view, pushHistory = false) {
+    currentSessionId = null;
+    if (view === "insights") {
+      openInsights(pushHistory);
+    } else if (view === "ai") {
+      showView("ai", pushHistory);
+      initAiPage();
+    } else {
+      showView(view, pushHistory);
+    }
+  }
+
+  function restoreSessionFromHash() {
+    const hash = window.location.hash.slice(1);
+    if (!hash || MAIN_VIEW_HASHES.has(hash)) return false;
+    const match = allSessions.find(s => s.id === hash);
+    if (match && match.source) {
+      currentSourceFilter = match.source;
+      renderSessions(allSessions);
+    }
+    history.replaceState({ view: "conversation", sessionId: hash }, "", `#${hash}`);
+    loadSession(hash, undefined, false);
+    return true;
   }
 
   function switchSidebarPanel(panel) {
@@ -1252,9 +1375,125 @@
     return (bytes / 1048576).toFixed(1) + "MB";
   }
 
+  async function readSseStream(response, onEvent) {
+    if (!response.ok) {
+      let detail = "";
+      try { detail = await response.text(); } catch { detail = ""; }
+      throw new Error(detail || `HTTP ${response.status}`);
+    }
+    if (!response.body) {
+      throw new Error("Streaming response body is missing");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    function dispatchBlock(block) {
+      const lines = block.split(/\r?\n/);
+      for (const rawLine of lines) {
+        const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trimStart();
+        if (!data) continue;
+        try {
+          onEvent(JSON.parse(data));
+        } catch { /* skip malformed event */ }
+      }
+    }
+
+    function flush(final) {
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        if (part.trim()) dispatchBlock(part);
+      }
+      if (final && buffer.trim()) {
+        dispatchBlock(buffer);
+        buffer = "";
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        flush(true);
+        return;
+      }
+      buffer += decoder.decode(value, {stream: true});
+      flush(false);
+    }
+  }
+
+  // ── View Switching ─────────────────────────────────────────────
+
   function renderMarkdown(text, opts) {
     if (!text) return "";
     const wrapParagraphs = opts && opts.wrapParagraphs;
+
+    function restorePlaceholders(value, blocks, inlines) {
+      return value
+        .replace(/\x00CB(\d+)\x00/g, (_, i) => blocks[+i])
+        .replace(/\x00IC(\d+)\x00/g, (_, i) => inlines[+i]);
+    }
+
+    function renderTable(block) {
+      const lines = block.trim().split(/\n/);
+      if (lines.length < 2 || !/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[1])) {
+        return block;
+      }
+      const split = (line) => line.replace(/^\s*\|?|\|?\s*$/g, "").split("|").map(c => c.trim());
+      const headers = split(lines[0]);
+      const rows = lines.slice(2).map(split);
+      const thead = `<thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>`;
+      const tbody = `<tbody>${rows.map(r => `<tr>${headers.map((_, i) => `<td>${r[i] || ""}</td>`).join("")}</tr>`).join("")}</tbody>`;
+      return `<table class="md-table">${thead}${tbody}</table>`;
+    }
+
+    function renderLists(value) {
+      const lines = value.split("\n");
+      const out = [];
+      let listType = "";
+      let listItems = [];
+      const closeList = () => {
+        if (!listType) return;
+        out.push(`<${listType}>${listItems.join("")}</${listType}>`);
+        listType = "";
+        listItems = [];
+      };
+      const addItem = (type, html, indent, task) => {
+        if (listType !== type) closeList();
+        listType = type;
+        const margin = indent ? ` style="margin-left:${Math.min(indent * 14, 56)}px"` : "";
+        const cls = task ? ' class="task-list-item"' : "";
+        listItems.push(`<li${cls}${margin}>${html}</li>`);
+      };
+
+      for (const line of lines) {
+        let m = line.match(/^(\s*)[-*]\s+\[([ xX])\]\s+(.+)$/);
+        if (m) {
+          const checked = /x/i.test(m[2]) ? " checked" : "";
+          addItem("ul", `<input type="checkbox" disabled${checked}> ${m[3]}`, Math.floor(m[1].length / 2), true);
+          continue;
+        }
+        m = line.match(/^(\s*)[-*]\s+(.+)$/);
+        if (m) {
+          addItem("ul", m[2], Math.floor(m[1].length / 2), false);
+          continue;
+        }
+        m = line.match(/^(\s*)\d+\.\s+(.+)$/);
+        if (m) {
+          addItem("ol", m[2], Math.floor(m[1].length / 2), false);
+          continue;
+        }
+        closeList();
+        out.push(line);
+      }
+      closeList();
+      return out.join("\n");
+    }
+
     // Extract code blocks BEFORE escaping to preserve raw content
     const codeBlocks = [];
     let s = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
@@ -1271,33 +1510,40 @@
     });
     // Now escape the rest
     s = esc(s);
+    // Links
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]*)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     // Bold
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Blockquotes
+    s = s.replace(/(^|\n)((?:&gt;\s?.+(?:\n|$))+)/g, (_, prefix, block) => {
+      const body = block.split("\n")
+        .filter(Boolean)
+        .map(line => line.replace(/^&gt;\s?/, ""))
+        .join("<br>");
+      return `${prefix}<blockquote>${body}</blockquote>`;
+    });
     // Headings
     s = s.replace(/^### (.+)$/gm, '<h4>$1</h4>');
     s = s.replace(/^## (.+)$/gm, '<h3>$1</h3>');
     s = s.replace(/^# (.+)$/gm, '<h2>$1</h2>');
     // Horizontal rule (always apply)
     s = s.replace(/^---$/gm, '<hr>');
-    // List items
-    s = s.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
-    s = s.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-    s = s.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+    // Tables and lists
+    s = s.replace(/(^|\n)((?:\s*\|.*\|\s*\n?){2,})/g, (_, prefix, block) => `${prefix}${renderTable(block)}`);
+    s = renderLists(s);
     // Paragraph wrapping or simple line breaks
     if (wrapParagraphs) {
       s = s.replace(/\n{2,}/g, '</p><p>');
       s = s.replace(/\n/g, '<br>');
       s = '<p>' + s + '</p>';
-      s = s.replace(/<p>\s*<(h[234]|pre|ul|hr)/g, '<$1');
-      s = s.replace(/<\/(h[234]|pre|ul|hr)>\s*<\/p>/g, '</$1>');
+      s = s.replace(/<p>\s*<(h[234]|pre|ul|ol|hr|blockquote|table)/g, '<$1');
+      s = s.replace(/<\/(h[234]|pre|ul|ol|hr|blockquote|table)>\s*<\/p>/g, '</$1>');
       s = s.replace(/<p>\s*<\/p>/g, '');
     } else {
       s = s.replace(/\n/g, '<br>');
     }
     // Restore code blocks and inline code
-    s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[+i]);
-    s = s.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCode[+i]);
-    return s;
+    return restorePlaceholders(s, codeBlocks, inlineCode);
   }
 
   // ── Keyboard Navigation (F5) ────────────────────────────────────
@@ -1315,7 +1561,7 @@
     if (e.key === "Escape") {
       if (!kbdHelp.classList.contains("hidden")) { kbdHelp.classList.add("hidden"); return; }
       if (isInput) { searchInput.blur(); searchInput.value = ""; return; }
-      showView("sessions"); history.pushState({ view: "sessions" }, "", window.location.pathname);
+      showView("sessions");
       return;
     }
     // Don't handle when typing in input
@@ -1323,6 +1569,12 @@
       if (e.key === "/" && document.activeElement === searchInput) return;
       return;
     }
+
+    // Don't intercept shortcuts with modifier keys (Ctrl+C, Cmd+V, etc.)
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    // Don't intercept when user has text selected (allow native copy/select)
+    if (window.getSelection && window.getSelection().toString()) return;
 
     switch (e.key) {
       case "/":
@@ -1342,7 +1594,6 @@
       }
       case "h": // go back
         showView("sessions");
-        history.replaceState(null, "", window.location.pathname);
         break;
       case "n": // next user message
         navigateUserMessage(1);
@@ -1659,8 +1910,8 @@
   }
 
   // ── Insights Page (tabbed) ─────────────────────────────────────
-  function openInsights() {
-    showView("insights");
+  function openInsights(pushHistory = true) {
+    showView("insights", pushHistory);
     bindInsightsTabs();
     loadInsightsTab(insightsActiveTab);
   }
@@ -2041,34 +2292,8 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body),
       signal: controller.signal,
-    }).then(response => {
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      function pump() {
-        return reader.read().then(({done, value}) => {
-          if (done) return;
-          buffer += decoder.decode(value, {stream: true});
-          // Parse SSE events (data: ...\n\n)
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop(); // keep incomplete part
-          for (const part of parts) {
-            const lines = part.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const evt = JSON.parse(line.slice(6));
-                  _handleStreamEvent(evt, callbacks, state);
-                } catch (e) { /* skip malformed */ }
-              }
-            }
-          }
-          return pump();
-        });
-      }
-      return pump();
-    }).catch(err => {
+    }).then(response => readSseStream(response, evt => _handleStreamEvent(evt, callbacks, state)))
+      .catch(err => {
       if (err.name === "AbortError") {
         if (callbacks.abort) callbacks.abort(state.text);
       } else if (callbacks.error) {
@@ -2296,6 +2521,7 @@
   }
 
   function notifyEvolveScopeChanged() {
+    if (typeof window.abortEvolveStreams === "function") window.abortEvolveStreams();
     if (window.initEvolveView) window.initEvolveView();
   }
 
@@ -2393,19 +2619,19 @@
 
     const engineSelect = document.createElement("select");
     engineSelect.id = "ai-scope-engine";
-    [
-      { key: "auto", label: "Auto" },
-      { key: "codex", label: "Codex" },
-      { key: "claude", label: "Claude" },
-    ].forEach(e => {
+    (availableEngines.length ? availableEngines : ["claude"]).forEach(eng => {
       const opt = document.createElement("option");
-      opt.value = e.key;
-      opt.textContent = e.label;
+      opt.value = eng;
+      opt.textContent = eng.charAt(0).toUpperCase() + eng.slice(1);
       engineSelect.appendChild(opt);
     });
+    engineSelect.disabled = availableEngines.length <= 1;
     engineSelect.value = globalScopeEngine;
     engineSelect.onchange = () => {
       globalScopeEngine = engineSelect.value;
+      // Sync back to header selector
+      const headerEngine = $("#global-engine-select");
+      if (headerEngine) headerEngine.value = globalScopeEngine;
       notifyEvolveScopeChanged();
     };
     bar.appendChild(engineSelect);
@@ -2760,8 +2986,57 @@
   // ── Expose globals for evolve.js ──────────────────────────────
   window.esc = esc;
   window.renderMarkdownSimple = renderMarkdownSimple;
+  window.readSseStream = readSseStream;
   // allSessions is kept in sync via loadSessions; expose getter
   Object.defineProperty(window, "allSessions", { get: () => allSessions });
+
+  // ── Resizable panels (drag handles) ────────────────────────────
+  (function initResizeHandles() {
+    document.querySelectorAll(".resize-handle[data-target]").forEach(handle => {
+      const targetId = handle.dataset.target;
+      const storageKey = `chatview-panel-width-${targetId}`;
+
+      // Restore saved width
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const target = document.getElementById(targetId);
+        if (target) target.style.width = saved + "px";
+      }
+
+      handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        handle.setPointerCapture(e.pointerId);
+        handle.classList.add("active");
+        document.body.classList.add("resizing");
+
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        const container = target.parentElement;
+        const minW = parseInt(getComputedStyle(target).minWidth) || 220;
+        const maxW = container.clientWidth * 0.5;
+
+        function onMove(ev) {
+          // Panel is on the right side, so width = container right - pointer X
+          const containerRect = container.getBoundingClientRect();
+          let newWidth = containerRect.right - ev.clientX;
+          newWidth = Math.max(minW, Math.min(maxW, newWidth));
+          target.style.width = newWidth + "px";
+        }
+
+        function onUp() {
+          handle.classList.remove("active");
+          document.body.classList.remove("resizing");
+          handle.removeEventListener("pointermove", onMove);
+          handle.removeEventListener("pointerup", onUp);
+          // Persist
+          localStorage.setItem(storageKey, parseInt(target.style.width));
+        }
+
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+      });
+    });
+  })();
 
   // ── Boot ───────────────────────────────────────────────────────
   init().catch((err) => {

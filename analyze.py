@@ -2145,6 +2145,9 @@ def cmd_twin_events(args):
     if getattr(args, "session", ""):
         where_parts.append("session_id LIKE ?")
         params.append(f"%{args.session}%")
+    if getattr(args, "run_id", ""):
+        where_parts.append("run_id=?")
+        params.append(args.run_id)
 
     where = " AND ".join(where_parts) if where_parts else ""
     total = _db.cm_count("evidence_events", where=where, params=tuple(params))
@@ -2185,6 +2188,9 @@ def cmd_twin_cards(args):
     if getattr(args, "tag", ""):
         where_parts.append("tags LIKE ?")
         params.append(f"%{args.tag}%")
+    if getattr(args, "run_id", ""):
+        where_parts.append("run_id=?")
+        params.append(args.run_id)
     min_conf = getattr(args, "min_confidence", None)
     if min_conf is not None:
         where_parts.append("confidence>=?")
@@ -2225,6 +2231,9 @@ def cmd_twin_traits(args):
     if getattr(args, "category", ""):
         where_parts.append("category=?")
         params.append(args.category)
+    if getattr(args, "run_id", ""):
+        where_parts.append("run_id=?")
+        params.append(args.run_id)
 
     where = " AND ".join(where_parts) if where_parts else ""
     total = _db.cm_count("cognitive_traits", where=where, params=tuple(params))
@@ -2271,43 +2280,49 @@ def cmd_twin_write(args):
 
     operations = payload.get("operations", [])
     inserted, updated, deleted, errors = 0, 0, 0, []
+    conn = _db.get_conn()
 
-    for op in operations:
-        action = op.get("action", "")
-        try:
+    try:
+        conn.execute("BEGIN")
+        for op in operations:
+            action = op.get("action", "")
             if table == "card_relations":
                 if action == "insert":
                     d = op.get("data", {})
-                    _db.cm_add_card_relation(d["from_id"], d["to_id"], d["relation"])
+                    conn.execute(
+                        "INSERT OR IGNORE INTO card_relations (from_id, to_id, relation) VALUES (?,?,?)",
+                        (d["from_id"], d["to_id"], d["relation"]),
+                    )
                     inserted += 1
                 elif action == "delete":
-                    conn = _db.get_conn()
                     d = op.get("data", {})
                     conn.execute("DELETE FROM card_relations WHERE from_id=? AND to_id=? AND relation=?",
                                  (d.get("from_id",""), d.get("to_id",""), d.get("relation","")))
-                    conn.commit()
                     deleted += 1
                 else:
-                    errors.append(f"card_relations supports insert/delete, got: {action}")
+                    raise ValueError(f"card_relations supports insert/delete, got: {action}")
             elif action in ("insert", "update"):
                 item_id = op.get("id") or ("p_" + uuid.uuid4().hex[:8])
-                _db.cm_upsert(table, item_id, op.get("data", {}))
+                _db.cm_upsert(table, item_id, op.get("data", {}), commit=False)
                 if action == "insert":
                     inserted += 1
                 else:
                     updated += 1
             elif action == "delete":
-                _db.cm_delete(table, op["id"])
+                _db.cm_delete(table, op["id"], commit=False)
                 deleted += 1
             else:
-                errors.append(f"unknown action: {action}")
-        except Exception as e:
-            errors.append(f"{action} id={op.get('id','')} failed: {e}")
+                raise ValueError(f"unknown action: {action}")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        errors.append(str(e))
 
     print(f"OK: {table} — inserted={inserted} updated={updated} deleted={deleted}")
     if errors:
         for err in errors:
-            print(f"  WARN: {err}", file=sys.stderr)
+            print(f"  ERROR: {err}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_twin_compile(args):
@@ -2315,12 +2330,19 @@ def cmd_twin_compile(args):
     import db as _db
     _db.init_db()
 
+    run_id = getattr(args, "run_id", "") or ""
+    where = "status IN ('confirmed','emerging')"
+    params = ()
+    if run_id:
+        where += " AND run_id=?"
+        params = (run_id,)
+
     # Select top cards by confidence × status weight
     cards = _db.cm_get_all("judgment_cards",
-                           where="status IN ('confirmed','emerging')",
+                           where=where, params=params,
                            order="confidence DESC", limit=25)
     traits = _db.cm_get_all("cognitive_traits",
-                            where="status IN ('confirmed','emerging')",
+                            where=where, params=params,
                             order="strength DESC", limit=15)
 
     if not cards and not traits:
@@ -2351,7 +2373,8 @@ def cmd_twin_compile(args):
             lines.append(entry)
 
     pack = "\n".join(lines)
-    print(f"=== Runtime Pack ({len(cards)} cards, {len(traits)} traits) ===\n")
+    scope = f", run_id={run_id}" if run_id else ""
+    print(f"=== Runtime Pack ({len(cards)} cards, {len(traits)} traits{scope}) ===\n")
     print(pack)
 
 
@@ -2365,12 +2388,90 @@ _TWIN_RESOURCE_TABLE = {
     "traits": "cognitive_traits",
 }
 
+_TWIN_REQUIRED_BY_RESOURCE = {
+    "events": ["session_id", "event_index", "task_type", "ai_action", "user_reaction", "lesson"],
+    "cards": ["applies_when", "judgment", "agent_action"],
+    "traits": ["name", "category", "description"],
+}
+
 # Searchable text columns per table
 _TWIN_SEARCH_COLS = {
     "evidence_events": ["ai_action", "user_reaction", "resolution", "lesson", "domain"],
     "judgment_cards": ["applies_when", "judgment", "agent_action", "exceptions", "tags"],
     "cognitive_traits": ["name", "category", "description"],
 }
+
+
+def _validate_twin_resource_data(resource: str, data: dict, partial: bool = False):
+    if resource not in _TWIN_REQUIRED_BY_RESOURCE:
+        raise ValueError(f"unknown resource: {resource}")
+    if not isinstance(data, dict):
+        raise ValueError("data must be an object")
+    if partial:
+        return
+    missing = [k for k in _TWIN_REQUIRED_BY_RESOURCE[resource] if data.get(k) in (None, "")]
+    if missing:
+        raise ValueError(f"missing required fields for {resource}: {', '.join(missing)}")
+
+
+def _run_id_compatible(left: dict, right: dict, run_id: str = "") -> bool:
+    left_run = left.get("run_id") or ""
+    right_run = right.get("run_id") or ""
+    if run_id and left_run and left_run != run_id:
+        return False
+    if run_id and right_run and right_run != run_id:
+        return False
+    return not (left_run and right_run and left_run != right_run)
+
+
+def _effective_run_id(*rows, requested: str = "") -> str:
+    if requested:
+        return requested
+    for row in rows:
+        run_id = (row or {}).get("run_id") or ""
+        if run_id:
+            return run_id
+    return ""
+
+
+def _twin_link(_db, from_id: str, to_id: str, run_id: str = "", commit: bool = True):
+    if from_id.startswith(("ev_", "p_")):
+        event = _db.cm_get("evidence_events", from_id)
+        if not event:
+            raise ValueError(f"Event not found: {from_id}")
+        card = _db.cm_get("judgment_cards", to_id)
+        if not card:
+            raise ValueError(f"Card not found: {to_id}")
+        if not _run_id_compatible(event, card, run_id):
+            raise ValueError(f"Cross-run event→card link rejected: {from_id} → {to_id}")
+        effective_run = _effective_run_id(event, card, requested=run_id)
+        _db.cm_upsert("evidence_events", from_id, {"card_id": to_id}, commit=commit)
+        if effective_run:
+            count = _db.cm_count("evidence_events", where="run_id=? AND card_id=?", params=(effective_run, to_id))
+        else:
+            count = _db.cm_count("evidence_events", where="card_id=?", params=(to_id,))
+        _db.cm_upsert("judgment_cards", to_id, {"evidence_count": count}, commit=commit)
+        return {"ok": True, "link": f"{from_id} → {to_id}", "type": "event→card", "evidence_count": count}
+
+    if from_id.startswith("jc_"):
+        card = _db.cm_get("judgment_cards", from_id)
+        if not card:
+            raise ValueError(f"Card not found: {from_id}")
+        trait = _db.cm_get("cognitive_traits", to_id)
+        if not trait:
+            raise ValueError(f"Trait not found: {to_id}")
+        if not _run_id_compatible(card, trait, run_id):
+            raise ValueError(f"Cross-run card→trait link rejected: {from_id} → {to_id}")
+        existing_ids = json.loads(trait.get("supporting_card_ids") or "[]")
+        if from_id not in existing_ids:
+            existing_ids.append(from_id)
+        _db.cm_upsert("cognitive_traits", to_id, {
+            "supporting_card_ids": json.dumps(existing_ids),
+            "evidence_count": len(existing_ids),
+        }, commit=commit)
+        return {"ok": True, "link": f"{from_id} → {to_id}", "type": "card→trait", "evidence_count": len(existing_ids)}
+
+    raise ValueError(f"Cannot determine link type. Use ev_/p_ prefix for events, jc_ for cards.")
 
 
 def cmd_twin_get(args):
@@ -2492,48 +2593,11 @@ def cmd_twin_link(args):
     import db as _db
     _db.init_db()
 
-    from_id = args.from_id
-    to_id = args.to_id
-
-    # Detect link type by ID prefix
-    if from_id.startswith("ev_") or from_id.startswith("p_"):
-        # event → card link: set card_id on the event
-        event = _db.cm_get("evidence_events", from_id)
-        if not event:
-            print(json.dumps({"error": f"Event not found: {from_id}"}))
-            sys.exit(1)
-        card = _db.cm_get("judgment_cards", to_id)
-        if not card:
-            print(json.dumps({"error": f"Card not found: {to_id}"}))
-            sys.exit(1)
-        _db.cm_upsert("evidence_events", from_id, {"card_id": to_id})
-        # Update card evidence_count
-        count = _db.cm_count("evidence_events", where="card_id=?", params=(to_id,))
-        _db.cm_upsert("judgment_cards", to_id, {"evidence_count": count})
-        print(json.dumps({"ok": True, "link": f"{from_id} → {to_id}",
-                          "type": "event→card", "evidence_count": count}))
-
-    elif from_id.startswith("jc_"):
-        # card → trait link: append to supporting_card_ids
-        card = _db.cm_get("judgment_cards", from_id)
-        if not card:
-            print(json.dumps({"error": f"Card not found: {from_id}"}))
-            sys.exit(1)
-        trait = _db.cm_get("cognitive_traits", to_id)
-        if not trait:
-            print(json.dumps({"error": f"Trait not found: {to_id}"}))
-            sys.exit(1)
-        existing_ids = json.loads(trait.get("supporting_card_ids") or "[]")
-        if from_id not in existing_ids:
-            existing_ids.append(from_id)
-        _db.cm_upsert("cognitive_traits", to_id, {
-            "supporting_card_ids": json.dumps(existing_ids),
-            "evidence_count": len(existing_ids),
-        })
-        print(json.dumps({"ok": True, "link": f"{from_id} → {to_id}",
-                          "type": "card→trait", "evidence_count": len(existing_ids)}))
-    else:
-        print(json.dumps({"error": f"Cannot determine link type. Use ev_/p_ prefix for events, jc_ for cards."}))
+    try:
+        result = _twin_link(_db, args.from_id, args.to_id, run_id=getattr(args, "run_id", "") or "")
+        print(json.dumps(result, ensure_ascii=False))
+    except Exception as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
         sys.exit(1)
 
 
@@ -2549,66 +2613,103 @@ def cmd_twin_batch(args):
         sys.exit(1)
 
     operations = payload.get("operations", [])
+    run_id = payload.get("run_id", "") or ""
     results = []
+    conn = _db.get_conn()
 
-    for i, op in enumerate(operations):
-        resource = op.get("resource", "")
-        action = op.get("action", "")
-        table = _TWIN_RESOURCE_TABLE.get(resource)
+    try:
+        conn.execute("BEGIN")
+        for i, op in enumerate(operations):
+            resource = op.get("resource", "")
+            action = op.get("action", "")
+            table = _TWIN_RESOURCE_TABLE.get(resource)
 
-        try:
             if action == "add":
                 if not table:
-                    results.append({"index": i, "error": f"unknown resource: {resource}"})
-                    continue
+                    raise ValueError(f"unknown resource: {resource}")
                 prefix = {"events": "ev_", "cards": "jc_", "traits": "ct_"}[resource]
                 item_id = prefix + uuid.uuid4().hex[:8]
-                _db.cm_upsert(table, item_id, op.get("data", {}))
+                data = dict(op.get("data", {}) or {})
+                if run_id:
+                    data.setdefault("run_id", run_id)
+                _validate_twin_resource_data(resource, data, partial=False)
+                _db.cm_upsert(table, item_id, data, commit=False)
                 results.append({"index": i, "ok": True, "id": item_id, "action": "added"})
 
             elif action == "edit":
                 if not table:
-                    results.append({"index": i, "error": f"unknown resource: {resource}"})
-                    continue
+                    raise ValueError(f"unknown resource: {resource}")
                 item_id = op.get("id", "")
-                if not _db.cm_get(table, item_id):
-                    results.append({"index": i, "error": f"not found: {item_id}"})
-                    continue
-                _db.cm_upsert(table, item_id, op.get("data", {}))
+                existing = _db.cm_get(table, item_id)
+                if not existing:
+                    raise ValueError(f"not found: {item_id}")
+                if run_id and existing.get("run_id") and existing.get("run_id") != run_id:
+                    raise ValueError(f"cross-run edit rejected for {item_id}: existing run_id={existing.get('run_id')} request run_id={run_id}")
+                data = dict(op.get("data", {}) or {})
+                if run_id:
+                    data.setdefault("run_id", run_id)
+                merged = dict(existing)
+                merged.update({k: v for k, v in data.items() if v is not None})
+                _validate_twin_resource_data(resource, merged, partial=False)
+                _db.cm_upsert(table, item_id, data, commit=False)
                 results.append({"index": i, "ok": True, "id": item_id, "action": "updated"})
 
             elif action == "link":
-                from_id = op.get("from", "")
-                to_id = op.get("to", "")
-                if from_id.startswith(("ev_", "p_")):
-                    _db.cm_upsert("evidence_events", from_id, {"card_id": to_id})
-                    count = _db.cm_count("evidence_events", where="card_id=?", params=(to_id,))
-                    _db.cm_upsert("judgment_cards", to_id, {"evidence_count": count})
-                    results.append({"index": i, "ok": True, "link": f"{from_id}→{to_id}"})
-                elif from_id.startswith("jc_"):
-                    trait = _db.cm_get("cognitive_traits", to_id)
-                    if trait:
-                        ids = json.loads(trait.get("supporting_card_ids") or "[]")
-                        if from_id not in ids:
-                            ids.append(from_id)
-                        _db.cm_upsert("cognitive_traits", to_id, {
-                            "supporting_card_ids": json.dumps(ids),
-                            "evidence_count": len(ids),
-                        })
-                    results.append({"index": i, "ok": True, "link": f"{from_id}→{to_id}"})
-                else:
-                    results.append({"index": i, "error": f"unknown link type for {from_id}"})
+                link_result = _twin_link(
+                    _db,
+                    op.get("from", ""),
+                    op.get("to", ""),
+                    run_id=run_id,
+                    commit=False,
+                )
+                results.append({"index": i, **link_result})
 
             else:
-                results.append({"index": i, "error": f"unknown action: {action}"})
-        except Exception as e:
-            results.append({"index": i, "error": str(e)})
+                raise ValueError(f"unknown action: {action}")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        results.append({"index": len(results), "error": str(e)})
 
     ok_count = sum(1 for r in results if r.get("ok"))
     err_count = sum(1 for r in results if "error" in r)
     print(json.dumps({"ok": err_count == 0, "total": len(operations),
                       "succeeded": ok_count, "failed": err_count,
-                      "results": results}, ensure_ascii=False, indent=2))
+                      "run_id": run_id, "results": results}, ensure_ascii=False, indent=2))
+    if err_count:
+        sys.exit(1)
+
+
+def cmd_twin_candidates(args):
+    """Validate candidate Twin operations without writing to SQLite."""
+    try:
+        payload = json.loads(sys.stdin.read())
+    except json.JSONDecodeError as e:
+        print(f"ERROR: invalid JSON — {e}", file=sys.stderr)
+        sys.exit(1)
+
+    operations = payload.get("operations", [])
+    results = []
+    for i, op in enumerate(operations):
+        resource = op.get("resource", "")
+        action = op.get("action", "")
+        try:
+            if action in ("add", "edit"):
+                _validate_twin_resource_data(resource, op.get("data", {}) or {}, partial=(action == "edit"))
+            elif action == "link":
+                if not op.get("from") or not op.get("to"):
+                    raise ValueError("link requires from and to")
+            else:
+                raise ValueError(f"unknown action: {action}")
+            results.append({"index": i, "ok": True})
+        except Exception as e:
+            results.append({"index": i, "error": str(e)})
+
+    failed = sum(1 for r in results if "error" in r)
+    print(json.dumps({"ok": failed == 0, "total": len(operations), "failed": failed, "results": results},
+                     ensure_ascii=False, indent=2))
+    if failed:
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -2694,19 +2795,24 @@ Examples:
     p_te.add_argument("--domain", default="", help="Filter by domain")
     p_te.add_argument("--signal", default="", help="Filter by signal_type")
     p_te.add_argument("--session", default="", help="Filter by session id (substring)")
+    p_te.add_argument("--run-id", default="", help="Filter by Twin analysis run id")
 
     p_tc = sub.add_parser("twin-cards", parents=[shared], help="List judgment cards")
     p_tc.add_argument("--status", default="", help="Filter by status (hypothesis/emerging/confirmed)")
     p_tc.add_argument("--tag", default="", help="Filter by tag (substring match)")
     p_tc.add_argument("--min-confidence", type=float, default=None, dest="min_confidence",
                       help="Minimum confidence threshold")
+    p_tc.add_argument("--run-id", default="", help="Filter by Twin analysis run id")
 
     p_tt = sub.add_parser("twin-traits", parents=[shared], help="List cognitive traits")
     p_tt.add_argument("--status", default="", help="Filter by status")
     p_tt.add_argument("--category", default="", help="Filter by category")
+    p_tt.add_argument("--run-id", default="", help="Filter by Twin analysis run id")
 
     sub.add_parser("twin-write", help="Write/update/delete cognitive handbook entries from JSON stdin")
-    sub.add_parser("twin-compile", help="Compile Runtime Pack from cards + traits")
+    p_tcomp = sub.add_parser("twin-compile", help="Compile Runtime Pack from cards + traits")
+    p_tcomp.add_argument("--run-id", default="", help="Compile only artifacts from this Twin analysis run")
+    sub.add_parser("twin-candidates", help="Validate candidate Twin operations without writing")
 
     # CRUD tools
     p_tg = sub.add_parser("twin-get", help="Get a single event/card/trait by ID")
@@ -2728,6 +2834,7 @@ Examples:
     p_tl = sub.add_parser("twin-link", help="Link event→card or card→trait")
     p_tl.add_argument("from_id", help="Source ID (ev_/p_ for event, jc_ for card)")
     p_tl.add_argument("to_id", help="Target ID (jc_ for card, ct_ for trait)")
+    p_tl.add_argument("--run-id", default="", help="Require both endpoints to match this run id")
 
     sub.add_parser("twin-batch", help="Execute multiple operations (JSON from stdin)")
 
@@ -2751,6 +2858,7 @@ Examples:
         "twin-traits": cmd_twin_traits,
         "twin-write": cmd_twin_write,
         "twin-compile": cmd_twin_compile,
+        "twin-candidates": cmd_twin_candidates,
         "twin-get": cmd_twin_get,
         "twin-search": cmd_twin_search,
         "twin-add": cmd_twin_add,

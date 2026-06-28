@@ -146,6 +146,7 @@ def init_db():
         -- L1: Evidence Events — structured decision events from conversations
         CREATE TABLE IF NOT EXISTS evidence_events (
             id          TEXT PRIMARY KEY,
+            run_id      TEXT,
             session_id  TEXT,
             event_index INTEGER,
             card_id     TEXT,
@@ -160,7 +161,7 @@ def init_db():
             created_at  TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id),
             FOREIGN KEY (card_id) REFERENCES judgment_cards(id) ON DELETE SET NULL,
-            UNIQUE(session_id, event_index)
+            UNIQUE(run_id, session_id, event_index)
         );
         CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_events(session_id);
         CREATE INDEX IF NOT EXISTS idx_evidence_domain  ON evidence_events(domain);
@@ -170,6 +171,7 @@ def init_db():
         -- L2: Judgment Cards — situation-specific judgment patterns
         CREATE TABLE IF NOT EXISTS judgment_cards (
             id              TEXT PRIMARY KEY,
+            run_id          TEXT,
             applies_when    TEXT,
             judgment        TEXT,
             agent_action    TEXT,
@@ -197,6 +199,7 @@ def init_db():
         -- L3: Cognitive Traits — personality/cognitive characteristics inferred from cards
         CREATE TABLE IF NOT EXISTS cognitive_traits (
             id                  TEXT PRIMARY KEY,
+            run_id              TEXT,
             name                TEXT,
             category            TEXT,
             description         TEXT,
@@ -226,7 +229,75 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_evolve_tab     ON evolve_cache(tab);
         CREATE INDEX IF NOT EXISTS idx_evolve_updated  ON evolve_cache(updated_at);
     """)
+    _ensure_column(conn, "evidence_events", "run_id", "TEXT")
+    _ensure_column(conn, "judgment_cards", "run_id", "TEXT")
+    _ensure_column(conn, "cognitive_traits", "run_id", "TEXT")
+    _migrate_evidence_run_unique(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_run ON evidence_events(run_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_events(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_domain ON evidence_events(domain)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_signal ON evidence_events(signal_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_card ON evidence_events(card_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_run ON judgment_cards(run_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_traits_run ON cognitive_traits(run_id)")
     conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str):
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _migrate_evidence_run_unique(conn: sqlite3.Connection):
+    """Replace legacy UNIQUE(session_id,event_index) with run-scoped uniqueness."""
+    indexes = conn.execute("PRAGMA index_list(evidence_events)").fetchall()
+    has_legacy_unique = False
+    for idx in indexes:
+        name = idx[1]
+        unique = idx[2]
+        if not unique:
+            continue
+        cols = [r[2] for r in conn.execute(f"PRAGMA index_info({name})").fetchall()]
+        if cols == ["session_id", "event_index"]:
+            has_legacy_unique = True
+            break
+    if not has_legacy_unique:
+        return
+
+    conn.execute("ALTER TABLE evidence_events RENAME TO evidence_events_legacy")
+    conn.execute("""
+        CREATE TABLE evidence_events (
+            id          TEXT PRIMARY KEY,
+            run_id      TEXT,
+            session_id  TEXT,
+            event_index INTEGER,
+            card_id     TEXT,
+            task_type   TEXT,
+            ai_action   TEXT,
+            user_reaction TEXT,
+            resolution  TEXT,
+            lesson      TEXT,
+            signal_type TEXT,
+            signal_intensity REAL,
+            domain      TEXT,
+            created_at  TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id),
+            FOREIGN KEY (card_id) REFERENCES judgment_cards(id) ON DELETE SET NULL,
+            UNIQUE(run_id, session_id, event_index)
+        )
+    """)
+    legacy_cols = {row[1] for row in conn.execute("PRAGMA table_info(evidence_events_legacy)").fetchall()}
+    select_run = "run_id" if "run_id" in legacy_cols else "NULL AS run_id"
+    conn.execute(f"""
+        INSERT OR IGNORE INTO evidence_events
+        (id, run_id, session_id, event_index, card_id, task_type, ai_action,
+         user_reaction, resolution, lesson, signal_type, signal_intensity, domain, created_at)
+        SELECT id, {select_run}, session_id, event_index, card_id, task_type, ai_action,
+               user_reaction, resolution, lesson, signal_type, signal_intensity, domain, created_at
+        FROM evidence_events_legacy
+    """)
+    conn.execute("DROP TABLE evidence_events_legacy")
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +377,31 @@ def rebuild_fts():
     conn = get_conn()
     conn.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
     conn.commit()
+
+
+def prune_stale_sessions(valid_file_paths) -> int:
+    """Remove sessions whose source file no longer exists in the current scan."""
+    conn = get_conn()
+    valid = set(valid_file_paths or [])
+    rows = conn.execute("SELECT id, file_path FROM sessions").fetchall()
+    stale_ids = [r["id"] for r in rows if r["file_path"] not in valid]
+    if not stale_ids:
+        return 0
+
+    placeholders = ",".join("?" * len(stale_ids))
+    msg_ids = [r["id"] for r in conn.execute(
+        f"SELECT id FROM messages WHERE session_id IN ({placeholders})",
+        stale_ids,
+    ).fetchall()]
+    if msg_ids:
+        msg_placeholders = ",".join("?" * len(msg_ids))
+        conn.execute(f"DELETE FROM messages_fts WHERE rowid IN ({msg_placeholders})", msg_ids)
+
+    for table in ("messages", "insight_tool_usage", "insight_file_refs", "insight_errors", "insight_snippets"):
+        conn.execute(f"DELETE FROM {table} WHERE session_id IN ({placeholders})", stale_ids)
+    conn.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", stale_ids)
+    conn.commit()
+    return len(stale_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -648,18 +744,18 @@ def query_snippets(limit=150):
 
 # Table registry: name → columns (excluding id, updated_at which are auto-managed)
 _CM_TABLES = {
-    "evidence_events": ["session_id", "event_index", "card_id", "task_type",
+    "evidence_events": ["run_id", "session_id", "event_index", "card_id", "task_type",
                         "ai_action", "user_reaction", "resolution", "lesson",
                         "signal_type", "signal_intensity", "domain", "created_at"],
-    "judgment_cards": ["applies_when", "judgment", "agent_action", "exceptions",
+    "judgment_cards": ["run_id", "applies_when", "judgment", "agent_action", "exceptions",
                        "tags", "confidence", "status", "evidence_count", "created_at"],
     "card_relations": ["from_id", "to_id", "relation"],
-    "cognitive_traits": ["name", "category", "description", "strength",
+    "cognitive_traits": ["run_id", "name", "category", "description", "strength",
                          "supporting_card_ids", "status", "evidence_count"],
 }
 
 
-def cm_upsert(table: str, item_id: str, data: dict):
+def cm_upsert(table: str, item_id: str, data: dict, commit: bool = True):
     """Insert or update a cognitive model row. Partial updates are safe — existing
     fields are preserved when not provided in data."""
     conn = get_conn()
@@ -681,23 +777,42 @@ def cm_upsert(table: str, item_id: str, data: dict):
         merged.update({k: v for k, v in data.items() if v is not None})
         if has_updated:
             merged["updated_at"] = now
-        all_cols = [c for c in ["id"] + cols + (["updated_at"] if has_updated else []) if c in merged]
-        vals = [merged[c] for c in all_cols]
+        update_cols = [c for c in cols + (["updated_at"] if has_updated else []) if c in merged]
+        assignments = ",".join(f"{c}=?" for c in update_cols)
+        vals = [merged[c] for c in update_cols] + [item_id]
+        conn.execute(f"UPDATE {table} SET {assignments} WHERE id=?", vals)
     else:
+        if table == "evidence_events" and data.get("session_id") is not None and data.get("event_index") is not None:
+            run_id = data.get("run_id")
+            if run_id:
+                conflict = conn.execute(
+                    "SELECT id FROM evidence_events WHERE run_id=? AND session_id=? AND event_index=?",
+                    (run_id, data.get("session_id"), data.get("event_index")),
+                ).fetchone()
+            else:
+                conflict = conn.execute(
+                    "SELECT id FROM evidence_events WHERE (run_id IS NULL OR run_id='') AND session_id=? AND event_index=?",
+                    (data.get("session_id"), data.get("event_index")),
+                ).fetchone()
+            if conflict and conflict["id"] != item_id:
+                raise ValueError(
+                    f"Duplicate evidence event for session_id={data.get('session_id')} "
+                    f"event_index={data.get('event_index')} run_id={run_id or ''}: existing id={conflict['id']}"
+                )
         all_cols = ["id"] + [c for c in cols if c in data]
         if has_updated:
             all_cols.append("updated_at")
         vals = [item_id] + [data.get(c) for c in cols if c in data]
         if has_updated:
             vals.append(now)
-
-    placeholders = ",".join("?" * len(all_cols))
-    col_str = ",".join(all_cols)
-    conn.execute(
-        f"INSERT OR REPLACE INTO {table} ({col_str}) VALUES ({placeholders})",
-        vals,
-    )
-    conn.commit()
+        placeholders = ",".join("?" * len(all_cols))
+        col_str = ",".join(all_cols)
+        conn.execute(
+            f"INSERT INTO {table} ({col_str}) VALUES ({placeholders})",
+            vals,
+        )
+    if commit:
+        conn.commit()
 
 
 def cm_get(table: str, item_id: str) -> Optional[dict]:
@@ -721,11 +836,12 @@ def cm_get_all(table: str, where: str = "", params: tuple = (), order: str = "",
     return [dict(r) for r in rows]
 
 
-def cm_delete(table: str, item_id: str):
+def cm_delete(table: str, item_id: str, commit: bool = True):
     """Delete a single row by id."""
     conn = get_conn()
     conn.execute(f"DELETE FROM {table} WHERE id=?", (item_id,))
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def cm_count(table: str, where: str = "", params: tuple = ()) -> int:

@@ -58,6 +58,82 @@ class BaseTestCase(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Schema migration tests
+# ---------------------------------------------------------------------------
+
+class TestSchemaMigration(unittest.TestCase):
+
+    def setUp(self):
+        self._orig_db_path = db.DB_PATH
+        self._orig_cache_dir = db.CACHE_DIR
+        self._tmpdir = tempfile.mkdtemp()
+        from pathlib import Path
+        db.CACHE_DIR = Path(self._tmpdir)
+        db.DB_PATH = Path(self._tmpdir) / "sessions.db"
+        db._local = threading.local()
+
+    def tearDown(self):
+        db.DB_PATH = self._orig_db_path
+        db.CACHE_DIR = self._orig_cache_dir
+        db._local = threading.local()
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_init_db_migrates_legacy_twin_tables_before_run_id_indexes(self):
+        conn = db.get_conn()
+        conn.executescript("""
+            CREATE TABLE evidence_events (
+                id          TEXT PRIMARY KEY,
+                session_id  TEXT,
+                event_index INTEGER,
+                card_id     TEXT,
+                task_type   TEXT,
+                ai_action   TEXT,
+                user_reaction TEXT,
+                resolution  TEXT,
+                lesson      TEXT,
+                signal_type TEXT,
+                signal_intensity REAL,
+                domain      TEXT,
+                created_at  TEXT,
+                UNIQUE(session_id, event_index)
+            );
+            CREATE TABLE judgment_cards (
+                id              TEXT PRIMARY KEY,
+                applies_when    TEXT,
+                judgment        TEXT,
+                agent_action    TEXT,
+                exceptions      TEXT,
+                tags            TEXT,
+                confidence      REAL,
+                status          TEXT DEFAULT 'hypothesis',
+                evidence_count  INTEGER DEFAULT 0,
+                created_at      TEXT,
+                updated_at      TEXT
+            );
+            CREATE TABLE cognitive_traits (
+                id                  TEXT PRIMARY KEY,
+                name                TEXT,
+                category            TEXT,
+                description         TEXT,
+                strength            REAL,
+                supporting_card_ids TEXT,
+                status              TEXT DEFAULT 'hypothesis',
+                evidence_count      INTEGER DEFAULT 0,
+                updated_at          TEXT
+            );
+        """)
+        conn.commit()
+
+        db.init_db()
+
+        for table in ("evidence_events", "judgment_cards", "cognitive_traits"):
+            cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            self.assertIn("run_id", cols)
+        indexes = {row[1] for row in conn.execute("PRAGMA index_list(evidence_events)")}
+        self.assertIn("idx_evidence_run", indexes)
+
+
+# ---------------------------------------------------------------------------
 # Session lifecycle tests
 # ---------------------------------------------------------------------------
 
