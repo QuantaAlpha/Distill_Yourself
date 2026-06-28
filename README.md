@@ -178,58 +178,54 @@ ConvoLab 会把它们整理成一张 Judgment Card：
 
 ## 📊 Screenshots
 
+**Session Browser** — 用户提问、AI 回复、工具调用分层渲染，右侧可看大纲和摘要，也可就当前会话向 AI 提问。
+
 <div align="center">
   <img src="docs/images/user-guide/02-session.jpg" alt="Session browser" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
-  <p style="font-size: 12px; color: #666;">Session Browser：结构化会话回放 + 大纲 + AI Chat</p>
 </div>
+
+**Tool Heatmap** — 各类工具（执行命令、读文件、改文件等）逐日使用强度，一眼看出你近期是偏读代码还是偏改代码。
 
 <div align="center">
   <img src="docs/images/user-guide/05-heatmap.jpg" alt="Tool heatmap" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
-  <p style="font-size: 12px; color: #666;">Tool Heatmap：各类工具逐日使用强度</p>
 </div>
+
+**Profile Radar** — 从对话中观察你的真实表现，给出多维能力雷达，每个维度附判断依据。
 
 <div align="center">
   <img src="docs/images/user-guide/06-profile-radar.png" alt="Profile radar" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
-  <p style="font-size: 12px; color: #666;">Profile Radar：多维能力评估 + 证据链</p>
 </div>
 
 ---
 
-<details>
-<summary><b>⌨️ CLI Usage</b></summary>
+## ⌨️ CLI Analytics
+
+`analyze.py` 可独立于 Web UI 使用，适合脚本或 agent 工作流。
 
 ```bash
-# 基础查询
+# List sessions
 python3 analyze.py sessions --source claude --date 7d --limit 20
-python3 analyze.py search "authentication bug" --project my-app
-python3 analyze.py read abc123
-python3 analyze.py corrections --date 30d
-python3 analyze.py decisions --date 30d
-python3 analyze.py files --date 30d
-```
 
-```bash
-# Evolve
+# Search history
+python3 analyze.py search "authentication bug" --project my-app
+
+# Read a session
+python3 analyze.py read abc123
+
+# Extract decisions and errors
+python3 analyze.py decisions --date 30d
+python3 analyze.py errors --project my-app
+
+# Generate Evolve outputs
 python3 analyze.py evolve-rules
 python3 analyze.py evolve-signals
 python3 analyze.py evolve-patterns
+
+# Pre-computed aggregates used by Evolve AI
 python3 analyze.py aggregates
-python3 analyze.py profile-digest
 ```
 
-```bash
-# Cognitive Handbook
-python3 analyze.py twin-stats
-python3 analyze.py twin-events --signal correction --limit 50
-python3 analyze.py twin-cards --status confirmed
-python3 analyze.py twin-traits --category decision-style
-python3 analyze.py twin-search "minimal fix" --limit 20
-python3 analyze.py twin-compile --run-id latest
-```
-
-所有命令支持 `--json`、`--source`、`--date`、`--project`、`--limit`。
-
-</details>
+Most commands support `--json` and filters such as `--source`, `--date`, `--project`, and `--limit`.
 
 <details>
 <summary><b>⚙️ Configuration & Architecture</b></summary>

@@ -178,58 +178,54 @@ Always previewed before writing. Never pollutes your global config automatically
 
 ## 📊 Screenshots
 
+**Session Browser** — User messages, AI replies, and tool calls are rendered in separate layers. The sidebar shows an outline and summary; you can also ask AI questions about the current session.
+
 <div align="center">
   <img src="docs/images/user-guide/02-session.jpg" alt="Session browser" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
-  <p style="font-size: 12px; color: #666;">Session Browser: structured conversation replay with outline and AI Chat</p>
 </div>
+
+**Tool Heatmap** — Daily usage intensity of each tool type (shell commands, file reads, edits, etc.), revealing whether you've been reading or writing more code lately.
 
 <div align="center">
   <img src="docs/images/user-guide/05-heatmap.jpg" alt="Tool heatmap" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
-  <p style="font-size: 12px; color: #666;">Tool Heatmap: daily tool usage intensity at a glance</p>
 </div>
+
+**Profile Radar** — Multi-dimensional skill assessment derived from your real conversations, with evidence backing each dimension.
 
 <div align="center">
   <img src="docs/images/user-guide/06-profile-radar.png" alt="Profile radar" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
-  <p style="font-size: 12px; color: #666;">Profile Radar: multi-dimensional skill assessment with evidence chain</p>
 </div>
 
 ---
 
-<details>
-<summary><b>⌨️ CLI Usage</b></summary>
+## ⌨️ CLI Analytics
+
+`analyze.py` can be used independently of the web UI and is suitable for scripts or agent workflows.
 
 ```bash
-# Basic queries
+# List sessions
 python3 analyze.py sessions --source claude --date 7d --limit 20
-python3 analyze.py search "authentication bug" --project my-app
-python3 analyze.py read abc123
-python3 analyze.py corrections --date 30d
-python3 analyze.py decisions --date 30d
-python3 analyze.py files --date 30d
-```
 
-```bash
-# Evolve
+# Search history
+python3 analyze.py search "authentication bug" --project my-app
+
+# Read a session
+python3 analyze.py read abc123
+
+# Extract decisions and errors
+python3 analyze.py decisions --date 30d
+python3 analyze.py errors --project my-app
+
+# Generate Evolve outputs
 python3 analyze.py evolve-rules
 python3 analyze.py evolve-signals
 python3 analyze.py evolve-patterns
+
+# Pre-computed aggregates used by Evolve AI
 python3 analyze.py aggregates
-python3 analyze.py profile-digest
 ```
 
-```bash
-# Cognitive Handbook
-python3 analyze.py twin-stats
-python3 analyze.py twin-events --signal correction --limit 50
-python3 analyze.py twin-cards --status confirmed
-python3 analyze.py twin-traits --category decision-style
-python3 analyze.py twin-search "minimal fix" --limit 20
-python3 analyze.py twin-compile --run-id latest
-```
-
-All commands support `--json`, `--source`, `--date`, `--project`, `--limit`.
-
-</details>
+Most commands support `--json` and filters such as `--source`, `--date`, `--project`, and `--limit`.
 
 <details>
 <summary><b>⚙️ Configuration & Architecture</b></summary>
