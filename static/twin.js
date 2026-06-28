@@ -172,14 +172,35 @@
     const traitsEl = document.getElementById("twin-persona-traits");
     const imgEl = document.getElementById("twin-persona-img");
     const avatarEl = document.getElementById("twin-persona-avatar");
+    const avatarHintEl = document.getElementById("twin-persona-card-hint");
+    const personaCardEl = document.getElementById("twin-persona-card");
     if (!titleEl || !subtitleEl || !traitsEl) return;
+    if (personaCardEl) {
+      personaCardEl.onclick = () => loadRuntimePreview();
+      personaCardEl.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          loadRuntimePreview();
+        }
+      };
+    }
     if (avatarEl) {
-      avatarEl.onclick = openPersonaOptions;
+      avatarEl.onclick = (e) => {
+        e.stopPropagation();
+        openPersonaOptions();
+      };
       avatarEl.onkeydown = (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
+          e.stopPropagation();
           openPersonaOptions();
         }
+      };
+    }
+    if (avatarHintEl) {
+      avatarHintEl.onclick = (e) => {
+        e.stopPropagation();
+        openPersonaOptions();
       };
     }
 
@@ -310,6 +331,11 @@
     container.setAttribute("aria-hidden", "true");
   }
 
+  function isPersonaOptionsOpen() {
+    const container = document.getElementById("twin-persona-options");
+    return Boolean(container && !container.classList.contains("hidden"));
+  }
+
   // Trait categories for display
   const TRAIT_CATEGORIES = [
     { key: "价值取向",   icon: "⚖️", color: "#0f766e" },
@@ -356,8 +382,11 @@
     if (btnSync) btnSync.onclick = startSync;
     if (btnProgress) btnProgress.onclick = toggleProgressView;
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closePersonaOptions();
-    });
+      if (e.key !== "Escape" || !isPersonaOptionsOpen()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closePersonaOptions();
+    }, true);
   }
 
   /** Toggle between analysis progress view and overview */
@@ -384,6 +413,7 @@
       if (k === name) show(id);
       else hide(id);
     }
+    toggle("twin-persona-card", name === "overview");
     _updateProgressButton();
   }
 
@@ -612,19 +642,30 @@
     // ─── L4: Runtime Pack ───
     const hasData = cardCount > 0 || traitCount > 0;
     const statusClass = hasData ? "ready" : "no-data";
-    const statusText = hasData ? "✅ Ready" : "⏳ No data";
+    const statusText = hasData ? "Ready" : "No data";
     html += `<div class="twin-stage" style="--stage-color:#f59e0b">
       <div class="twin-stage-marker">L4</div>
-      <div class="twin-stage-card">
+      <div class="twin-stage-card twin-stage-card-clickable" data-nav="sync" role="button" tabindex="0">
         <div class="twin-stage-header" data-nav="sync">
           <span class="twin-stage-icon">📦</span>
           <span class="twin-stage-title">Runtime Pack</span>
-          <span class="twin-stage-cta">Sync to AI →</span>
+          <span class="twin-stage-cta">Open preview →</span>
         </div>
         <div class="twin-stage-body">
           <div class="twin-runtime-panel">
-            <span class="twin-runtime-status ${statusClass}">${statusText}</span>
-            <span class="twin-runtime-info">${cardCount} cards + ${traitCount} traits → AI 指令文件</span>
+            <div class="twin-runtime-state">
+              <span class="twin-runtime-status ${statusClass}">${statusText}</span>
+              <span class="twin-runtime-info">Compiled context package</span>
+            </div>
+            <div class="twin-runtime-metrics" aria-label="Runtime Pack source counts">
+              <span><b>${cardCount}</b><em>Cards</em></span>
+              <span><b>${traitCount}</b><em>Traits</em></span>
+            </div>
+            <div class="twin-runtime-target">
+              <span class="twin-runtime-target-label">Target</span>
+              <span class="twin-runtime-target-file">CLAUDE.md</span>
+              <span class="twin-runtime-open-hint">Click card to preview →</span>
+            </div>
           </div>
         </div>
       </div>
@@ -647,12 +688,26 @@
     });
     // Stage headers
     container.querySelectorAll(".twin-stage-header").forEach(el => {
-      el.onclick = () => {
+      el.onclick = (e) => {
+        e.stopPropagation();
         const nav = el.dataset.nav;
         if (nav === "events") loadEventsList();
         else if (nav === "cards") loadCards();
         else if (nav === "traits") loadTraits();
         else if (nav === "sync") loadRuntimePreview();
+      };
+    });
+    container.querySelectorAll(".twin-stage-card[data-nav]").forEach(el => {
+      const open = () => {
+        const nav = el.dataset.nav;
+        if (nav === "sync") loadRuntimePreview();
+      };
+      el.onclick = open;
+      el.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
       };
     });
     // Card previews → card detail
@@ -1293,16 +1348,129 @@
   }
 
   // ── Runtime Preview ──
-  function loadRuntimePreview() {
+  function loadRuntimePreview(options = {}) {
     fetch("/api/twin/runtime-preview")
       .then(r => r.json())
-      .then(data => renderRuntimePreview(data))
+      .then(data => renderRuntimePreview(data, options))
       .catch(e => console.error("Failed to load runtime preview:", e));
   }
 
-  function renderRuntimePreview(data) {
+  function renderRuntimeMarkdown(text) {
+    return window.renderMarkdownSimple
+      ? window.renderMarkdownSimple(text)
+      : esc(text).replace(/\n/g, "<br>");
+  }
+
+  function cleanRuntimeSectionTitle(text) {
+    return String(text || "")
+      .replace(/^#+\s*/, "")
+      .replace(/^\*\*|\*\*$/g, "")
+      .trim();
+  }
+
+  function parseRuntimeSection(block, index) {
+    const headingMatch = block.match(/^#{1,4}\s+([^\n]+)\n*([\s\S]*)$/);
+    if (headingMatch) {
+      return {
+        title: cleanRuntimeSectionTitle(headingMatch[1]),
+        body: headingMatch[2].trim(),
+      };
+    }
+
+    const boldMatch = block.match(/^\*\*(.+?)\*\*\s*[。.:：-]?\s*([\s\S]*)$/);
+    if (boldMatch) {
+      return {
+        title: cleanRuntimeSectionTitle(boldMatch[1]),
+        body: boldMatch[2].trim(),
+      };
+    }
+
+    const labelMatch = block.match(/^([^。！？!?：:\n]{2,38})[。.:：]\s*([\s\S]+)$/);
+    if (labelMatch) {
+      return {
+        title: cleanRuntimeSectionTitle(labelMatch[1]),
+        body: labelMatch[2].trim(),
+      };
+    }
+
+    return {
+      title: index === 0 ? "Overview" : `Section ${index + 1}`,
+      body: block.trim(),
+    };
+  }
+
+  function renderRuntimePreviewSections(text) {
+    const blocks = String(text || "")
+      .trim()
+      .split(/\n\s*\n/)
+      .map(block => block.trim())
+      .filter(Boolean);
+
+    if (!blocks.length || (blocks.length === 1 && blocks[0] === "(empty)")) {
+      return `<div class="twin-runtime-section-empty">No compiled Runtime Pack content yet.</div>`;
+    }
+
+    let intro = "";
+    const sections = [];
+    blocks.forEach((block, index) => {
+      const parsed = parseRuntimeSection(block, index);
+      if (index === 0 && !parsed.body && block.length <= 80) {
+        intro = parsed.title || block;
+        return;
+      }
+      sections.push(parsed);
+    });
+
+    const introHtml = intro
+      ? `<div class="twin-runtime-section-intro">
+          <span>Runtime summary</span>
+          <h3>${esc(intro)}</h3>
+        </div>`
+      : "";
+
+    const sectionHtml = sections.map((section, index) => {
+      const body = section.body || section.title;
+      return `<section class="twin-runtime-section-card">
+        <div class="twin-runtime-section-index">${String(index + 1).padStart(2, "0")}</div>
+        <div class="twin-runtime-section-content">
+          <h4>${esc(section.title)}</h4>
+          <div class="twin-runtime-section-text">${renderRuntimeMarkdown(body)}</div>
+        </div>
+      </section>`;
+    }).join("");
+
+    return `<div class="twin-runtime-section-list">${introHtml}${sectionHtml}</div>`;
+  }
+
+  function focusRuntimePreviewContent() {
+    const body = document.getElementById("twin-body");
+    const target = document.querySelector(".twin-runtime-document");
+    if (!body || !target) return;
+
+    const bodyRect = body.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const offset = targetRect.top - bodyRect.top + body.scrollTop - 16;
+    body.scrollTo({ top: Math.max(0, offset), behavior: "auto" });
+  }
+
+  function resetTwinScrollTop() {
+    const body = document.getElementById("twin-body");
+    if (!body) return;
+    const reset = () => {
+      body.scrollTop = 0;
+      body.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    };
+    reset();
+    requestAnimationFrame(() => {
+      reset();
+      requestAnimationFrame(reset);
+    });
+  }
+
+  function renderRuntimePreview(data, options = {}) {
     currentView = "runtime";
     _showOnlyView("dimension");
+    show("twin-persona-card");
     const container = document.getElementById("twin-detail");
     setBreadcrumb([{ label: "Runtime Pack", onclick: () => loadRuntimePreview() }]);
 
@@ -1310,25 +1478,40 @@
     const cardCount = data.card_count || 0;
     const traitCount = data.trait_count || 0;
     const hasData = cardCount > 0 || traitCount > 0;
+    const renderedText = renderRuntimePreviewSections(text);
 
-    let html = `<div class="twin-detail-header" style="--dim-color:#f59e0b">
-      <span class="twin-dim-icon">📦</span>
-      <span class="twin-detail-title">Runtime Pack</span>
-      <span class="twin-dim-count">${cardCount} cards + ${traitCount} traits</span>
-    </div>
-    <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
-      <span class="twin-runtime-status ${hasData ? "ready" : "no-data"}">${hasData ? "✅ Ready to sync" : "⏳ No data"}</span>
-      <span style="font-size:12px;color:var(--text-muted)">以下内容将写入 AI 指令文件，AI 在下次会话时自动读取</span>
-    </div>
-    <div style="padding:16px;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius);font-size:13px;line-height:1.8;white-space:pre-wrap;color:var(--text);max-height:60vh;overflow-y:auto">${window.renderMarkdownSimple ? window.renderMarkdownSimple(text) : esc(text)}</div>`;
-
-    if (hasData) {
-      html += `<div style="margin-top:16px;text-align:right">
-        <button class="btn-text" id="twin-runtime-sync-btn" style="font-size:13px;padding:6px 16px;background:var(--accent);color:white;border-radius:var(--radius-sm);border:none;cursor:pointer">📤 Sync to CLAUDE.md</button>
-      </div>`;
-    }
+    let html = `<div class="twin-runtime-detail">
+      <div class="twin-runtime-hero">
+        <div class="twin-runtime-hero-main">
+          <span class="twin-runtime-hero-icon">📦</span>
+          <div>
+            <div class="twin-runtime-kicker">Compiled to AI instructions</div>
+            <h2>Runtime Pack</h2>
+            <p>将判断卡与认知特质压缩成下一次会话可读取的上下文包。</p>
+            <div class="twin-runtime-compact-summary">
+              <span><b>${cardCount}</b> cards</span>
+              <span><b>${traitCount}</b> traits</span>
+              <span>${hasData ? "Ready" : "Empty"}</span>
+            </div>
+          </div>
+        </div>
+        <div class="twin-runtime-hero-side">
+          <span class="twin-runtime-status ${hasData ? "ready" : "no-data"}">${hasData ? "Ready to sync" : "No data"}</span>
+          <span class="twin-runtime-target-file">CLAUDE.md</span>
+          ${hasData ? '<button class="btn-text twin-runtime-sync-button twin-runtime-hero-action" id="twin-runtime-sync-btn">📤 Sync to CLAUDE.md</button>' : ""}
+        </div>
+      </div>
+      <div class="twin-runtime-document">
+        <div class="twin-runtime-document-head">
+          <span>Compiled preview</span>
+          <span>${cardCount} cards + ${traitCount} traits</span>
+        </div>
+        <div class="twin-runtime-document-body">${renderedText}</div>
+      </div></div>`;
 
     container.innerHTML = html;
+    if (options.focusContent) focusRuntimePreviewContent();
+    else resetTwinScrollTop();
 
     const syncBtn = document.getElementById("twin-runtime-sync-btn");
     if (syncBtn) syncBtn.onclick = startSync;
@@ -1381,6 +1564,10 @@
     const el = document.getElementById(id);
     if (el) el.classList.add("hidden");
     return el;
+  }
+
+  function toggle(id, visible) {
+    return visible ? show(id) : hide(id);
   }
 
   function truncate(s, n) {
