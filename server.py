@@ -10,12 +10,11 @@ import os
 import re
 import sys
 import time
-import hashlib
 import threading
 import subprocess
 import signal
 import uuid
-from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1381,8 +1380,8 @@ def _run_ai_engine_stream(prompt, allow_write=False, timeout=300, engine_overrid
                     pass
             if test.returncode != 0 or has_error:
                 raise RuntimeError("codex health check failed")
-        except (subprocess.TimeoutExpired, RuntimeError, FileNotFoundError, OSError) as e:
-            yield {"type": "text", "content": f"Codex unavailable, falling back to Claude...\n"}
+        except (subprocess.TimeoutExpired, RuntimeError, FileNotFoundError, OSError):
+            yield {"type": "text", "content": "Codex unavailable, falling back to Claude...\n"}
             yield from _run_engine_stream_inner("claude", prompt, allow_write, timeout)
             return
         # Codex passed health check — use it
@@ -3002,7 +3001,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             if not output and stderr:
                 stderr = stderr.strip()
                 noise = ["plugin manifest", "MCP", "Warning", "shutdown"]
-                lines = [l for l in stderr.split("\n") if not any(n in l for n in noise)]
+                lines = [line for line in stderr.split("\n") if not any(n in line for n in noise)]
                 if lines:
                     output = "Error: " + "\n".join(lines[:5])
                 else:
@@ -3843,7 +3842,6 @@ def _sanitize_filename(text: str) -> str:
 def _evolve_sync_memory_preview(mem_data: dict) -> dict:
     """Generate preview of what memory sync would do."""
     nodes = {n["id"]: n for n in mem_data.get("nodes", [])}
-    cards = {c["id"]: c for c in mem_data.get("cards", [])}
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 
     files = []
@@ -4101,7 +4099,7 @@ def _kill_existing(port):
 
 
 def main():
-    print(f"Claude Chat Viewer")
+    print("Claude Chat Viewer")
 
     _kill_existing(PORT)
 

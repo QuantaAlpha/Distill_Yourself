@@ -4,7 +4,6 @@ Single-file, no classes, thread-local connections, WAL mode.
 """
 
 import json
-import os
 import sqlite3
 import threading
 from datetime import datetime, timedelta

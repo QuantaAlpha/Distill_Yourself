@@ -32,10 +32,9 @@ jobs:
         run: python -m unittest discover -s tests -v
         # 零依赖,无需 pip install
 
-  # ---- 软门:lint。现有 14 处小问题先只提示不拦截;清理干净后删掉 continue-on-error 即可升级为硬门 ----
+  # ---- 硬门:lint。代码已清理干净(ruff check . 全过),作为合并必过项 ----
   lint:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

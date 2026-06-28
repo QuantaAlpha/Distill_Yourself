@@ -919,7 +919,7 @@ def cmd_stats(args):
     if dates:
         print(f"  Date range:     {dates[0]} → {dates[-1]}")
 
-    print(f"\nBy source:")
+    print("\nBy source:")
     for src, count in sorted(src_counts.items(), key=lambda x: -x[1]):
         print(f"  {src:8s} {count:5d} sessions")
 
@@ -1500,8 +1500,8 @@ def _validate_evolve_data(tab, data):
     elif tab == "memory":
         for i, n in enumerate(data.get("nodes", [])):
             errors.extend(_check_item(f"nodes[{i}]", n, schema["node"]))
-        for i, l in enumerate(data.get("links", [])):
-            errors.extend(_check_item(f"links[{i}]", l, schema["link"]))
+        for i, link in enumerate(data.get("links", [])):
+            errors.extend(_check_item(f"links[{i}]", link, schema["link"]))
         for i, c in enumerate(data.get("cards", [])):
             errors.extend(_check_item(f"cards[{i}]", c, schema["card"]))
 
@@ -1720,7 +1720,6 @@ def cmd_profile_digest(args):
     # Category totals
     by_category = defaultdict(int)
     by_subtype = defaultdict(int)
-    by_source = defaultdict(int)
     for c in corrections:
         cat = _classify_correction(c.get("text", ""), c.get("signals", []))
         by_category[cat] += 1
@@ -2471,7 +2470,7 @@ def _twin_link(_db, from_id: str, to_id: str, run_id: str = "", commit: bool = T
         }, commit=commit)
         return {"ok": True, "link": f"{from_id} → {to_id}", "type": "card→trait", "evidence_count": len(existing_ids)}
 
-    raise ValueError(f"Cannot determine link type. Use ev_/p_ prefix for events, jc_ for cards.")
+    raise ValueError("Cannot determine link type. Use ev_/p_ prefix for events, jc_ for cards.")
 
 
 def cmd_twin_get(args):

@@ -13,8 +13,8 @@ from types import SimpleNamespace
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import analyze
-import db
+import analyze  # noqa: E402  (must follow sys.path.insert above)
+import db  # noqa: E402
 
 
 class TwinIntegrityTestCase(unittest.TestCase):
