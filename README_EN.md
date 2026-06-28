@@ -22,22 +22,10 @@
 
 </div>
 
-<div align="center" style="margin: 20px 0;">
-  <a href="#-quick-start">
-    <img src="https://img.shields.io/badge/🚀_Quick_Start-Get_Started-4CAF50?style=flat-square&logoColor=white&labelColor=2E7D32" alt="Quick Start" />
-  </a>
-  <a href="docs/USER_GUIDE.md">
-    <img src="https://img.shields.io/badge/📖_User_Guide-Complete_Guide-2196F3?style=flat-square&logoColor=white&labelColor=1565C0" alt="User Guide" />
-  </a>
-  <a href="#-citation">
-    <img src="https://img.shields.io/badge/📄_Citation-Paper-FF9800?style=flat-square&logoColor=white&labelColor=F57C00" alt="Citation" />
-  </a>
-</div>
-
 ---
 
 <div align="center">
-  <img src="docs/images/user-guide/01-home.png" alt="ConvoLab Overview" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
+  <img src="docs/images/user-guide/07-cognitive.jpg" alt="ConvoLab Overview" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
 </div>
 
 ---
@@ -178,6 +166,12 @@ Always previewed before writing. Never pollutes your global config automatically
 
 ## 📊 Screenshots
 
+**Home Overview** — Session counts and project scale at a glance, with quick entries to each analysis view.
+
+<div align="center">
+  <img src="docs/images/user-guide/01-home.png" alt="Home overview" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
+</div>
+
 **Session Browser** — User messages, AI replies, and tool calls are rendered in separate layers. The sidebar shows an outline and summary; you can also ask AI questions about the current session.
 
 <div align="center">
@@ -227,8 +221,9 @@ python3 analyze.py aggregates
 
 Most commands support `--json` and filters such as `--source`, `--date`, `--project`, and `--limit`.
 
-<details>
-<summary><b>⚙️ Configuration & Architecture</b></summary>
+---
+
+## ⚙️ Configuration & Architecture
 
 ```bash
 PORT=3000 python3 server.py   # default: 5757
@@ -256,10 +251,9 @@ ConvoLab/
 | Codex | `~/.codex/sessions/` | JSONL |
 | Codex (archived) | `~/.codex/archived_sessions/` | JSONL |
 
-</details>
+---
 
-<details>
-<summary><b>🏗️ Design Principles</b></summary>
+## 🏗️ Design Principles
 
 | Principle | Implementation |
 |---|---|
@@ -268,8 +262,6 @@ ConvoLab/
 | **Evidence-backed** | Every memory and card retains its evidence chain |
 | **Preview-first** | Write-back always requires preview confirmation |
 | **Model-agnostic** | Memory written as natural language context, not hidden model state |
-
-</details>
 
 ---
 

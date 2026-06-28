@@ -22,27 +22,27 @@
 
 </div>
 
-<div align="center" style="margin: 20px 0;">
-  <a href="#-quick-start">
-    <img src="https://img.shields.io/badge/🚀_Quick_Start-Get_Started-4CAF50?style=flat-square&logoColor=white&labelColor=2E7D32" alt="Quick Start" />
+<!-- <div align="center" style="margin: 20px 0;">
+  <a href="#-快速开始">
+    <img src="https://img.shields.io/badge/🚀_快速开始-Get_Started-4CAF50?style=flat-square&logoColor=white&labelColor=2E7D32" alt="Quick Start" />
   </a>
   <a href="docs/USER_GUIDE.md">
-    <img src="https://img.shields.io/badge/📖_User_Guide-Complete_Guide-2196F3?style=flat-square&logoColor=white&labelColor=1565C0" alt="User Guide" />
+    <img src="https://img.shields.io/badge/📖_使用指南-Complete_Guide-2196F3?style=flat-square&logoColor=white&labelColor=1565C0" alt="User Guide" />
   </a>
   <a href="#-citation">
-    <img src="https://img.shields.io/badge/📄_Citation-Paper-FF9800?style=flat-square&logoColor=white&labelColor=F57C00" alt="Citation" />
+    <img src="https://img.shields.io/badge/📄_引用-Paper-FF9800?style=flat-square&logoColor=white&labelColor=F57C00" alt="Citation" />
   </a>
-</div>
+</div> -->
 
 ---
 
 <div align="center">
-  <img src="docs/images/user-guide/01-home.png" alt="ConvoLab Overview" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
+  <img src="docs/images/user-guide/07-cognitive.jpg" alt="ConvoLab Overview" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
 </div>
 
 ---
 
-## 🎯 Why ConvoLab?
+## 🎯 为什么需要 ConvoLab？
 
 你可能已经反复教过 Claude Code / Codex：
 
@@ -74,7 +74,7 @@ flowchart LR
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
 零依赖。Python 3.8+ 即可。
 
@@ -96,15 +96,15 @@ python3 server.py        # → http://localhost:5757
 
 ---
 
-## ✨ Core Features
+## ✨ 核心功能
 
 | 功能 | 解决什么 |
 |---|---|
-| **Session Browser** | 把分散的会话集中起来，搜索、筛选、结构化回放 |
-| **Insights** | 工具热力图、文件热点、重复错误、项目活跃度 |
-| **Evolve** | 从反复纠正中提炼可复用的偏好和行为规则 |
-| **Cognitive Handbook** | 把零散纠正蒸馏为结构化的 Judgment Cards |
-| **Preview & Sync** | 预览确认后写回 `CLAUDE.md` / `memory/`，下次会话生效 |
+| **会话浏览** | 把分散的会话集中起来，搜索、筛选、结构化回放 |
+| **洞察分析** | 工具热力图、文件热点、重复错误、项目活跃度 |
+| **进化引擎** | 从反复纠正中提炼可复用的偏好和行为规则 |
+| **认知手册** | 把零散纠正蒸馏为结构化的判断卡片 |
+| **预览与同步** | 预览确认后写回 `CLAUDE.md` / `memory/`，下次会话生效 |
 
 ---
 
@@ -161,36 +161,42 @@ ConvoLab 会把它们整理成一张 Judgment Card：
 确认过的记忆可以写回 Claude Code 的上下文：
 
 ```text
-~/.claude/CLAUDE.md      ← Profile + Cognitive Runtime Pack
-~/.claude/memory/        ← Memory Cards
+~/.claude/CLAUDE.md      ← 画像 + 认知运行时配置
+~/.claude/memory/        ← 记忆卡片
 ```
 
 写回前必须预览，不会自动污染全局配置。
 
 | 输出 | 写到哪里 | 是否自动 |
 |---|---|---|
-| Profile | `CLAUDE.md` 标记区域 | 需确认 |
-| Memory Cards | `~/.claude/memory/` | 需确认 |
-| Cognitive Runtime Pack | `CLAUDE.md` 标记区域 | 需确认 |
-| Rules / Signals / Patterns | 仅展示，不写回 | — |
+| 画像 | `CLAUDE.md` 标记区域 | 需确认 |
+| 记忆卡片 | `~/.claude/memory/` | 需确认 |
+| 认知运行时配置 | `CLAUDE.md` 标记区域 | 需确认 |
+| 规则 / 信号 / 模式 | 仅展示，不写回 | — |
 
 ---
 
-## 📊 Screenshots
+## 📊 界面展示
 
-**Session Browser** — 用户提问、AI 回复、工具调用分层渲染，右侧可看大纲和摘要，也可就当前会话向 AI 提问。
+**首页概览** — 会话总量、项目规模一目了然，通往各分析视图的入口。
+
+<div align="center">
+  <img src="docs/images/user-guide/01-home.png" alt="Home overview" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
+</div>
+
+**会话浏览器** — 用户提问、AI 回复、工具调用分层渲染，右侧可看大纲和摘要，也可就当前会话向 AI 提问。
 
 <div align="center">
   <img src="docs/images/user-guide/02-session.jpg" alt="Session browser" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
 </div>
 
-**Tool Heatmap** — 各类工具（执行命令、读文件、改文件等）逐日使用强度，一眼看出你近期是偏读代码还是偏改代码。
+**工具热力图** — 各类工具（执行命令、读文件、改文件等）逐日使用强度，一眼看出你近期是偏读代码还是偏改代码。
 
 <div align="center">
   <img src="docs/images/user-guide/05-heatmap.jpg" alt="Tool heatmap" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
 </div>
 
-**Profile Radar** — 从对话中观察你的真实表现，给出多维能力雷达，每个维度附判断依据。
+**能力雷达** — 从对话中观察你的真实表现，给出多维能力雷达，每个维度附判断依据。
 
 <div align="center">
   <img src="docs/images/user-guide/06-profile-radar.png" alt="Profile radar" width="90%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 10px 0;"/>
@@ -198,37 +204,38 @@ ConvoLab 会把它们整理成一张 Judgment Card：
 
 ---
 
-## ⌨️ CLI Analytics
+## ⌨️ 命令行分析
 
 `analyze.py` 可独立于 Web UI 使用，适合脚本或 agent 工作流。
 
 ```bash
-# List sessions
+# 列出会话
 python3 analyze.py sessions --source claude --date 7d --limit 20
 
-# Search history
+# 搜索历史
 python3 analyze.py search "authentication bug" --project my-app
 
-# Read a session
+# 读取会话
 python3 analyze.py read abc123
 
-# Extract decisions and errors
+# 提取决策与错误
 python3 analyze.py decisions --date 30d
 python3 analyze.py errors --project my-app
 
-# Generate Evolve outputs
+# 生成 Evolve 输出
 python3 analyze.py evolve-rules
 python3 analyze.py evolve-signals
 python3 analyze.py evolve-patterns
 
-# Pre-computed aggregates used by Evolve AI
+# Evolve AI 使用的预计算聚合
 python3 analyze.py aggregates
 ```
 
-Most commands support `--json` and filters such as `--source`, `--date`, `--project`, and `--limit`.
+大部分命令支持 `--json` 输出，以及 `--source`、`--date`、`--project`、`--limit` 等过滤参数。
 
-<details>
-<summary><b>⚙️ Configuration & Architecture</b></summary>
+---
+
+## ⚙️ 配置与架构
 
 ```bash
 PORT=3000 python3 server.py   # 默认 5757
@@ -236,50 +243,47 @@ PORT=3000 python3 server.py   # 默认 5757
 
 ```text
 ConvoLab/
-├── server.py          # HTTP server, REST API, JSONL parser, AI proxy, SSE
-├── db.py              # SQLite, FTS5 search, cognitive model tables
-├── analyze.py         # CLI analytics, Evolve, Twin operations
+├── server.py          # HTTP 服务、REST API、JSONL 解析、AI 代理、SSE
+├── db.py              # SQLite 存储、FTS5 搜索、认知模型表
+├── analyze.py         # CLI 分析、Evolve、Twin 操作
 ├── start.sh
 ├── docs/
 │   └── USER_GUIDE.md
 └── static/
-    ├── index.html     # SPA shell
-    ├── app.js         # Core logic
-    ├── evolve.js      # Evolve visualizations
-    ├── twin.js        # Cognitive Handbook UI
+    ├── index.html     # SPA 外壳
+    ├── app.js         # 核心逻辑
+    ├── evolve.js      # Evolve 可视化
+    ├── twin.js        # 认知手册 UI
     └── style.css
 ```
 
-| Source | Location | Format |
+| 来源 | 路径 | 格式 |
 |---|---|---|
 | Claude Code | `~/.claude/projects/` | JSONL |
 | Codex | `~/.codex/sessions/` | JSONL |
 | Codex (archived) | `~/.codex/archived_sessions/` | JSONL |
 
-</details>
+---
 
-<details>
-<summary><b>🏗️ Design Principles</b></summary>
+## 🏗️ 设计原则
 
-| Principle | Implementation |
+| 原则 | 实现方式 |
 |---|---|
-| **Local-first** | 只读取本机会话，不联网 |
-| **Zero install** | Python stdlib + vanilla JS，无外部依赖 |
-| **Evidence-backed** | 每条记忆和卡片保留原始证据链 |
-| **Preview-first** | 写回前必须预览确认 |
-| **Model-agnostic** | 以自然语言写入上下文，不依赖特定模型内部状态 |
-
-</details>
+| **本地优先** | 只读取本机会话，不联网 |
+| **零安装** | Python 标准库 + 原生 JS，无外部依赖 |
+| **证据驱动** | 每条记忆和卡片保留原始证据链 |
+| **预览优先** | 写回前必须预览确认 |
+| **模型无关** | 以自然语言写入上下文，不依赖特定模型内部状态 |
 
 ---
 
-## 🔒 Privacy
+## 🔒 隐私
 
 所有索引、搜索、分析和写回都在本地完成。会话数据只从本机读取，不上传到任何外部服务。前端从 D3 CDN 加载可视化库（不传输会话内容）。需要完全离线可将 D3 vendored 到 `static/`。
 
 ---
 
-## 📄 Citation
+## 📄 引用
 
 ```
 Distill Yourself: From AI Coding Sessions to Digital-Twin Memory for Self-Evolving Agents
@@ -289,20 +293,20 @@ Distill Yourself: From AI Coding Sessions to Digital-Twin Memory for Self-Evolvi
 
 ---
 
-## 🤝 Contributing
+## 🤝 贡献
 
-We welcome contributions!
+欢迎参与贡献！
 
 <a href="https://github.com/QuantaAlpha/Distill_Yourself/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=QuantaAlpha/Distill_Yourself" />
 </a>
 
-- **🐛 Bug Reports**: [Open an issue](https://github.com/QuantaAlpha/Distill_Yourself/issues)
-- **💡 Feature Requests**: [Start a discussion](https://github.com/QuantaAlpha/Distill_Yourself/discussions)
-- **🔧 Code Contributions**: Submit PRs for fixes, improvements, or new features
+- **🐛 Bug 反馈**: [提交 Issue](https://github.com/QuantaAlpha/Distill_Yourself/issues)
+- **💡 功能建议**: [发起讨论](https://github.com/QuantaAlpha/Distill_Yourself/discussions)
+- **🔧 代码贡献**: 欢迎提交 PR
 
 ---
 
-## License
+## 许可证
 
-This project is licensed under the [MIT License](LICENSE).
+本项目基于 [MIT 许可证](LICENSE) 开源。
