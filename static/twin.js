@@ -421,10 +421,10 @@
         "twin.lastAnalyzed.never": "尚未分析",
         "twin.persona.cardTitle": "点击打开 Runtime Pack",
         "twin.persona.avatarTitle": "选择认知类型",
-        "twin.persona.kicker": "Cognitive Model",
+        "twin.persona.kicker": "认知模型",
         "twin.persona.waitTitle": "等待认知模型",
         "twin.persona.waitSubtitle": "点击 Analyze 后匹配认知模型",
-        "twin.persona.changeAvatar": "Change avatar →",
+        "twin.persona.changeAvatar": "更换头像 →",
         "twin.node.runtime": "📦 Runtime",
         "twin.stage.events.title": "证据事件",
         "twin.stage.events.cta": "浏览全部 →",
@@ -447,6 +447,36 @@
         "twin.runtime.metricTraits": "认知特质",
         "twin.runtime.target": "目标",
         "twin.runtime.openHint": "点击卡片预览 →",
+        "twin.signal.all": "全部",
+        "twin.signal.correction": "纠正",
+        "twin.signal.acceptance": "认可",
+        "twin.signal.escalation": "升级",
+        "twin.signal.question": "提问",
+        "twin.status.confirmed": "已确认",
+        "twin.status.emerging": "形成中",
+        "twin.status.hypothesis": "假设",
+        "twin.cat.values": "价值取向",
+        "twin.cat.decision": "决策风格",
+        "twin.cat.collaboration": "协作模式",
+        "twin.cat.capability": "能力边界",
+        "twin.cat.thinking": "思维模式",
+        "twin.field.ai": "AI:",
+        "twin.events.title": "证据事件",
+        "twin.tg.tools": "{n} 个工具",
+        "twin.status.updated": "已更新 {time}",
+        "twin.status.error": "错误：{msg}",
+        "twin.runtime.compiledKicker": "已编译为 AI 指令",
+        "twin.runtime.heroTitle": "Runtime Pack",
+        "twin.runtime.empty": "空",
+        "twin.runtime.readyToSync": "可同步",
+        "twin.runtime.syncBtn": "📤 同步到 CLAUDE.md",
+        "twin.runtime.compiledPreview": "编译预览",
+        "twin.runtime.cardsTraits": "{cards} 判断卡 + {traits} 认知特质",
+        "twin.runtime.sectionEmpty": "尚无已编译的 Runtime Pack 内容。",
+        "twin.runtime.summary": "Runtime 摘要",
+        "twin.runtime.sectionOverview": "概览",
+        "twin.runtime.section": "第 {n} 节",
+        "twin.runtime.sourceCounts": "Runtime Pack 来源数量",
       },
       en: {
         "twin.trait.waiting": "Awaiting analysis",
@@ -536,6 +566,36 @@
         "twin.runtime.metricTraits": "Traits",
         "twin.runtime.target": "Target",
         "twin.runtime.openHint": "Click card to preview →",
+        "twin.signal.all": "all",
+        "twin.signal.correction": "correction",
+        "twin.signal.acceptance": "acceptance",
+        "twin.signal.escalation": "escalation",
+        "twin.signal.question": "question",
+        "twin.status.confirmed": "confirmed",
+        "twin.status.emerging": "emerging",
+        "twin.status.hypothesis": "hypothesis",
+        "twin.cat.values": "Values",
+        "twin.cat.decision": "Decision style",
+        "twin.cat.collaboration": "Collaboration",
+        "twin.cat.capability": "Capability",
+        "twin.cat.thinking": "Thinking mode",
+        "twin.field.ai": "AI:",
+        "twin.events.title": "Evidence Events",
+        "twin.tg.tools": "{n} tools",
+        "twin.status.updated": "Updated {time}",
+        "twin.status.error": "Error: {msg}",
+        "twin.runtime.compiledKicker": "Compiled to AI instructions",
+        "twin.runtime.heroTitle": "Runtime Pack",
+        "twin.runtime.empty": "Empty",
+        "twin.runtime.readyToSync": "Ready to sync",
+        "twin.runtime.syncBtn": "📤 Sync to CLAUDE.md",
+        "twin.runtime.compiledPreview": "Compiled preview",
+        "twin.runtime.cardsTraits": "{cards} cards + {traits} traits",
+        "twin.runtime.sectionEmpty": "No compiled Runtime Pack content yet.",
+        "twin.runtime.summary": "Runtime summary",
+        "twin.runtime.sectionOverview": "Overview",
+        "twin.runtime.section": "Section {n}",
+        "twin.runtime.sourceCounts": "Runtime Pack source counts",
       },
     });
   }
@@ -548,12 +608,29 @@
     return _tt((avatarId || "").endsWith("-B") ? "twin.persona.styleB" : "twin.persona.styleA");
   }
 
+  // ── Enum localization (DB values are fixed tokens; display only) ──
+  const _SIGNAL_KEYS = {
+    correction: "twin.signal.correction", acceptance: "twin.signal.acceptance",
+    escalation: "twin.signal.escalation", question: "twin.signal.question", all: "twin.signal.all",
+  };
+  const _STATUS_KEYS = {
+    confirmed: "twin.status.confirmed", emerging: "twin.status.emerging", hypothesis: "twin.status.hypothesis",
+  };
+  const _CATEGORY_KEYS = {
+    "价值取向": "twin.cat.values", "决策风格": "twin.cat.decision", "协作模式": "twin.cat.collaboration",
+    "能力边界": "twin.cat.capability", "思维模式": "twin.cat.thinking",
+  };
+  function _signalLabel(sig) { return sig && _SIGNAL_KEYS[sig] ? _tt(_SIGNAL_KEYS[sig]) : (sig || ""); }
+  function _statusLabel(st) { return st && _STATUS_KEYS[st] ? _tt(_STATUS_KEYS[st]) : (st || ""); }
+  function _categoryLabel(cat) { return cat && _CATEGORY_KEYS[cat] ? _tt(_CATEGORY_KEYS[cat]) : (cat || ""); }
+
   // ── State ──
   let overviewData = null;
   let analysisAbort = null;
   let analysisRunning = false;
   let eventsInited = false;
   let currentView = "overview"; // "overview" | "cards" | "card-detail" | "traits" | "trait-detail" | "analyzing"
+  let _reloadCurrentView = null; // closure to re-fetch+re-render the active detail/list view (for locale change)
   let _activeRunId = "";
   try {
     const _storedRunId = localStorage.getItem("twin-active-run-id");
@@ -607,6 +684,9 @@
       if (analysisRunning) {
         // Analysis in progress: only refresh shell labels, don't restart the stream.
         _updateAnalyzeButton();
+      } else if (_reloadCurrentView) {
+        // Re-render the active detail/list view in the new locale.
+        _reloadCurrentView();
       } else if (window.initTwinView) {
         window.initTwinView();
       }
@@ -713,6 +793,7 @@
 
   // ── Overview: Vertical Pipeline Layout ──
   function loadOverview() {
+    _reloadCurrentView = null;
     fetch(_withRunId("/api/twin/overview"))
       .then(r => r.json())
       .then((data) => {
@@ -829,7 +910,7 @@
           <div class="twin-card-title">${esc(truncate(c.applies_when, 40))}</div>
           <div class="twin-conf-bar"><span style="width:${conf}%"></span></div>
           <div class="twin-item-meta" style="margin-top:2px">
-            <span class="twin-status-badge ${statusClass}">${status}</span>
+            <span class="twin-status-badge ${statusClass}">${esc(_statusLabel(status))}</span>
             <span class="twin-conf">${conf}%</span>
             ${c.evidence_count ? `<span class="twin-ep-count">${esc(_tt("twin.card.eventCount", { n: c.evidence_count }))}</span>` : ""}
           </div>
@@ -865,7 +946,7 @@
         html += `<div class="twin-trait-col" style="--cat-color:${cat.color}" data-category="${cat.key}">
           <div class="twin-trait-col-header">
             <span class="twin-trait-col-icon">${cat.icon}</span>
-            <span class="twin-trait-col-name">${cat.key}</span>
+            <span class="twin-trait-col-name">${esc(_categoryLabel(cat.key))}</span>
             <span class="twin-trait-col-count">${catTraits.length}</span>
           </div>`;
         if (catTraits.length === 0) {
@@ -905,7 +986,7 @@
               <span class="twin-runtime-status ${statusClass}">${statusText}</span>
               <span class="twin-runtime-info">${esc(_tt("twin.runtime.info"))}</span>
             </div>
-            <div class="twin-runtime-metrics" aria-label="Runtime Pack source counts">
+            <div class="twin-runtime-metrics" aria-label="${esc(_tt("twin.runtime.sourceCounts"))}">
               <span><b>${cardCount}</b><em>${esc(_tt("twin.runtime.metricCards"))}</em></span>
               <span><b>${traitCount}</b><em>${esc(_tt("twin.runtime.metricTraits"))}</em></span>
             </div>
@@ -985,6 +1066,7 @@
 
   // ── Events List View ──
   function loadEventsList(signalFilter) {
+    _reloadCurrentView = () => loadEventsList(signalFilter);
     let url = "/api/twin/events?limit=200";
     if (signalFilter) url += `&signal_type=${encodeURIComponent(signalFilter)}`;
     fetch(_withRunId(url))
@@ -997,16 +1079,16 @@
     currentView = "events";
     _showOnlyView("dimension");
     const container = document.getElementById("twin-detail");
-    setBreadcrumb([{ label: "Evidence Events", onclick: () => loadEventsList() }]);
+    setBreadcrumb([{ label: _tt("twin.events.title"), onclick: () => loadEventsList() }]);
 
     const filters = ["all", "correction", "acceptance", "escalation", "question"];
     let html = `<div class="twin-detail-header" style="--dim-color:#3b82f6">
       <span class="twin-dim-icon">📝</span>
-      <span class="twin-detail-title">Evidence Events</span>
+      <span class="twin-detail-title">${esc(_tt("twin.events.title"))}</span>
       <span class="twin-dim-count">${esc(_tt("twin.count", { n: items.length }))}</span>
     </div>
     <div class="twin-filter-chips">
-      ${filters.map(f => `<span class="twin-filter-chip ${(!activeFilter && f === "all") || activeFilter === f ? "active" : ""}" data-filter="${f}">${f}</span>`).join("")}
+      ${filters.map(f => `<span class="twin-filter-chip ${(!activeFilter && f === "all") || activeFilter === f ? "active" : ""}" data-filter="${f}">${esc(_signalLabel(f))}</span>`).join("")}
     </div>
     <div class="twin-detail-list" style="margin-top:12px">`;
 
@@ -1019,12 +1101,12 @@
       html += `<div class="twin-episode-card">
         <div class="twin-ep-header">
           <span class="twin-event-dot ${sig}" style="display:inline-block"></span>
-          <span class="twin-ep-signal ${sig}">${esc(sig)}</span>
+          <span class="twin-ep-signal ${sig}">${esc(_signalLabel(sig))}</span>
           <span class="twin-ep-domain">${esc(e.domain || "")}</span>
           <span class="twin-ep-date">${esc((e.created_at || "").slice(0, 10))}</span>
         </div>
         <div class="twin-ep-body">
-          <div><b>AI:</b> ${esc(truncate(e.ai_action, 120))}</div>
+          <div><b>${esc(_tt("twin.field.ai"))}</b> ${esc(truncate(e.ai_action, 120))}</div>
           <div><b>${esc(_tt("twin.field.reaction"))}</b> ${esc(truncate(e.user_reaction, 120))}</div>
           ${e.lesson ? `<div><b>${esc(_tt("twin.field.lesson"))}</b> ${esc(e.lesson)}</div>` : ""}
         </div>
@@ -1050,6 +1132,7 @@
 
   // ── Judgment Cards List ──
   function loadCards() {
+    _reloadCurrentView = () => loadCards();
     fetch(_withRunId("/api/twin/cards?limit=200"))
       .then(r => r.json())
       .then(data => renderCards(data.cards || []))
@@ -1087,9 +1170,9 @@
           ${tags ? `<div class="twin-item-tags">${tags.split(", ").map(t => `<span class="twin-tag">${esc(t)}</span>`).join("")}</div>` : ""}
         </div>
         <div class="twin-item-meta">
-          ${status ? `<span class="twin-status-badge ${statusClass}">${status}</span>` : ""}
+          ${status ? `<span class="twin-status-badge ${statusClass}">${esc(_statusLabel(status))}</span>` : ""}
           ${conf !== null ? `<span class="twin-conf">${conf}%</span>` : ""}
-          ${card.evidence_count ? `<span class="twin-ep-count">${card.evidence_count} events</span>` : ""}
+          ${card.evidence_count ? `<span class="twin-ep-count">${esc(_tt("twin.card.eventCount", { n: card.evidence_count }))}</span>` : ""}
         </div>
       </div>`;
     }
@@ -1104,6 +1187,7 @@
 
   // ── Card Detail ──
   function loadCardDetail(cardId) {
+    _reloadCurrentView = () => loadCardDetail(cardId);
     fetch(`/api/twin/card/${cardId}`)
       .then(r => r.json())
       .then(data => renderCardDetail(data))
@@ -1137,9 +1221,9 @@
         <div style="margin-bottom:12px;color:var(--accent)"><b>${esc(_tt("twin.field.agentAction"))}</b>${esc(card.agent_action)}</div>
         ${card.exceptions ? `<div style="margin-bottom:12px"><b>${esc(_tt("twin.field.exceptions"))}</b>${esc(card.exceptions)}</div>` : ""}
         <div class="twin-item-meta">
-          ${status ? `<span class="twin-status-badge ${status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis"}">${status}</span>` : ""}
+          ${status ? `<span class="twin-status-badge ${status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis"}">${esc(_statusLabel(status))}</span>` : ""}
           ${conf !== null ? `<span class="twin-conf">${conf}%</span>` : ""}
-          ${card.evidence_count ? `<span class="twin-ep-count">${card.evidence_count} events</span>` : ""}
+          ${card.evidence_count ? `<span class="twin-ep-count">${esc(_tt("twin.card.eventCount", { n: card.evidence_count }))}</span>` : ""}
           ${tags ? tags.split(", ").map(t => `<span class="twin-tag">${esc(t)}</span>`).join("") : ""}
         </div>
       </div>`;
@@ -1150,12 +1234,12 @@
       for (const ep of evidence) {
         html += `<div class="twin-episode-card">
           <div class="twin-ep-header">
-            <span class="twin-ep-signal ${ep.signal_type || ""}">${esc(ep.signal_type)}</span>
+            <span class="twin-ep-signal ${ep.signal_type || ""}">${esc(_signalLabel(ep.signal_type))}</span>
             <span class="twin-ep-domain">${esc(ep.domain)}</span>
             <span class="twin-ep-date">${esc((ep.created_at || "").slice(0, 10))}</span>
           </div>
           <div class="twin-ep-body">
-            <div><b>AI:</b> ${esc(truncate(ep.ai_action, 120))}</div>
+            <div><b>${esc(_tt("twin.field.ai"))}</b> ${esc(truncate(ep.ai_action, 120))}</div>
             <div><b>${esc(_tt("twin.field.reaction"))}</b> ${esc(truncate(ep.user_reaction, 120))}</div>
             ${ep.lesson ? `<div><b>${esc(_tt("twin.field.lesson"))}</b> ${esc(ep.lesson)}</div>` : ""}
           </div>
@@ -1184,6 +1268,7 @@
 
   // ── Cognitive Traits List ──
   function loadTraits(category) {
+    _reloadCurrentView = () => loadTraits(category);
     let url = "/api/twin/traits?limit=200";
     if (category) url += `&category=${encodeURIComponent(category)}`;
     fetch(_withRunId(url))
@@ -1196,14 +1281,14 @@
     currentView = "traits";
     _showOnlyView("dimension");
     const container = document.getElementById("twin-detail");
-    const title = category || _tt("twin.traits.allTitle");
+    const title = category ? _categoryLabel(category) : _tt("twin.traits.allTitle");
     setBreadcrumb([{ label: title, onclick: () => loadTraits(category) }]);
 
     const cat = TRAIT_CATEGORIES.find(c => c.key === category) || { icon: "🧬", color: "#7c3aed" };
 
     let html = `<div class="twin-detail-header" style="--dim-color:${cat.color}">
       <span class="twin-dim-icon">${cat.icon}</span>
-      <span class="twin-detail-title">${title}</span>
+      <span class="twin-detail-title">${esc(title)}</span>
       <span class="twin-dim-count">${esc(_tt("twin.count", { n: items.length }))}</span>
     </div>
     <div class="twin-detail-list">`;
@@ -1219,13 +1304,13 @@
 
       html += `<div class="twin-detail-item" data-item-id="${esc(t.id)}">
         <div class="twin-item-body">
-          <div><b>${esc(t.name)}</b> <span class="twin-tag">${esc(t.category)}</span></div>
+          <div><b>${esc(t.name)}</b> <span class="twin-tag">${esc(_categoryLabel(t.category))}</span></div>
           <div class="twin-item-sub">${esc(t.description)}</div>
         </div>
         <div class="twin-item-meta">
-          ${status ? `<span class="twin-status-badge ${statusClass}">${status}</span>` : ""}
+          ${status ? `<span class="twin-status-badge ${statusClass}">${esc(_statusLabel(status))}</span>` : ""}
           ${str !== null ? `<span class="twin-conf">${str}%</span>` : ""}
-          ${t.evidence_count ? `<span class="twin-ep-count">${t.evidence_count} events</span>` : ""}
+          ${t.evidence_count ? `<span class="twin-ep-count">${esc(_tt("twin.card.eventCount", { n: t.evidence_count }))}</span>` : ""}
         </div>
       </div>`;
     }
@@ -1240,6 +1325,7 @@
 
   // ── Trait Detail ──
   function loadTraitDetail(traitId) {
+    _reloadCurrentView = () => loadTraitDetail(traitId);
     fetch(`/api/twin/trait/${traitId}`)
       .then(r => r.json())
       .then(data => renderTraitDetail(data))
@@ -1254,7 +1340,7 @@
     const cards = data.supporting_cards || [];
     const cat = TRAIT_CATEGORIES.find(c => c.key === trait.category) || { icon: "🧬", color: "#7c3aed" };
     setBreadcrumb([
-      { label: trait.category || _tt("twin.traits.fallbackCat"), onclick: () => loadTraits(trait.category) },
+      { label: trait.category ? _categoryLabel(trait.category) : _tt("twin.traits.fallbackCat"), onclick: () => loadTraits(trait.category) },
       { label: trait.name || "detail" },
     ]);
 
@@ -1263,16 +1349,16 @@
 
     let html = `<div class="twin-item-detail">
       <div class="twin-item-detail-header" style="border-left:4px solid ${cat.color}">
-        <span>${cat.icon} ${esc(trait.category)}</span>
+        <span>${cat.icon} ${esc(_categoryLabel(trait.category))}</span>
         <span class="twin-item-id">${esc(trait.id)}</span>
       </div>
       <div class="twin-item-detail-body" style="padding:16px">
         <div style="margin-bottom:12px;font-size:1.1em"><b>${esc(trait.name)}</b></div>
         <div style="margin-bottom:12px">${esc(trait.description)}</div>
         <div class="twin-item-meta">
-          ${status ? `<span class="twin-status-badge ${status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis"}">${status}</span>` : ""}
+          ${status ? `<span class="twin-status-badge ${status === "confirmed" ? "confirmed" : status === "emerging" ? "emerging" : "hypothesis"}">${esc(_statusLabel(status))}</span>` : ""}
           ${str !== null ? `<span class="twin-conf">${str}%</span>` : ""}
-          ${trait.evidence_count ? `<span class="twin-ep-count">${trait.evidence_count} events</span>` : ""}
+          ${trait.evidence_count ? `<span class="twin-ep-count">${esc(_tt("twin.card.eventCount", { n: trait.evidence_count }))}</span>` : ""}
         </div>
       </div>`;
 
@@ -1370,7 +1456,7 @@
     _finalizeToolGroup(state);
     _updateAnalyzeButton();
     const updatedEl = document.getElementById("twin-last-analyzed");
-    if (updatedEl && !failed) { updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`; }
+    if (updatedEl && !failed) { updatedEl.textContent = _tt("twin.status.updated", { time: new Date().toLocaleTimeString() }); }
     // If user is still watching the analysis, switch to overview
     if (currentView === "analyzing" && !failed) {
       setBreadcrumb([{ label: _tt("twin.bc.done") }]);
@@ -1523,7 +1609,7 @@
         _finalizeToolGroup(state);
         _hideThinking(container);
         if (updatedEl) {
-          updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+          updatedEl.textContent = _tt("twin.status.updated", { time: new Date().toLocaleTimeString() });
           updatedEl.classList.remove("loading");
         }
         break;
@@ -1537,7 +1623,7 @@
         errDiv.innerHTML = `❌ ${esc(evt.message || "Unknown error")}`;
         container.appendChild(errDiv);
         if (updatedEl) {
-          updatedEl.textContent = `Error: ${evt.message || ""}`;
+          updatedEl.textContent = _tt("twin.status.error", { msg: evt.message || "" });
           updatedEl.classList.remove("loading");
         }
         _autoScroll();
@@ -1567,7 +1653,7 @@
     const el = group.querySelector(".evolve-tg-summary");
     if (!el) return;
     const parts = Object.entries(state.toolGroupCounts).map(([name, count]) => `${count} ${name}`);
-    el.innerHTML = `<span class="evolve-tg-count">⚡ ${state.toolGroupTotal} tools</span> · ${parts.join(" · ")}`;
+    el.innerHTML = `<span class="evolve-tg-count">⚡ ${esc(_tt("twin.tg.tools", { n: state.toolGroupTotal }))}</span> · ${parts.join(" · ")}`;
   }
 
   function _finalizeToolGroup(state) {
@@ -1606,6 +1692,7 @@
 
   // ── Runtime Preview ──
   function loadRuntimePreview(options = {}) {
+    _reloadCurrentView = () => loadRuntimePreview(options);
     fetch(_withRunId("/api/twin/runtime-preview"))
       .then(r => r.json())
       .then(data => renderRuntimePreview(data, options))
@@ -1664,7 +1751,7 @@
       .filter(Boolean);
 
     if (!blocks.length || (blocks.length === 1 && blocks[0] === "(empty)")) {
-      return `<div class="twin-runtime-section-empty">No compiled Runtime Pack content yet.</div>`;
+      return `<div class="twin-runtime-section-empty">${esc(_tt("twin.runtime.sectionEmpty"))}</div>`;
     }
 
     let intro = "";
@@ -1680,7 +1767,7 @@
 
     const introHtml = intro
       ? `<div class="twin-runtime-section-intro">
-          <span>Runtime summary</span>
+          <span>${esc(_tt("twin.runtime.summary"))}</span>
           <h3>${esc(intro)}</h3>
         </div>`
       : "";
@@ -1729,7 +1816,7 @@
     _showOnlyView("dimension");
     show("twin-persona-card");
     const container = document.getElementById("twin-detail");
-    setBreadcrumb([{ label: "Runtime Pack", onclick: () => loadRuntimePreview() }]);
+    setBreadcrumb([{ label: _tt("twin.runtime.heroTitle"), onclick: () => loadRuntimePreview() }]);
 
     const text = data.text || "(empty)";
     const cardCount = data.card_count || 0;
@@ -1742,26 +1829,26 @@
         <div class="twin-runtime-hero-main">
           <span class="twin-runtime-hero-icon">📦</span>
           <div>
-            <div class="twin-runtime-kicker">Compiled to AI instructions</div>
-            <h2>Runtime Pack</h2>
+            <div class="twin-runtime-kicker">${esc(_tt("twin.runtime.compiledKicker"))}</div>
+            <h2>${esc(_tt("twin.runtime.heroTitle"))}</h2>
             <p>${esc(_tt("twin.runtime.desc"))}</p>
             <div class="twin-runtime-compact-summary">
-              <span><b>${cardCount}</b> cards</span>
-              <span><b>${traitCount}</b> traits</span>
-              <span>${hasData ? "Ready" : "Empty"}</span>
+              <span><b>${cardCount}</b> ${esc(_tt("twin.runtime.metricCards"))}</span>
+              <span><b>${traitCount}</b> ${esc(_tt("twin.runtime.metricTraits"))}</span>
+              <span>${hasData ? esc(_tt("twin.runtime.ready")) : esc(_tt("twin.runtime.empty"))}</span>
             </div>
           </div>
         </div>
         <div class="twin-runtime-hero-side">
-          <span class="twin-runtime-status ${hasData ? "ready" : "no-data"}">${hasData ? "Ready to sync" : "No data"}</span>
+          <span class="twin-runtime-status ${hasData ? "ready" : "no-data"}">${hasData ? esc(_tt("twin.runtime.readyToSync")) : esc(_tt("twin.runtime.noData"))}</span>
           <span class="twin-runtime-target-file">CLAUDE.md</span>
-          ${hasData ? '<button class="btn-text twin-runtime-sync-button twin-runtime-hero-action" id="twin-runtime-sync-btn">📤 Sync to CLAUDE.md</button>' : ""}
+          ${hasData ? `<button class="btn-text twin-runtime-sync-button twin-runtime-hero-action" id="twin-runtime-sync-btn">${esc(_tt("twin.runtime.syncBtn"))}</button>` : ""}
         </div>
       </div>
       <div class="twin-runtime-document">
         <div class="twin-runtime-document-head">
-          <span>Compiled preview</span>
-          <span>${cardCount} cards + ${traitCount} traits</span>
+          <span>${esc(_tt("twin.runtime.compiledPreview"))}</span>
+          <span>${esc(_tt("twin.runtime.cardsTraits", { cards: cardCount, traits: traitCount }))}</span>
         </div>
         <div class="twin-runtime-document-body">${renderedText}</div>
       </div></div>`;
@@ -1790,7 +1877,7 @@
           alert(_tt("twin.sync.failed", { error: data.error || "unknown" }));
         }
       })
-      .catch((e) => alert("Sync failed: " + e));
+      .catch((e) => alert(_tt("twin.sync.failed", { error: e })));
   }
 
   // ── Navigation helpers ──

@@ -8,7 +8,7 @@ import os
 import re
 from pathlib import Path
 
-from chatview.parsers.claude import _truncate_tool_output
+from chatview.parsers.claude import _truncate_tool_output, _strip_tags
 
 
 # ---------------------------------------------------------------------------
@@ -27,6 +27,51 @@ _CODEX_TOOL_NAMES = {
     "apply_patch": "Edit", "read_file": "Read", "write_file": "Write",
     "list_directory": "Glob",
 }
+
+
+def _normalize_codex_tool_input(raw_name: str, args: dict) -> dict:
+    """Map Codex tool arguments onto the Claude-style keys the frontend expects.
+
+    The conversation renderer derives the tool header summary from well-known
+    keys (command / file_path / pattern / query / description / prompt). Codex
+    uses different shapes (e.g. shell ``command`` arrays, ``cmd`` strings,
+    ``path`` instead of ``file_path``), so normalize them here.
+    """
+    if not isinstance(args, dict):
+        return {"raw": args}
+    out = dict(args)
+
+    # Shell-family: command may be a list (["bash","-lc","..."]) or a cmd str.
+    cmd = args.get("command")
+    if cmd is None:
+        cmd = args.get("cmd")
+    if isinstance(cmd, list):
+        # Collapse ["bash","-lc","<script>"] to the inner script when present.
+        if len(cmd) >= 3 and cmd[0] in ("bash", "sh", "zsh") and cmd[1] in ("-lc", "-c"):
+            out["command"] = cmd[2]
+        else:
+            out["command"] = " ".join(str(c) for c in cmd)
+    elif isinstance(cmd, str):
+        out["command"] = cmd
+
+    # File-path family: accept path/file_path aliases.
+    if "file_path" not in out:
+        fp = args.get("path") or args.get("file_path")
+        if fp:
+            out["file_path"] = fp
+
+    return out
+
+
+def _apply_patch_summary(patch_text: str) -> str:
+    """Extract the target file path from an apply_patch payload for the header."""
+    if not isinstance(patch_text, str):
+        return ""
+    for line in patch_text.splitlines():
+        m = re.match(r"\*\*\* (?:Update|Add|Delete) File: (.+)", line.strip())
+        if m:
+            return m.group(1).strip()
+    return ""
 
 
 def _normalize_error(msg: str) -> str:
@@ -236,7 +281,7 @@ def load_codex_session(session_id: str, index: dict, index_lock):
 
             # User message
             if rec_type == "event_msg" and payload.get("type") == "user_message":
-                text = payload.get("message", "")
+                text = _strip_tags(payload.get("message", ""))
                 if text.strip():
                     messages.append({
                         "id": payload.get("client_id", ""),
@@ -261,23 +306,48 @@ def load_codex_session(session_id: str, index: dict, index_lock):
                             "content": [{"type": "text", "text": text}],
                         })
 
+                # Reasoning → thinking block (skip encrypted-only records)
+                elif p_type == "reasoning":
+                    parts = []
+                    for seg in (payload.get("summary") or []):
+                        if isinstance(seg, dict) and seg.get("text"):
+                            parts.append(seg["text"])
+                    for seg in (payload.get("content") or []):
+                        if isinstance(seg, dict) and seg.get("text"):
+                            parts.append(seg["text"])
+                    think = "\n\n".join(p.strip() for p in parts if p.strip())
+                    if think:
+                        messages.append({
+                            "id": "", "type": "assistant", "timestamp": ts,
+                            "isSidechain": False,
+                            "content": [{"type": "thinking", "text": think}],
+                        })
+
                 # Tool call
                 elif p_type in ("function_call", "custom_tool_call"):
                     name = payload.get("name", "")
                     if p_type == "function_call":
                         args_str = payload.get("arguments", "{}")
                         try:
-                            inp = json.loads(args_str)
+                            args = json.loads(args_str)
                         except (json.JSONDecodeError, TypeError):
-                            inp = {"raw": args_str}
+                            args = {"raw": args_str}
+                        inp = _normalize_codex_tool_input(name, args)
+                    elif name == "apply_patch":
+                        raw = payload.get("input", "")
+                        if not isinstance(raw, str):
+                            raw = json.dumps(raw, ensure_ascii=False)
+                        inp = {"file_path": _apply_patch_summary(raw), "patch": raw}
                     else:
                         raw = payload.get("input", "")
-                        inp = {"raw": raw[:500] + "…" if len(raw) > 500 else raw}
+                        if not isinstance(raw, str):
+                            raw = json.dumps(raw, ensure_ascii=False)
+                        inp = {"command": raw}
                     # Truncate large values
                     inp_display = {}
                     for k, v in inp.items():
-                        if isinstance(v, str) and len(v) > 500:
-                            inp_display[k] = v[:500] + "…[truncated]"
+                        if isinstance(v, str) and len(v) > 2000:
+                            inp_display[k] = v[:2000] + "…[truncated]"
                         else:
                             inp_display[k] = v
                     messages.append({

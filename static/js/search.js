@@ -8,6 +8,7 @@
 import { state } from './state.js';
 import { dom } from './dom.js';
 import { esc, escRegex, formatDate } from './utils.js';
+import { t } from './i18n.js';
 
 // ── Search ─────────────────────────────────────────────────────
 export async function doSearch(query) {
@@ -46,10 +47,10 @@ export async function doSearch(query) {
 export function renderSearchResults() {
   const results = state.lastSearchResults;
   const query = state.lastSearchQuery;
-  dom.searchResultCount.textContent = `${results.length} results`;
+  dom.searchResultCount.textContent = t("search.count", { n: results.length });
 
   if (results.length === 0) {
-    dom.searchResultsList.innerHTML = '<li style="padding:20px;color:var(--text-muted)">No results found.</li>';
+    dom.searchResultsList.innerHTML = `<li style="padding:20px;color:var(--text-muted)">${esc(t("search.noResults"))}</li>`;
     return;
   }
 

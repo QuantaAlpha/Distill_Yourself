@@ -8,6 +8,7 @@
 import { state } from './state.js';
 import { $, $$ } from './dom.js';
 import { esc, formatDate, formatTime, renderMarkdown } from './utils.js';
+import { t } from './i18n.js';
 
 // ── Late-bound references to functions in other modules ──────────
 // Set by the main module via registerConversationDeps() to avoid
@@ -62,7 +63,7 @@ export async function loadSession(sessionId, jumpToIndex, pushHistory = true) {
       pathRow.appendChild(pathText);
       const copyBtn = document.createElement("button");
       copyBtn.className = "conv-filepath-copy";
-      copyBtn.title = "Copy path";
+      copyBtn.title = t("conv.copyPath");
       copyBtn.textContent = "📋";
       copyBtn.addEventListener("click", () => {
         navigator.clipboard.writeText(data.filePath).then(() => {
@@ -109,7 +110,7 @@ export async function loadSession(sessionId, jumpToIndex, pushHistory = true) {
     }
   } catch (err) {
     if (err.name === "AbortError") return; // superseded by newer load
-    messagesContainer.innerHTML = `<div style="padding:40px;text-align:center;color:#e57373">Failed to load session: ${esc(err.message)}</div>`;
+    messagesContainer.innerHTML = `<div style="padding:40px;text-align:center;color:#e57373">${esc(t("conv.loadFailed", { msg: err.message }))}</div>`;
   }
 }
 
@@ -175,17 +176,17 @@ export function createUserMsgEl(msg, idx) {
 
   const timeStr = msg.timestamp ? formatTime(msg.timestamp) : "";
   const hasLong = msg.content.some(b => b.type === "text" && b.text.length > COLLAPSE_THRESHOLD);
-  let html = `<div class="msg-label">${hasLong ? '<span class="msg-collapse-toggle open">▶</span>' : ""}<span style="font-size:14px">👤</span> You <span style="font-weight:400;font-size:10px;color:var(--text-muted)">${timeStr}</span>${hasLong ? '<span class="msg-fold">Show more ↓</span>' : ""}</div>`;
+  let html = `<div class="msg-label">${hasLong ? '<span class="msg-collapse-toggle open">▶</span>' : ""}<span style="font-size:14px">👤</span> ${t("conv.you")} <span style="font-weight:400;font-size:10px;color:var(--text-muted)">${timeStr}</span>${hasLong ? `<span class="msg-fold">${t("conv.showMore")}</span>` : ""}</div>`;
 
   for (const block of msg.content) {
     if (block.type === "text") {
       const isLong = block.text.length > COLLAPSE_THRESHOLD;
       html += `<div class="text-collapsible${isLong ? " collapsed" : ""}">`;
       html += `<div class="msg-text">${renderMarkdown(block.text)}</div>`;
-      if (isLong) html += `<button class="text-toggle">Show more ↓</button>`;
+      if (isLong) html += `<button class="text-toggle">${t("conv.showMore")}</button>`;
       html += `</div>`;
     } else if (block.type === "image") {
-      html += `<div class="image-placeholder">🖼️ ${block.alt || "Image"}</div>`;
+      html += `<div class="image-placeholder">🖼️ ${block.alt || t("conv.image")}</div>`;
     }
   }
 
@@ -243,11 +244,11 @@ export function createAssistantTurnEl(messages, startIdx) {
   // Turn-level collapse bar (only when there are tool/thinking blocks)
   if (hasProcessBlocks) {
     let parts = [];
-    if (toolUseCount > 0) parts.push(`${toolUseCount} tool calls`);
-    if (thinkingCount > 0) parts.push(`${thinkingCount} thinking`);
+    if (toolUseCount > 0) parts.push(t("conv.toolCalls", { n: toolUseCount }));
+    if (thinkingCount > 0) parts.push(t("conv.thinkingCount", { n: thinkingCount }));
     html += `<div class="turn-collapse-bar collapsed">
       <span class="turn-collapse-toggle">▶</span>
-      <span class="turn-collapse-label">🤖 Agent</span>
+      <span class="turn-collapse-label">${t("conv.agent")}</span>
       <span class="turn-collapse-summary">${parts.join(" · ")}</span>
       ${timeStr ? `<span class="turn-collapse-time">${timeStr}</span>` : ""}
     </div>`;
@@ -265,7 +266,7 @@ export function createAssistantTurnEl(messages, startIdx) {
         html += `<div class="tool-call-group collapsed">`;
         html += `<div class="tool-group-header">
           <span class="tool-group-toggle">▶</span>
-          <span class="tool-group-label">${gToolCount} tool calls</span>
+          <span class="tool-group-label">${t("conv.toolCalls", { n: gToolCount })}</span>
           <span class="tool-group-names">${esc(gToolNames.join(", "))}</span>
         </div>`;
         html += `<div class="tool-group-body" style="display:none">`;
@@ -287,12 +288,12 @@ export function createAssistantTurnEl(messages, startIdx) {
       if (block.type === "text" && block.text?.trim()) {
         const isLong = block.text.length > COLLAPSE_THRESHOLD;
         html += `<div class="reply-card${isLong ? " collapsed" : ""}">`;
-        html += `<div class="reply-label"><span style="font-size:13px">🤖</span> Assistant<button class="reply-copy" title="Copy">📋</button>${isLong ? ' <span class="reply-fold">Show more ↓</span>' : ""}</div>`;
+        html += `<div class="reply-label"><span style="font-size:13px">🤖</span> ${t("conv.assistant")}<button class="reply-copy" title="${t("conv.replyCopy.title")}">📋</button>${isLong ? ` <span class="reply-fold">${t("conv.showMore")}</span>` : ""}</div>`;
         html += `<div class="msg-text">${renderMarkdown(block.text)}</div>`;
-        if (isLong) html += `<button class="text-toggle reply-text-toggle">Show more ↓</button>`;
+        if (isLong) html += `<button class="text-toggle reply-text-toggle">${t("conv.showMore")}</button>`;
         html += `</div>`;
       } else if (block.type === "image") {
-        html += `<div class="image-placeholder">🖼️ ${block.alt || "Image"}</div>`;
+        html += `<div class="image-placeholder">🖼️ ${block.alt || t("conv.image")}</div>`;
       }
     }
   }
@@ -318,7 +319,7 @@ export function bindTextToggles(container) {
       const wrapper = btn.parentElement;
       const isCollapsed = wrapper.classList.contains("collapsed");
       wrapper.classList.toggle("collapsed", !isCollapsed);
-      btn.textContent = isCollapsed ? "Show less ↑" : "Show more ↓";
+      btn.textContent = isCollapsed ? t("conv.showLess") : t("conv.showMore");
     });
   });
 }
@@ -333,7 +334,7 @@ export function bindUserFoldToggle(container) {
   function toggle() {
     const isCollapsed = collapsible.classList.contains("collapsed");
     collapsible.classList.toggle("collapsed", !isCollapsed);
-    const label = isCollapsed ? "Collapse ↑" : "Show more ↓";
+    const label = isCollapsed ? t("conv.collapse") : t("conv.showMore");
     if (foldBtn) foldBtn.textContent = label;
     if (textToggle) textToggle.textContent = label;
     if (triangle) triangle.classList.toggle("open", isCollapsed);
@@ -354,7 +355,7 @@ export function bindReplyFoldToggles(container) {
         if (e) e.stopPropagation();
         const isCollapsed = card.classList.contains("collapsed");
         card.classList.toggle("collapsed", !isCollapsed);
-        const label = isCollapsed ? "Collapse ↑" : "Show more ↓";
+        const label = isCollapsed ? t("conv.collapse") : t("conv.showMore");
         if (topBtn) topBtn.textContent = label;
         if (bottomBtn) bottomBtn.textContent = label;
       }
@@ -429,13 +430,14 @@ export function renderToolUse(block) {
   const icon = getToolIcon(block.name);
   // Determine a concise summary for the tool header
   let summary = "";
-  if (block.input) {
-    if (block.input.command) summary = block.input.command.substring(0, 80);
-    else if (block.input.file_path) summary = block.input.file_path;
-    else if (block.input.pattern) summary = block.input.pattern;
-    else if (block.input.query) summary = block.input.query.substring(0, 60);
-    else if (block.input.description) summary = block.input.description.substring(0, 60);
-    else if (block.input.prompt) summary = block.input.prompt.substring(0, 60);
+  if (block.input && typeof block.input === "object") {
+    const pick = (v) => (typeof v === "string" ? v : (v == null ? "" : JSON.stringify(v)));
+    if (block.input.command) summary = pick(block.input.command).substring(0, 80);
+    else if (block.input.file_path) summary = pick(block.input.file_path);
+    else if (block.input.pattern) summary = pick(block.input.pattern);
+    else if (block.input.query) summary = pick(block.input.query).substring(0, 60);
+    else if (block.input.description) summary = pick(block.input.description).substring(0, 60);
+    else if (block.input.prompt) summary = pick(block.input.prompt).substring(0, 60);
   }
   // For Agent, show only the prompt in body
   const isAgent = (block.name || "").toLowerCase() === "agent";
@@ -482,12 +484,29 @@ export function getToolIcon(name) {
 }
 
 export function renderToolResult(block) {
-  const content = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
+  let content = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
+  // Codex / CUA outputs arrive as a JSON-stringified array of {type,text|image} parts.
+  // Flatten them into readable text instead of dumping raw JSON.
+  if (typeof content === "string" && /^\s*\[/.test(content)) {
+    try {
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        content = parsed.map((item) => {
+          if (typeof item === "string") return item;
+          if (item && typeof item === "object") {
+            if (item.type === "image" || item.image_url) return `🖼️ ${item.alt || t("conv.image")}`;
+            if (typeof item.text === "string") return item.text;
+          }
+          return JSON.stringify(item);
+        }).join("\n");
+      }
+    } catch { /* keep original string on parse failure */ }
+  }
   return `
     <div class="tool-block tool-result">
       <div class="tool-header">
         <span class="tool-icon">📋</span>
-        <span class="tool-name">Result</span>
+        <span class="tool-name">${t("conv.result")}</span>
         <span class="tool-toggle">▶</span>
       </div>
       <div class="tool-body" style="display:none">${esc(content)}</div>
@@ -499,7 +518,7 @@ export function renderThinking(block) {
     <div class="thinking-block">
       <div class="thinking-header">
         <span>💭</span>
-        <span>Thinking…</span>
+        <span>${t("conv.thinking")}</span>
         <span class="tool-toggle">▶</span>
       </div>
       <div class="thinking-body" style="display:none">${esc(block.text)}</div>

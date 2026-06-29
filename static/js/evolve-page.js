@@ -10,6 +10,7 @@
 import { state } from './state.js';
 import { $ } from './dom.js';
 import { esc, autoResizeTextarea } from './utils.js';
+import { t } from './i18n.js';
 import {
   appendChatMsg, createAssistantTurn, sendChatStream,
   _appendContinueButton,
@@ -18,28 +19,30 @@ import {
 // ── Presets ──────────────────────────────────────────────────────
 
 const GLOBAL_AI_PRESETS = [
-  { icon: "📊", title: "本周复盘", desc: "按项目总结完成的功能、Bug修复、重构", prompt: "分析所有对话，生成工作复盘。\n\n**工作流（按顺序执行）**：\n1. 先运行 `highlights` 获取全部会话的一行概览（含纠正/决策信号数）\n2. 运行 `stats` 查看项目分布和统计\n3. 对高信号会话运行 `read -s <id>` 看摘要\n4. 运行 `errors` 看高频错误模式\n\n**输出要求**：\n1. **项目分布**：各项目会话数和主要活动\n2. **关键产出**：每个项目完成的功能/修复\n3. **主要问题**：遇到的阻塞和解决情况\n4. **技术亮点**：有价值的技术方案或突破\n5. **效率观察**：哪些会话高效（低纠正、少消息）、哪些低效（高纠正）\n\n每个发现附 session ID 作为证据锚点。" },
-  { icon: "🔄", title: "重复模式", desc: "跨项目的反复 Bug 模式和效率瓶颈", prompt: "深度分析对话历史，找出跨项目反复出现的问题模式。\n\n**工作流（按顺序执行）**：\n1. 运行 `errors` 获取所有错误模式（按频率排序、跨 session 聚合）\n2. 运行 `corrections` 获取用户纠正模式（反映效率瓶颈）\n3. 运行 `highlights` 找高纠正/高消息数的低效会话\n4. 对高频错误和纠正的会话运行 `read -s <id>` 看上下文\n5. 运行 `search \"搜索\"` 和 `search \"怎么\"` 定位知识盲区\n\n**输出要求**：\n1. **高频错误**：同类错误出现2+次的模式\n2. **效率瓶颈**：反复消耗时间的环节\n3. **知识盲区**：多次搜索或询问的领域\n4. **根因分析**：每个模式的根本原因\n5. **改进方案**：具体可执行的改进，按ROI排序" },
-  { icon: "📐", title: "规则生成", desc: "从纠正场景自动生成 CLAUDE.md 规则", prompt: "分析所有对话中用户纠正AI的场景，自动生成CLAUDE.md规则。\n\n**工作流（按顺序执行）**：\n1. 先运行 `corrections` 获取所有纠正样本（已含50+种中英文信号词检测）\n2. 运行 `highlights` 找高纠正数的会话（corr≥3的重点关注）\n3. 对高纠正会话运行 `read -s <id>` 看上下文（理解纠正原因）\n4. 补充搜索 `search \"不行\"` `search \"太精简\"` `search \"应该是\"` 等关键词\n\n**输出要求**：\n1. 聚类相似纠正，提取模式\n2. 为每个模式生成规则：规则内容 | 触发场景 | 来源频次\n3. 按出现频率排序，标注优先级 P0/P1/P2\n4. 格式参考 CLAUDE.md 规则写法（可直接粘贴使用）\n\n每条规则附至少一条原始纠正引用（用户原话）和 session ID 作为证据。" },
-  { icon: "💡", title: "Prompt 优化", desc: "Prompt 质量评分和协作效率分析", prompt: "分析我的 prompt 质量和 AI 协作效率。\n\n**工作流（按顺序执行）**：\n1. 运行 `highlights` 查看每个会话的消息数和纠正信号数\n2. 运行 `corrections` 获取所有纠正场景（纠正=prompt 不够好）\n3. 对比低纠正会话（corr:0, 消息少）和高纠正会话（corr≥3），用 `read -s <id>` 各看 2-3 个\n4. 运行 `queries --limit 30` 浏览用户 prompt 样本\n\n**输出要求**：\n1. **一次成功率**：哪些类型的 prompt 能一次成功\n2. **多轮纠正**：哪些场景需反复修改，为什么\n3. **高效模式**：好 prompt 的共同特征\n4. **低效模式**：差 prompt 的问题所在\n5. **改进建议**：针对我的习惯的 prompt 模板建议" },
-  { icon: "🎯", title: "决策考古", desc: "提取架构决策及理由，生成决策日志", prompt: "提取所有会话中的架构和技术决策，生成决策日志。\n\n**工作流（按顺序执行）**：\n1. 先运行 `decisions` 获取所有决策点样本\n2. 运行 `highlights` 找高决策数的会话（dec≥2的重点关注）\n3. 对关键会话运行 `read -s <id>` 查看决策上下文\n4. 运行 `stats` 了解项目分布，按项目组织决策\n\n**输出要求**：\n1. 按时间线列出所有重要决策\n2. 每个决策：背景、选项、最终选择、理由\n3. 标注跨项目影响的决策\n4. 识别前后矛盾或需重新审视的决策\n5. 输出格式参考 ADR (Architecture Decision Record)\n\n每个 ADR 附 session ID。Top 5 关键决策需展开完整背景/选项/理由。" },
-  { icon: "🧠", title: "知识沉淀", desc: "提炼可复用模式和 Memory 候选", prompt: "从对话轨迹中提炼可沉淀的知识。\n\n**工作流（按顺序执行）**：\n1. 运行 `stats` 获取项目分布全景\n2. 运行 `errors` 获取高频错误模式（→踩坑大全候选）\n3. 运行 `corrections` 获取纠正模式（→有效实践候选）\n4. 运行 `highlights` 找信号丰富的会话\n5. 对关键会话运行 `read -s <id>` 提取可复用方案\n6. 运行 `files` 看文件热点（→技能图谱依据）\n\n**输出要求**：\n1. **可复用方案**：跨项目可复用的代码模式\n2. **验证有效的实践**：确认好用的开发实践（附证据：session ID + 关键引用）\n3. **踩坑大全**：高频踩坑及标准解法\n4. **Memory候选**：建议写入记忆的知识（知识内容 | 适用场景 | 来源证据）\n5. **技能图谱**：哪些技术领域积累最深，哪些需加强" },
-  { icon: "📈", title: "效率分析", desc: "高花费低产出会话诊断和工作流优化", prompt: "分析 AI 编码效率和成本热点。\n\n**工作流（按顺序执行）**：\n1. 运行 `highlights` 获取全部会话概览，按消息数排序找高耗时会话\n2. 运行 `stats` 看总体数据量（sessions/messages/MB）\n3. 对消息数 Top 5 的会话运行 `read -s <id>` 诊断低效原因\n4. 运行 `corrections` 统计哪些项目纠正最多（纠正=返工成本）\n5. 运行 `files` 看文件编辑热点（高编辑=可能过度修改）\n\n**输出要求**：\n1. **高耗时会话**：消息数最多的 Top 5 会话及主题\n2. **低效原因**：反复修改、方向错误、上下文丢失\n3. **工具使用**：哪些工具被过度使用或使用不足\n4. **对比分析**：高效会话 vs 低效会话的模式差异\n5. **优化建议**：具体的工作流改进建议" },
-  { icon: "🔀", title: "工具对比", desc: "Claude Code vs Codex CLI 使用效率对比", prompt: "对比分析 Claude Code 和 Codex CLI 的使用效率。\n\n**工作流（按顺序执行）**：\n1. 运行 `stats --source claude` 和 `stats --source codex` 分别统计\n2. 运行 `highlights --source claude --limit 20` 和 `highlights --source codex --limit 20` 对比\n3. 运行 `corrections --source claude` 和 `corrections --source codex` 对比纠正率\n4. 运行 `files --source claude` 和 `files --source codex` 对比文件操作模式\n5. 对代表性会话运行 `read -s <id>` 了解任务类型差异\n\n**输出要求**：\n1. **使用分布**：各工具的会话数、消息数、数据量\n2. **任务类型**：各工具擅长的任务类型\n3. **成功率**：哪个工具在什么场景下纠正更少\n4. **互补模式**：两者最佳搭配使用方式\n5. **工作流建议**：什么任务用哪个工具" },
+  { icon: "📊", key: "weekly", title: "本周复盘", desc: "按项目总结完成的功能、Bug修复、重构", prompt: "分析所有对话，生成工作复盘。\n\n**工作流（按顺序执行）**：\n1. 先运行 `highlights` 获取全部会话的一行概览（含纠正/决策信号数）\n2. 运行 `stats` 查看项目分布和统计\n3. 对高信号会话运行 `read -s <id>` 看摘要\n4. 运行 `errors` 看高频错误模式\n\n**输出要求**：\n1. **项目分布**：各项目会话数和主要活动\n2. **关键产出**：每个项目完成的功能/修复\n3. **主要问题**：遇到的阻塞和解决情况\n4. **技术亮点**：有价值的技术方案或突破\n5. **效率观察**：哪些会话高效（低纠正、少消息）、哪些低效（高纠正）\n\n每个发现附 session ID 作为证据锚点。" },
+  { icon: "🔄", key: "repeat", title: "重复模式", desc: "跨项目的反复 Bug 模式和效率瓶颈", prompt: "深度分析对话历史，找出跨项目反复出现的问题模式。\n\n**工作流（按顺序执行）**：\n1. 运行 `errors` 获取所有错误模式（按频率排序、跨 session 聚合）\n2. 运行 `corrections` 获取用户纠正模式（反映效率瓶颈）\n3. 运行 `highlights` 找高纠正/高消息数的低效会话\n4. 对高频错误和纠正的会话运行 `read -s <id>` 看上下文\n5. 运行 `search \"搜索\"` 和 `search \"怎么\"` 定位知识盲区\n\n**输出要求**：\n1. **高频错误**：同类错误出现2+次的模式\n2. **效率瓶颈**：反复消耗时间的环节\n3. **知识盲区**：多次搜索或询问的领域\n4. **根因分析**：每个模式的根本原因\n5. **改进方案**：具体可执行的改进，按ROI排序" },
+  { icon: "📐", key: "rulegen", title: "规则生成", desc: "从纠正场景自动生成 CLAUDE.md 规则", prompt: "分析所有对话中用户纠正AI的场景，自动生成CLAUDE.md规则。\n\n**工作流（按顺序执行）**：\n1. 先运行 `corrections` 获取所有纠正样本（已含50+种中英文信号词检测）\n2. 运行 `highlights` 找高纠正数的会话（corr≥3的重点关注）\n3. 对高纠正会话运行 `read -s <id>` 看上下文（理解纠正原因）\n4. 补充搜索 `search \"不行\"` `search \"太精简\"` `search \"应该是\"` 等关键词\n\n**输出要求**：\n1. 聚类相似纠正，提取模式\n2. 为每个模式生成规则：规则内容 | 触发场景 | 来源频次\n3. 按出现频率排序，标注优先级 P0/P1/P2\n4. 格式参考 CLAUDE.md 规则写法（可直接粘贴使用）\n\n每条规则附至少一条原始纠正引用（用户原话）和 session ID 作为证据。" },
+  { icon: "💡", key: "promptopt", title: "Prompt 优化", desc: "Prompt 质量评分和协作效率分析", prompt: "分析我的 prompt 质量和 AI 协作效率。\n\n**工作流（按顺序执行）**：\n1. 运行 `highlights` 查看每个会话的消息数和纠正信号数\n2. 运行 `corrections` 获取所有纠正场景（纠正=prompt 不够好）\n3. 对比低纠正会话（corr:0, 消息少）和高纠正会话（corr≥3），用 `read -s <id>` 各看 2-3 个\n4. 运行 `queries --limit 30` 浏览用户 prompt 样本\n\n**输出要求**：\n1. **一次成功率**：哪些类型的 prompt 能一次成功\n2. **多轮纠正**：哪些场景需反复修改，为什么\n3. **高效模式**：好 prompt 的共同特征\n4. **低效模式**：差 prompt 的问题所在\n5. **改进建议**：针对我的习惯的 prompt 模板建议" },
+  { icon: "🎯", key: "decision", title: "决策考古", desc: "提取架构决策及理由，生成决策日志", prompt: "提取所有会话中的架构和技术决策，生成决策日志。\n\n**工作流（按顺序执行）**：\n1. 先运行 `decisions` 获取所有决策点样本\n2. 运行 `highlights` 找高决策数的会话（dec≥2的重点关注）\n3. 对关键会话运行 `read -s <id>` 查看决策上下文\n4. 运行 `stats` 了解项目分布，按项目组织决策\n\n**输出要求**：\n1. 按时间线列出所有重要决策\n2. 每个决策：背景、选项、最终选择、理由\n3. 标注跨项目影响的决策\n4. 识别前后矛盾或需重新审视的决策\n5. 输出格式参考 ADR (Architecture Decision Record)\n\n每个 ADR 附 session ID。Top 5 关键决策需展开完整背景/选项/理由。" },
+  { icon: "🧠", key: "knowledge", title: "知识沉淀", desc: "提炼可复用模式和 Memory 候选", prompt: "从对话轨迹中提炼可沉淀的知识。\n\n**工作流（按顺序执行）**：\n1. 运行 `stats` 获取项目分布全景\n2. 运行 `errors` 获取高频错误模式（→踩坑大全候选）\n3. 运行 `corrections` 获取纠正模式（→有效实践候选）\n4. 运行 `highlights` 找信号丰富的会话\n5. 对关键会话运行 `read -s <id>` 提取可复用方案\n6. 运行 `files` 看文件热点（→技能图谱依据）\n\n**输出要求**：\n1. **可复用方案**：跨项目可复用的代码模式\n2. **验证有效的实践**：确认好用的开发实践（附证据：session ID + 关键引用）\n3. **踩坑大全**：高频踩坑及标准解法\n4. **Memory候选**：建议写入记忆的知识（知识内容 | 适用场景 | 来源证据）\n5. **技能图谱**：哪些技术领域积累最深，哪些需加强" },
+  { icon: "📈", key: "efficiency", title: "效率分析", desc: "高花费低产出会话诊断和工作流优化", prompt: "分析 AI 编码效率和成本热点。\n\n**工作流（按顺序执行）**：\n1. 运行 `highlights` 获取全部会话概览，按消息数排序找高耗时会话\n2. 运行 `stats` 看总体数据量（sessions/messages/MB）\n3. 对消息数 Top 5 的会话运行 `read -s <id>` 诊断低效原因\n4. 运行 `corrections` 统计哪些项目纠正最多（纠正=返工成本）\n5. 运行 `files` 看文件编辑热点（高编辑=可能过度修改）\n\n**输出要求**：\n1. **高耗时会话**：消息数最多的 Top 5 会话及主题\n2. **低效原因**：反复修改、方向错误、上下文丢失\n3. **工具使用**：哪些工具被过度使用或使用不足\n4. **对比分析**：高效会话 vs 低效会话的模式差异\n5. **优化建议**：具体的工作流改进建议" },
+  { icon: "🔀", key: "tools", title: "工具对比", desc: "Claude Code vs Codex CLI 使用效率对比", prompt: "对比分析 Claude Code 和 Codex CLI 的使用效率。\n\n**工作流（按顺序执行）**：\n1. 运行 `stats --source claude` 和 `stats --source codex` 分别统计\n2. 运行 `highlights --source claude --limit 20` 和 `highlights --source codex --limit 20` 对比\n3. 运行 `corrections --source claude` 和 `corrections --source codex` 对比纠正率\n4. 运行 `files --source claude` 和 `files --source codex` 对比文件操作模式\n5. 对代表性会话运行 `read -s <id>` 了解任务类型差异\n\n**输出要求**：\n1. **使用分布**：各工具的会话数、消息数、数据量\n2. **任务类型**：各工具擅长的任务类型\n3. **成功率**：哪个工具在什么场景下纠正更少\n4. **互补模式**：两者最佳搭配使用方式\n5. **工作流建议**：什么任务用哪个工具" },
 ];
 
 // ── Presets rendering ────────────────────────────────────────────
 
 export function populateGlobalAiPresets() {
   const container = $("#ai-chat-presets");
-  if (!container || container.dataset.populated) return;
+  if (!container) return;
   container.dataset.populated = "1";
   container.innerHTML = "";
   GLOBAL_AI_PRESETS.forEach(p => {
     const btn = document.createElement("button");
     btn.className = "preset-card";
     btn.dataset.prompt = p.prompt;
-    btn.innerHTML = `<span class="preset-icon">${p.icon}</span><div class="preset-info"><span class="preset-title">${p.title}</span><span class="preset-desc">${p.desc}</span></div>`;
+    const title = p.key ? t(`gpreset.${p.key}.title`) : p.title;
+    const desc = p.key ? t(`gpreset.${p.key}.desc`) : p.desc;
+    btn.innerHTML = `<span class="preset-icon">${p.icon}</span><div class="preset-info"><span class="preset-title">${esc(title)}</span><span class="preset-desc">${esc(desc)}</span></div>`;
     btn.addEventListener("click", () => submitGlobalAi(btn.dataset.prompt));
     container.appendChild(btn);
   });
@@ -330,7 +333,7 @@ export function submitGlobalAi(prompt) {
           const parsed = window.parseEvolveResponseExternal ? window.parseEvolveResponseExternal(targetTab, reply) : null;
           if (parsed && !parsed._parseError) {
             const itemCount = Object.values(parsed).reduce((sum, v) => sum + (Array.isArray(v) ? v.length : 0), 0);
-            const summaryText = `✅ 分析完成：发现 ${itemCount} 条结果。3 秒后跳转到 Evolve → ${targetTab}`;
+            const summaryText = t("ai.analysisDone", { n: itemCount, tab: targetTab });
             appendChatMsg(container, "assistant", summaryText);
             setTimeout(() => {
               if (window.navigateToEvolveTab) window.navigateToEvolveTab(targetTab, parsed);
@@ -354,7 +357,7 @@ export function submitGlobalAi(prompt) {
       state.globalAiLoading = false;
       state.globalAiHandle = null;
       _setGlobalAiButton(false);
-      const reply = (partialText || "") + "\n\n*(已停止)*";
+      const reply = (partialText || "") + "\n\n*" + t("chat.stopped") + "*";
       assistantTurn.finalize(reply);
       saveGlobalChatMessage("assistant", reply);
       saveChatToStorage();
@@ -365,8 +368,8 @@ export function submitGlobalAi(prompt) {
 export function _setGlobalAiButton(loading) {
   const btn = $("#ai-chat-send");
   if (!btn) return;
-  if (loading) { btn.textContent = "■ Stop"; btn.classList.add("btn-stop"); }
-  else { btn.textContent = "Send"; btn.classList.remove("btn-stop"); }
+  if (loading) { btn.textContent = t("common.stop"); btn.classList.add("btn-stop"); }
+  else { btn.textContent = t("common.send"); btn.classList.remove("btn-stop"); }
 }
 
 export function _stopGlobalAi() {

@@ -9,6 +9,7 @@
 import { state } from './state.js';
 import { $ } from './dom.js';
 import { esc, readSseStream, renderMarkdownSimple } from './utils.js';
+import { t } from './i18n.js';
 
 // ── Smart auto-scroll ──────────────────────────────────────
 export function _shouldAutoScroll(container) {
@@ -52,12 +53,12 @@ export function appendChatMsg(container, role, content) {
         bubble.style.maxHeight = "300px";
         const toggle = document.createElement("button");
         toggle.className = "chat-fold-toggle";
-        toggle.textContent = "展开全文 ↓";
+        toggle.textContent = t("chat.fold.expand");
         toggle.onclick = () => {
           const isFolded = bubble.classList.contains("folded");
           bubble.classList.toggle("folded", !isFolded);
           bubble.style.maxHeight = isFolded ? "none" : "300px";
-          toggle.textContent = isFolded ? "收起 ↑" : "展开全文 ↓";
+          toggle.textContent = isFolded ? t("chat.fold.collapse") : t("chat.fold.expand");
         };
         div.appendChild(toggle);
       }
@@ -290,7 +291,7 @@ export function _appendContinueButton(container, onClick) {
   wrap.className = "chat-continue-wrap";
   const btn = document.createElement("button");
   btn.className = "btn-continue";
-  btn.textContent = "继续分析";
+  btn.textContent = t("chat.continue.btn");
   btn.addEventListener("click", () => {
     wrap.remove();
     onClick();

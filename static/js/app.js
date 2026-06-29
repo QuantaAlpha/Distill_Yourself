@@ -7,9 +7,9 @@
 import { state } from './state.js';
 import { $, $$, dom, initDom } from './dom.js';
 import { api, initThemeToggle, esc, renderMarkdownSimple, readSseStream, autoResizeTextarea } from './utils.js';
-import { initLocaleToggle, applyI18nDom } from './i18n.js';
+import { initLocaleToggle, applyI18nDom, t } from './i18n.js';
 import { renderSessions, renderProjects, updateWelcomeStats, registerSessionDeps } from './sessions.js';
-import { loadSession, applyUserOnlyFilter, registerConversationDeps } from './conversation.js';
+import { loadSession, applyUserOnlyFilter, registerConversationDeps, renderMessages } from './conversation.js';
 import { doSearch, renderSearchResults, jumpToMessage } from './search.js';
 import { handleKeyboard, buildOutline, highlightOutlineItem } from './keyboard.js';
 import { openInsights, bindInsightsTabs, loadInsightsTab } from './insights.js';
@@ -263,7 +263,7 @@ function bindEvents() {
   $("#btn-collapse-all").addEventListener("click", function () {
     state.allCollapsed = !state.allCollapsed;
     // allCollapsed=true means "show expanded" (since initial is collapsed)
-    this.textContent = state.allCollapsed ? "Collapse All" : "Expand All";
+    this.textContent = state.allCollapsed ? t("conv.collapseAll") : t("conv.expandAll");
     this.classList.toggle("active", state.allCollapsed);
     $$(".tool-body, .thinking-body").forEach((el) => {
       el.style.display = state.allCollapsed ? "" : "none";
@@ -280,6 +280,27 @@ function bindEvents() {
     });
     $$(".tool-call-group").forEach((el) => {
       el.classList.toggle("collapsed", !state.allCollapsed);
+    });
+    // Assistant turn bars (process blocks live inside .turn-body)
+    $$(".turn-body").forEach((el) => {
+      el.style.display = state.allCollapsed ? "" : "none";
+    });
+    $$(".turn-collapse-bar").forEach((el) => {
+      el.classList.toggle("collapsed", !state.allCollapsed);
+    });
+    $$(".turn-collapse-toggle").forEach((el) => {
+      el.classList.toggle("open", state.allCollapsed);
+    });
+    // Long assistant replies + collapsible user text
+    const foldLabel = state.allCollapsed ? t("conv.collapse") : t("conv.showMore");
+    $$(".reply-card").forEach((el) => {
+      el.classList.toggle("collapsed", !state.allCollapsed);
+    });
+    $$(".text-collapsible").forEach((el) => {
+      el.classList.toggle("collapsed", !state.allCollapsed);
+    });
+    $$(".reply-fold, .reply-text-toggle, .msg-fold, .text-toggle").forEach((el) => {
+      el.textContent = foldLabel;
     });
   });
 
@@ -546,6 +567,15 @@ async function init() {
     updateWelcomeStats(state.allSessions, state.allProjects || []);
     const presetContainer = $("#ai-chat-presets");
     if (presetContainer && presetContainer.dataset.populated) populateGlobalAiPresets();
+    // Re-render the active conversation so JS-generated content text (turn headers,
+    // fold buttons, labels) reflects the new locale.
+    if (state.currentView === "conversation" && state.currentMessages && state.currentMessages.length) {
+      renderMessages(state.currentMessages);
+    }
+    // Re-render search results if they are currently displayed.
+    if (state.lastSearchResults && state.lastSearchResults.length) {
+      renderSearchResults();
+    }
   });
   // Show loading state immediately
   dom.sessionList.innerHTML = '<li class="loading-placeholder"><div class="skeleton-line" style="width:70%"></div><div class="skeleton-line short"></div></li>'.repeat(8);

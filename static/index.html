@@ -68,33 +68,33 @@
           </button>
           <div id="filter-popover" class="hidden">
             <div class="filter-popover-section">
-              <div class="filter-popover-label">Source</div>
+              <div class="filter-popover-label" data-i18n="filter.source">Source</div>
               <div id="source-tabs"></div>
             </div>
             <div class="filter-popover-section">
-              <div class="filter-popover-label">Date</div>
+              <div class="filter-popover-label" data-i18n="filter.date">Date</div>
               <div class="date-filters"></div>
             </div>
             <div class="filter-popover-section">
-              <div class="filter-popover-label">Project</div>
+              <div class="filter-popover-label" data-i18n="filter.project">Project</div>
               <div id="project-bar">
-                <button id="project-trigger"><span id="project-trigger-text">All Projects</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 4 5 6.5 7.5 4"/></svg></button>
+                <button id="project-trigger"><span id="project-trigger-text" data-i18n="filter.allProjects">All Projects</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 4 5 6.5 7.5 4"/></svg></button>
                 <div id="project-dropdown" class="hidden"></div>
               </div>
             </div>
-            <button id="filter-clear" class="hidden">Clear all</button>
+            <button id="filter-clear" class="hidden" data-i18n="filter.clearAll">Clear all</button>
           </div>
         </div>
         <!-- Session list / Chat history -->
         <div id="sidebar-content">
           <div id="panel-sessions" class="sidebar-panel">
-            <div class="panel-label">Recent <span id="session-count" class="badge"></span></div>
+            <div class="panel-label"><span data-i18n="panel.recent">Recent</span> <span id="session-count" class="badge"></span></div>
             <ul id="session-list"></ul>
           </div>
           <div id="panel-chat" class="sidebar-panel hidden">
             <div class="panel-label" style="display:flex;justify-content:space-between;align-items:center">
-              Analysis History
-              <button id="btn-new-chat" class="btn-sidebar-action">+ New</button>
+              <span data-i18n="panel.analysisHistory">Analysis History</span>
+              <button id="btn-new-chat" class="btn-sidebar-action" data-i18n="common.newChat">+ New</button>
             </div>
             <ul id="chat-history-list"></ul>
           </div>
@@ -214,11 +214,11 @@
         <!-- Insights view (tabbed: hotspots / heatmap / errors / health / snippets) -->
         <div id="insights-view" class="hidden">
           <div id="insights-tabs">
-            <button class="insights-tab active" data-tab="heatmap">Tool Heatmap</button>
-            <button class="insights-tab" data-tab="hotspots">File Hotspots</button>
-            <button class="insights-tab" data-tab="errors">Error Patterns</button>
-            <button class="insights-tab" data-tab="health">Project Health</button>
-            <button class="insights-tab" data-tab="snippets">Snippets</button>
+            <button class="insights-tab active" data-tab="heatmap" data-i18n="insights.tab.heatmap">Tool Heatmap</button>
+            <button class="insights-tab" data-tab="hotspots" data-i18n="insights.tab.hotspots">File Hotspots</button>
+            <button class="insights-tab" data-tab="errors" data-i18n="insights.tab.errors">Error Patterns</button>
+            <button class="insights-tab" data-tab="health" data-i18n="insights.tab.health">Project Health</button>
+            <button class="insights-tab" data-tab="snippets" data-i18n="insights.tab.snippets">Snippets</button>
           </div>
           <div id="insights-body"></div>
         </div>
@@ -230,8 +230,8 @@
             <div id="twin-actions">
               <span id="twin-last-analyzed" data-i18n="twin.lastAnalyzed.never">尚未分析</span>
               <button id="twin-btn-progress" class="btn-text hidden" data-i18n="twin.btn.progress">📊 查看进度</button>
-              <button id="twin-btn-analyze" class="btn-text">🔄 Analyze</button>
-              <button id="twin-btn-sync" class="btn-text">📤 Sync</button>
+              <button id="twin-btn-analyze" class="btn-text" data-i18n="twin.btn.analyze">🔄 Analyze</button>
+              <button id="twin-btn-sync" class="btn-text" data-i18n="twin.btn.sync">📤 Sync</button>
             </div>
           </div>
           <div id="twin-body">
@@ -267,18 +267,18 @@
             <div id="ai-evolve-panel">
               <div id="evolve-overview-bar"></div>
               <div id="evolve-tabs">
-                <button class="evolve-tab active" data-tab="profile">🧬 Profile</button>
-                <button class="evolve-tab" data-tab="memory">🧠 Memory</button>
-                <button class="evolve-tab" data-tab="rules">📐 Rules</button>
-                <button class="evolve-tab" data-tab="signals">⚡ Signals</button>
-                <button class="evolve-tab" data-tab="patterns">🔄 Patterns</button>
+                <button class="evolve-tab active" data-tab="profile" data-i18n="evolve.tab.profile">🧬 Profile</button>
+                <button class="evolve-tab" data-tab="memory" data-i18n="evolve.tab.memory">🧠 Memory</button>
+                <button class="evolve-tab" data-tab="rules" data-i18n="evolve.tab.rules">📐 Rules</button>
+                <button class="evolve-tab" data-tab="signals" data-i18n="evolve.tab.signals">⚡ Signals</button>
+                <button class="evolve-tab" data-tab="patterns" data-i18n="evolve.tab.patterns">🔄 Patterns</button>
               </div>
               <div id="evolve-tab-content">
                 <div id="evolve-tab-header">
                   <span id="evolve-tab-updated" data-i18n="evolve.status.never">尚未分析</span>
-                  <button id="evolve-tab-refresh" class="btn-text">🔄 Refresh</button>
-                  <button id="evolve-refresh-all" class="btn-text">🔄 All</button>
-                  <button id="evolve-tab-sync" class="btn-text" disabled>📤 Sync</button>
+                  <button id="evolve-tab-refresh" class="btn-text" data-i18n="evolve.refresh">🔄 Refresh</button>
+                  <button id="evolve-refresh-all" class="btn-text" data-i18n="evolve.refreshAll">🔄 All</button>
+                  <button id="evolve-tab-sync" class="btn-text" disabled data-i18n="evolve.sync">📤 Sync</button>
                 </div>
                 <div id="evolve-sync-panel" class="hidden"></div>
                 <div id="evolve-tab-body">
@@ -291,14 +291,14 @@
             <div class="resize-handle" data-target="ai-chat-panel"><button class="panel-toggle" data-toggle="ai-chat-panel" title="Collapse / expand panel" aria-label="Collapse or expand panel">›</button></div>
             <div id="ai-chat-panel">
               <div id="ai-chat-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-light)">
-                <span style="font-weight:600;font-size:14px">💬 AI Analysis</span>
-                <button id="btn-new-chat-ai" class="btn-sidebar-action">+ New</button>
+                <span style="font-weight:600;font-size:14px" data-i18n="ai.chat.title">💬 AI Analysis</span>
+                <button id="btn-new-chat-ai" class="btn-sidebar-action" data-i18n="common.newChat">+ New</button>
               </div>
               <div id="ai-chat-presets" class="preset-grid preset-grid-1col"></div>
               <div id="ai-chat-messages"></div>
               <div id="ai-chat-input-area">
                 <textarea id="ai-chat-input" placeholder="输入跨会话分析需求…" data-i18n-placeholder="evolve.chat.inputPlaceholder" rows="1"></textarea>
-                <button id="ai-chat-send">Send</button>
+                <button id="ai-chat-send" data-i18n="common.send">Send</button>
               </div>
             </div>
           </div>
@@ -306,17 +306,17 @@
 
         <div id="conversation-view" class="hidden">
           <div id="conv-header">
-            <button id="btn-back" class="btn-icon" title="Back">←</button>
+            <button id="btn-back" class="btn-icon" data-i18n-title="conv.back.title" title="Back">←</button>
             <div id="conv-title-area">
               <h2 id="conv-title"></h2>
               <span id="conv-meta"></span>
             </div>
             <div id="conv-actions">
-              <button id="btn-copy-conv" class="btn-text" title="Copy conversation (User + Assistant only)">📋 Copy</button>
-              <button id="btn-refresh" class="btn-text" title="Refresh">↻ Refresh</button>
-              <button id="btn-user-only" class="btn-text" title="Show user messages only">👤 User Only</button>
-              <button id="btn-collapse-all" class="btn-text" title="Expand/collapse tool blocks">Expand All</button>
-              <button id="btn-export" class="btn-text" title="Export as Markdown">⬇ Export</button>
+              <button id="btn-copy-conv" class="btn-text" data-i18n="conv.copy" data-i18n-title="conv.copy.title" title="Copy conversation (User + Assistant only)">📋 Copy</button>
+              <button id="btn-refresh" class="btn-text" data-i18n="conv.refresh" data-i18n-title="conv.refresh.title" title="Refresh">↻ Refresh</button>
+              <button id="btn-user-only" class="btn-text" data-i18n="conv.userOnly" data-i18n-title="conv.userOnly.title" title="Show user messages only">👤 User Only</button>
+              <button id="btn-collapse-all" class="btn-text" data-i18n="conv.expandAll" data-i18n-title="conv.expandAll.title" title="Expand/collapse tool blocks">Expand All</button>
+              <button id="btn-export" class="btn-text" data-i18n="conv.export" data-i18n-title="conv.export.title" title="Export as Markdown">⬇ Export</button>
             </div>
           </div>
           <div id="conv-body">
@@ -325,9 +325,9 @@
             <aside id="right-panel">
               <!-- Tab switcher for right panel -->
               <div id="rp-tabs">
-                <button class="rp-tab" data-panel="outline">Outline</button>
-                <button class="rp-tab active" data-panel="ai">AI</button>
-                <button class="rp-tab" data-panel="summary">Summary</button>
+                <button class="rp-tab" data-panel="outline" data-i18n="rp.tab.outline">Outline</button>
+                <button class="rp-tab active" data-panel="ai" data-i18n="rp.tab.ai">AI</button>
+                <button class="rp-tab" data-panel="summary" data-i18n="rp.tab.summary">Summary</button>
               </div>
               <div id="rp-outline" class="rp-content hidden">
                 <ul id="outline-list"></ul>
@@ -365,7 +365,7 @@
                 <div id="session-ai-messages"></div>
                 <div id="session-ai-input-area">
                   <textarea id="session-ai-input" placeholder="问关于这个会话的问题…" data-i18n-placeholder="session.ai.placeholder" rows="1"></textarea>
-                  <button id="session-ai-send">Send</button>
+                  <button id="session-ai-send" data-i18n="common.send">Send</button>
                 </div>
               </div>
             </aside>
@@ -374,12 +374,12 @@
 
         <div id="search-results" class="hidden">
           <div id="search-results-header">
-            <h2>Search Results</h2>
+            <h2 data-i18n="search.results.title">Search Results</h2>
             <span id="search-result-count" class="badge"></span>
             <select id="search-sort" title="Sort order">
-              <option value="date-desc">By Date ↓</option>
-              <option value="date-asc">By Date ↑</option>
-              <option value="relevance">By Relevance</option>
+              <option value="date-desc" data-i18n="search.sort.dateDesc">By Date ↓</option>
+              <option value="date-asc" data-i18n="search.sort.dateAsc">By Date ↑</option>
+              <option value="relevance" data-i18n="search.sort.relevance">By Relevance</option>
             </select>
           </div>
           <ul id="search-results-list"></ul>
@@ -400,22 +400,23 @@
   <!-- Keyboard help overlay -->
   <div id="kbd-help" class="hidden">
     <div class="kbd-help-inner">
-      <h3>Keyboard Shortcuts</h3>
+      <h3 data-i18n="kbd.title">Keyboard Shortcuts</h3>
       <table>
-        <tr><td><kbd>/</kbd></td><td>Focus search</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>Close / blur search</td></tr>
-        <tr><td><kbd>1</kbd></td><td>Home</td></tr>
-        <tr><td><kbd>2</kbd></td><td>AI Evolve</td></tr>
-        <tr><td><kbd>3</kbd></td><td>Insights</td></tr>
-        <tr><td><kbd>4</kbd></td><td>Distill Yourself</td></tr>
-        <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Next / previous session</td></tr>
-        <tr><td><kbd>Enter</kbd></td><td>Open selected session</td></tr>
-        <tr><td><kbd>h</kbd></td><td>Go back to Home</td></tr>
-        <tr><td><kbd>n</kbd> / <kbd>N</kbd></td><td>Next / previous user message</td></tr>
-        <tr><td><kbd>o</kbd></td><td>Toggle outline panel</td></tr>
-        <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+        <tr><td><kbd>/</kbd></td><td data-i18n="kbd.focusSearch">Focus search</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td data-i18n="kbd.close">Close / blur search</td></tr>
+        <tr><td><kbd>1</kbd></td><td data-i18n="kbd.home">Home</td></tr>
+        <tr><td><kbd>2</kbd></td><td data-i18n="kbd.aiEvolve">AI Evolve</td></tr>
+        <tr><td><kbd>3</kbd></td><td data-i18n="kbd.insights">Insights</td></tr>
+        <tr><td><kbd>4</kbd></td><td data-i18n="kbd.twin">Distill Yourself</td></tr>
+        <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td data-i18n="kbd.nextPrevSession">Next / previous session</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td data-i18n="kbd.openSession">Open selected session</td></tr>
+        <tr><td><kbd>h</kbd></td><td data-i18n="kbd.goHome">Go back to Home</td></tr>
+        <tr><td><kbd>n</kbd> / <kbd>N</kbd></td><td data-i18n="kbd.nextPrevMsg">Next / previous user message</td></tr>
+        <tr><td><kbd>o</kbd></td><td data-i18n="kbd.toggleOutline">Toggle outline panel</td></tr>
+        <tr><td><kbd>c</kbd></td><td data-i18n="kbd.collapseAll">Expand / collapse all</td></tr>
+        <tr><td><kbd>?</kbd></td><td data-i18n="kbd.showHelp">Show this help</td></tr>
       </table>
-      <p style="margin-top:12px;font-size:12px;color:var(--text-muted)">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</p>
+      <p style="margin-top:12px;font-size:12px;color:var(--text-muted)" data-i18n="kbd.pressClose">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</p>
     </div>
   </div>
 

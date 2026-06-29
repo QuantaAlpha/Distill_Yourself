@@ -9,6 +9,7 @@
 import { state } from './state.js';
 import { $ } from './dom.js';
 import { autoResizeTextarea } from './utils.js';
+import { t } from './i18n.js';
 import {
   appendChatMsg, createAssistantTurn, sendChatStream,
   _appendContinueButton,
@@ -127,7 +128,7 @@ export function submitSessionAi(prompt) {
       state.sessionAiLoading = false;
       state.sessionAiHandle = null;
       _setSessionAiButton(false);
-      const reply = (partialText || "") + "\n\n*(已停止)*";
+      const reply = (partialText || "") + "\n\n*" + t("chat.stopped") + "*";
       cache.messages.push({role: "assistant", content: reply});
       const { saveChatToStorage } = await import('./evolve-page.js');
       saveChatToStorage();
@@ -141,8 +142,8 @@ export function submitSessionAi(prompt) {
 export function _setSessionAiButton(loading) {
   const btn = $("#session-ai-send");
   if (!btn) return;
-  if (loading) { btn.textContent = "■ Stop"; btn.classList.add("btn-stop"); }
-  else { btn.textContent = "Send"; btn.classList.remove("btn-stop"); }
+  if (loading) { btn.textContent = t("common.stop"); btn.classList.add("btn-stop"); }
+  else { btn.textContent = t("common.send"); btn.classList.remove("btn-stop"); }
 }
 
 export function _stopSessionAi() {
