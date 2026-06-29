@@ -26,11 +26,11 @@
 
 <div align="center">
 
-<a href="docs/video/full-demo.mp4">
+<a href="https://raw.githubusercontent.com/QuantaAlpha/Distill_Yourself/main/docs/video/full-demo.mp4">
   <img src="docs/images/readme/demo-preview.jpg" alt="Distill Yourself 演示视频封面" width="720">
 </a>
 
-[点击封面观看完整演示视频（7:33）](docs/video/full-demo.mp4)
+[点击封面观看完整演示视频（7:33）](https://raw.githubusercontent.com/QuantaAlpha/Distill_Yourself/main/docs/video/full-demo.mp4)
 
 </div>
 

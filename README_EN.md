@@ -26,11 +26,11 @@ Your Claude Code and Codex sessions contain decisions, debugging insights, and p
 
 <div align="center">
 
-<a href="docs/video/full-demo.mp4">
+<a href="https://raw.githubusercontent.com/QuantaAlpha/Distill_Yourself/main/docs/video/full-demo.mp4">
   <img src="docs/images/readme/demo-preview.jpg" alt="Distill Yourself demo video preview" width="720">
 </a>
 
-[Click the preview to watch the full demo video (7:33)](docs/video/full-demo.mp4)
+[Click the preview to watch the full demo video (7:33)](https://raw.githubusercontent.com/QuantaAlpha/Distill_Yourself/main/docs/video/full-demo.mp4)
 
 </div>
 
