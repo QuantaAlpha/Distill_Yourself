@@ -321,8 +321,8 @@
 <body>
   <main>
     <header>
-      <a class="brand" href="../"><span class="brand-mark" aria-hidden="true"></span> Distill Yourself</a>
-      <a class="back-link" href="../">Back to docs</a>
+      <a class="brand" href="https://github.com/QuantaAlpha/Distill_Yourself"><span class="brand-mark" aria-hidden="true"></span> Distill Yourself</a>
+      <a class="back-link" href="https://github.com/QuantaAlpha/Distill_Yourself">Back to docs</a>
     </header>
     <section class="intro" aria-labelledby="title">
       <div class="copy">
@@ -345,7 +345,7 @@
         <div class="stage-title" id="stage-title">Distill Yourself Demo Video</div>
         <div class="stage-status">HD</div>
       </div>
-      <video id="player" controls preload="metadata" playsinline></video>
+      <video id="player" controls preload="none" playsinline></video>
     </section>
     <nav id="playlist" aria-label="Demo videos"></nav>
   </main>
@@ -356,30 +356,35 @@
         title: "Full Demo",
         description: "Complete Distill Yourself walkthrough (7:33).",
         duration: "7:33",
+        poster: "../images/readme/demo-preview.jpg",
         src: "full-demo.mp4"
       },
       "cognitive-model": {
         title: "Cognitive Model",
         description: "Cognitive model demo clip (1:55).",
         duration: "1:55",
+        poster: "../images/readme/twin-cognitive-model.png",
         src: "chapters/cognitive-model.mp4"
       },
       "evolve": {
         title: "Evolve Engine",
         description: "Evolve demo clip (1:55).",
         duration: "1:55",
+        poster: "../images/readme/evolve-rules.png",
         src: "chapters/evolve.mp4"
       },
       "browse-search": {
         title: "Browse & Search",
         description: "Browse and search demo clip (0:55).",
         duration: "0:55",
+        poster: "../images/user-guide/02-session.jpg",
         src: "chapters/browse-search.mp4"
       },
       "insights": {
         title: "Insights",
         description: "Insights demo clip (0:50).",
         duration: "0:50",
+        poster: "../images/readme/insights-heatmap.png",
         src: "chapters/insights.mp4"
       }
     };
@@ -393,7 +398,9 @@
     document.getElementById("description").textContent = video.description;
     document.getElementById("duration").textContent = video.duration;
     document.getElementById("stage-title").textContent = video.title;
-    document.getElementById("player").src = video.src;
+    const player = document.getElementById("player");
+    player.poster = video.poster;
+    player.src = video.src;
 
     const playlist = document.getElementById("playlist");
     for (const [key, item] of Object.entries(videos)) {
