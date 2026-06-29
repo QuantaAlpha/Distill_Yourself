@@ -7,6 +7,7 @@
 import { state } from './state.js';
 import { $, $$, dom, initDom } from './dom.js';
 import { api, initThemeToggle, esc, renderMarkdownSimple, readSseStream, autoResizeTextarea } from './utils.js';
+import { initLocaleToggle, applyI18nDom } from './i18n.js';
 import { renderSessions, renderProjects, updateWelcomeStats, registerSessionDeps } from './sessions.js';
 import { loadSession, applyUserOnlyFilter, registerConversationDeps } from './conversation.js';
 import { doSearch, renderSearchResults, jumpToMessage } from './search.js';
@@ -359,13 +360,24 @@ function bindEvents() {
     }
   });
 
-  // Mobile sidebar toggle
+  // Sidebar toggle — mobile drawer (.open) + desktop collapse (.collapsed)
   const sidebarToggle = $("#sidebar-toggle");
   const sidebarEl = dom.sidebar;
   const sidebarOverlay = $("#sidebar-overlay");
   if (sidebarToggle && sidebarEl) {
+    // Restore desktop collapsed state
+    if (window.innerWidth > 768 && localStorage.getItem("sidebar-collapsed") === "1") {
+      sidebarEl.classList.add("collapsed");
+    }
     const closeSidebar = () => sidebarEl.classList.remove("open");
-    sidebarToggle.addEventListener("click", () => sidebarEl.classList.toggle("open"));
+    sidebarToggle.addEventListener("click", () => {
+      if (window.innerWidth <= 768) {
+        sidebarEl.classList.toggle("open");
+      } else {
+        const collapsed = sidebarEl.classList.toggle("collapsed");
+        localStorage.setItem("sidebar-collapsed", collapsed ? "1" : "0");
+      }
+    });
     if (sidebarOverlay) sidebarOverlay.addEventListener("click", closeSidebar);
     // Close sidebar when a session is selected on mobile
     dom.sessionList.addEventListener("click", (e) => {
@@ -408,6 +420,7 @@ async function pollOnce() {
         api("/api/sessions"),
       ]);
       state.allSessions = sessions;
+      state.allProjects = projects;
       renderProjects(projects);
       renderSessions(sessions);
       dom.searchStats.textContent = `${sessions.length} sessions`;
@@ -493,13 +506,47 @@ function initResizeHandles() {
       handle.addEventListener("pointerup", onUp);
     });
   });
+
+  // Collapse / expand toggle buttons for right-side panels
+  document.querySelectorAll(".panel-toggle[data-toggle]").forEach(btn => {
+    const targetId = btn.dataset.toggle;
+    const collapseKey = `chatview-panel-collapsed-${targetId}`;
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const sync = () => {
+      const collapsed = target.classList.contains("panel-collapsed");
+      btn.textContent = collapsed ? "\u2039" : "\u203a";
+    };
+    // Restore saved collapsed state
+    if (localStorage.getItem(collapseKey) === "1") {
+      target.classList.add("panel-collapsed");
+    }
+    sync();
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const collapsed = target.classList.toggle("panel-collapsed");
+      localStorage.setItem(collapseKey, collapsed ? "1" : "0");
+      sync();
+    });
+    // Prevent the resize drag from starting when pressing the toggle
+    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  });
 }
 
 // ── Init ───────────────────────────────────────────────────────
 async function init() {
   initThemeToggle();
+  initLocaleToggle();
   bindEvents();
   bindWelcomeCards();
+  // Re-render JS-generated UI shell text when locale changes
+  window.addEventListener("localechange", () => {
+    applyI18nDom(document);
+    updateWelcomeStats(state.allSessions, state.allProjects || []);
+    const presetContainer = $("#ai-chat-presets");
+    if (presetContainer && presetContainer.dataset.populated) populateGlobalAiPresets();
+  });
   // Show loading state immediately
   dom.sessionList.innerHTML = '<li class="loading-placeholder"><div class="skeleton-line" style="width:70%"></div><div class="skeleton-line short"></div></li>'.repeat(8);
   dom.searchStats.textContent = "Loading\u2026";
@@ -510,6 +557,7 @@ async function init() {
     api("/api/sessions"),
   ]);
   state.allSessions = sessions;
+  state.allProjects = projects;
   renderProjects(projects);
   renderSessions(sessions);
   dom.searchStats.textContent = `${sessions.length} sessions`;

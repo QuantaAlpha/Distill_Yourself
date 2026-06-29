@@ -14,19 +14,58 @@ export async function api(path) {
   return resp.json();
 }
 
-// ── Theme toggle ─────────────────────────────────────────────────
-export function initThemeToggle() {
+// ── Theme toggle (tri-state: system → light → dark) ──────────
+const THEME_MODE_KEY = "chatview-theme-mode";
+const LEGACY_THEME_KEY = "chatview-theme";
+
+function getStoredThemeMode() {
+  const m = localStorage.getItem(THEME_MODE_KEY);
+  if (m === "system" || m === "light" || m === "dark") return m;
+  const legacy = localStorage.getItem(LEGACY_THEME_KEY);
+  return legacy === "dark" || legacy === "light" ? legacy : "system";
+}
+
+function systemPrefersDark() {
+  return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+
+function resolveTheme(mode) {
+  if (mode === "system") return systemPrefersDark() ? "dark" : "light";
+  return mode;
+}
+
+function themeGlyph(mode) {
+  if (mode === "system") return "◐";
+  return mode === "dark" ? "☀" : "☾";
+}
+
+function applyThemeMode(mode) {
+  document.documentElement.dataset.theme = resolveTheme(mode);
   const btn = $("#theme-toggle");
-  const stored = localStorage.getItem("chatview-theme") || "";
-  const initial = stored || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  document.documentElement.dataset.theme = initial;
-  if (btn) btn.textContent = initial === "dark" ? "☀" : "◐";
+  if (btn) {
+    btn.textContent = themeGlyph(mode);
+    btn.title = `Theme: ${mode}`;
+  }
+}
+
+export function initThemeToggle() {
+  let mode = getStoredThemeMode();
+  applyThemeMode(mode);
+
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => { if (getStoredThemeMode() === "system") applyThemeMode("system"); };
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+
+  const btn = $("#theme-toggle");
   if (!btn) return;
   btn.addEventListener("click", () => {
-    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem("chatview-theme", next);
-    btn.textContent = next === "dark" ? "☀" : "◐";
+    const order = ["system", "light", "dark"];
+    mode = order[(order.indexOf(getStoredThemeMode()) + 1) % order.length];
+    localStorage.setItem(THEME_MODE_KEY, mode);
+    applyThemeMode(mode);
   });
 }
 

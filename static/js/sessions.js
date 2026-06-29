@@ -9,6 +9,9 @@ import { state } from './state.js';
 import { $, dom } from './dom.js';
 import { esc, formatDate } from './utils.js';
 
+// i18n helper: fall back to the live global if module import order differs.
+const _t = (k, v) => (window.t ? window.t(k, v) : k);
+
 // ── Late-bound references to functions in other modules ──────────
 // These are set by the main module via registerSessionDeps() to avoid
 // circular imports.  Inside this file, call e.g. _deps.showView("sessions").
@@ -31,9 +34,9 @@ export function updateWelcomeStats(sessions, projects) {
   const weekAgo = new Date(now - 7 * 86400000);
   const recentCount = sessions.filter(s => s.date && new Date(s.date) >= weekAgo).length;
   container.innerHTML = `
-    <div class="welcome-stat"><span class="welcome-stat-num">${sessions.length}</span><span class="welcome-stat-label">总会话</span></div>
-    <div class="welcome-stat"><span class="welcome-stat-num">${projCount}</span><span class="welcome-stat-label">项目</span></div>
-    <div class="welcome-stat"><span class="welcome-stat-num">${recentCount}</span><span class="welcome-stat-label">近 7 天</span></div>
+    <div class="welcome-stat"><span class="welcome-stat-num">${sessions.length}</span><span class="welcome-stat-label">${_t("welcome.stat.sessions")}</span></div>
+    <div class="welcome-stat"><span class="welcome-stat-num">${projCount}</span><span class="welcome-stat-label">${_t("welcome.stat.projects")}</span></div>
+    <div class="welcome-stat"><span class="welcome-stat-num">${recentCount}</span><span class="welcome-stat-label">${_t("welcome.stat.recent")}</span></div>
   `;
 }
 

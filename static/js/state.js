@@ -4,6 +4,7 @@
  */
 export const state = {
   allSessions: [],
+  allProjects: [],
   currentProject: null,
   currentSessionId: null,
   userOnlyMode: false,

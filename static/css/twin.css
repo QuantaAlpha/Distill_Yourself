@@ -295,7 +295,7 @@
   border-radius: 1px;
 }
 .twin-pipeline-header {
-  display: flex; align-items: center; gap: 8px; padding: 10px 16px; margin-bottom: 20px; margin-left: -40px;
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px; margin-bottom: 20px;
   background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius);
   font-size: 13px; color: var(--text-muted); flex-wrap: wrap;
 }
