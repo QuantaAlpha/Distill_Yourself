@@ -15,6 +15,10 @@ docs/*
 !docs/images/
 !docs/images/community/
 !docs/images/community/wechat.png
+!docs/video/
+!docs/video/full-demo.mp4
+!docs/video/chapters/
+!docs/video/chapters/*.mp4
 .planning/
 AGENTS.md
 DESIGN.md
