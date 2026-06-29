@@ -96,11 +96,12 @@ The namesake feature. Analyzes your full conversation history across three layer
 
 The model includes a generated cognitive avatar and a one-line persona summary. Everything is traceable — click any trait to see the judgment cards and raw evidence behind it. Use it to understand what your future AI sessions should remember about how you think and decide.
 
-![Cognitive Model — avatar, evidence events, judgment cards, and traits](docs/images/readme/twin-cognitive-model.png)
-
 The Runtime Pack compiles these traits into a concise, readable summary of who you are as a developer — ready to be synced into your AI's config.
 
-![Runtime Pack — cognitive traits compiled into a developer summary](docs/images/readme/twin-runtime-pack.png)
+<p align="center">
+  <img src="docs/images/readme/twin-cognitive-model.png" alt="Cognitive Model — avatar, evidence events, judgment cards, and traits" height="260">
+  <img src="docs/images/readme/twin-runtime-pack.png" alt="Runtime Pack — cognitive traits compiled into a developer summary" height="260">
+</p>
 
 [▶ Watch the Cognitive Model demo clip (1:55)](docs/video/chapters/cognitive-model.mp4)
 
@@ -116,9 +117,10 @@ Analyzes recurring preferences, corrections, and work patterns, then prepares co
 | **Signals** | Are corrections increasing or decreasing over time |
 | **Patterns** | What problems keep recurring (bubble clusters + suggestions) |
 
-![Evolve Memory — preference graph with evidence cards](docs/images/user-guide/04-evolve-memory.jpg)
-
-![Evolve Rules — P0/P1/P2 with frequency and evidence](docs/images/readme/evolve-rules.png)
+<p align="center">
+  <img src="docs/images/user-guide/04-evolve-memory.jpg" alt="Evolve Memory — preference graph with evidence cards" height="260">
+  <img src="docs/images/readme/evolve-rules.png" alt="Evolve Rules — P0/P1/P2 with frequency and evidence" height="260">
+</p>
 
 [▶ Watch the Evolve demo clip (1:55)](docs/video/chapters/evolve.mp4)
 
