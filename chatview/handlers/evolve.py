@@ -20,7 +20,7 @@ _DIRECT_TABS = set()
 _AI_TABS = {"profile", "memory", "rules", "signals", "patterns"}
 
 
-def _get_evolve_tab(handler, tab: str, refresh: bool, source: str, date: str, project: str, engine: str = "auto") -> dict:
+def _get_evolve_tab(handler, tab: str, refresh: bool, source: str, date: str, project: str, engine: str = "auto", lang: str = "zh") -> dict:
     """Get evolve tab data: serve DB cache or run AI engine to generate."""
     from chatview import db as _db
     try:
@@ -40,7 +40,7 @@ def _get_evolve_tab(handler, tab: str, refresh: bool, source: str, date: str, pr
     if tab in _DIRECT_TABS:
         return _evolve_direct(handler, tab, source, date, project)
     else:
-        return _evolve_via_ai(handler, tab, source, date, project, engine)
+        return _evolve_via_ai(handler, tab, source, date, project, engine, lang)
 
 
 def _evolve_direct(handler, tab: str, source: str, date: str, project: str) -> dict:
@@ -68,11 +68,11 @@ def _evolve_direct(handler, tab: str, source: str, date: str, project: str) -> d
     return fallbacks.get(tab, {})
 
 
-def _evolve_via_ai(handler, tab: str, source: str, date: str, project: str, engine: str = "auto") -> dict:
+def _evolve_via_ai(handler, tab: str, source: str, date: str, project: str, engine: str = "auto", lang: str = "zh") -> dict:
     """Run AI engine to analyze conversations; AI writes result to SQLite via evolve-write CLI."""
     from chatview import db as _db
     cli_path = str(Path(__file__).parents[1].parent / "analyze.py")
-    prompt = _build_evolve_prompt(handler, tab, source, date, project, cli_path, engine)
+    prompt = _build_evolve_prompt(handler, tab, source, date, project, cli_path, engine, lang)
 
     try:
         _run_ai_engine(prompt, allow_write=True, timeout=600, engine_override=engine)
@@ -92,7 +92,7 @@ def _evolve_via_ai(handler, tab: str, source: str, date: str, project: str, engi
     return _evolve_fallback(handler, tab, f"{engine_name} did not produce valid output")
 
 
-def _handle_evolve_stream(handler, tab: str, source: str, date: str, project: str, engine: str = "auto"):
+def _handle_evolve_stream(handler, tab: str, source: str, date: str, project: str, engine: str = "auto", lang: str = "zh"):
     """SSE streaming for AI evolve tabs (profile/memory)."""
     from chatview import db as _db
     try:
@@ -102,7 +102,7 @@ def _handle_evolve_stream(handler, tab: str, source: str, date: str, project: st
         _sse_event(handler,{"type": "error", "message": str(e)})
         return
     cli_path = str(Path(__file__).parents[1].parent / "analyze.py")
-    prompt = _build_evolve_prompt(handler, tab, source, date, project, cli_path, engine)
+    prompt = _build_evolve_prompt(handler, tab, source, date, project, cli_path, engine, lang)
 
     _start_sse(handler)
     stream = _run_ai_engine_stream(prompt, allow_write=True, timeout=600, engine_override=engine)
@@ -196,7 +196,7 @@ def _collect_aggregates(handler) -> str:
         return ""
 
 
-def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str, cli_path: str, engine: str = "auto") -> str:
+def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str, cli_path: str, engine: str = "auto", lang: str = "zh") -> str:
     """Build a prompt that instructs the AI to progressively explore data via CLI tools."""
     cli_flags = f"--date {date} --source {source}"
     if project:
@@ -364,6 +364,22 @@ def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str
         ])
 
     if tab == "profile":
+        en = lang == "en"
+        cat_name = "category name" if en else "分类名"
+        desc_name = "specific description" if en else "具体描述"
+        dim_name = "dimension" if en else "领域"
+        evidence_name = "brief evidence" if en else "简述依据"
+        cat_directions = (
+            "Category directions (reference): professional identity, work style, AI collaboration preferences, "
+            "communication habits, technical aesthetics, engineering standards, etc."
+            if en else
+            "分类方向（参考，不限于此）：职业身份、工作风格、AI协作偏好、沟通与决策习惯、技术审美、工程标准等"
+        )
+        lang_rule = (
+            "- All content in English. Do not quote user's original words directly."
+            if en else
+            "- 所有内容用中文，不需要引用用户原话"
+        )
         parts.extend([
             "TASK: Build a USER PROFILE — about the PERSON, not their projects.",
             "Profile should cover: who they are, how they work, what they care about, their style and preferences.",
@@ -371,18 +387,25 @@ def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str
             "",
             f"Write result via: {write_cmd} --mode replace <<'EVOLVE_EOF'",
             "JSON schema:",
-            '{"categories": [{"name": "分类名", "icon": "emoji", "tags": ["标签"],',
-            '  "items": [{"text": "具体描述", "confidence": "high|medium|low"}]}],',
-            ' "radar": {"dimensions": [{"name": "领域", "score": 0.0-1.0, "evidence": "简述依据"}]}}',
+            '{' + f'"categories": [{{"name": "{cat_name}", "icon": "emoji", "tags": ["标签"],',
+            f'  "items": [{{"text": "{desc_name}", "confidence": "high|medium|low"}}]}}],',
+            f' "radar": {{"dimensions": [{{"name": "{dim_name}", "score": 0.0-1.0, "evidence": "{evidence_name}"}}]}}' + '}',
             "",
-            "分类方向（参考，不限于此）：职业身份、工作风格、AI协作偏好、沟通与决策习惯、技术审美、工程标准等",
+            cat_directions,
             "质量要求：",
             "- 6-8 categories, 30+ items, 丰富的 tags",
             "- items 要具体，提到行为模式和偏好，不要泛泛概括",
             "- 示例：✗「用户关注前端开发」 ✓「反复要求仿 ChatGPT 消息流式布局，重视工具卡片折叠、自动滚动等交互细节」",
-            "- 所有内容用中文，不需要引用用户原话",
+            lang_rule,
         ])
     elif tab == "memory":
+        en = lang == "en"
+        trigger_ex = "what scenario triggers this memory" if en else "什么场景触发这条记忆"
+        instruction_ex = "what AI should do" if en else "AI 应该怎么做"
+        avoid_ex = "what AI should not do (can be empty)" if en else "AI 不应该做什么(可为空字符串)"
+        content_ex = "full description (backward-compatible, can be generated from trigger+instruction)" if en else "完整描述(向后兼容,可从trigger+instruction生成)"
+        quote_ex = "user's original words" if en else "用户原话"
+        lang_rule = "- All descriptions in English" if en else "- 所有描述用中文"
         parts.extend([
             "TASK: Extract EXECUTABLE behavioral preferences as a memory network.",
             "",
@@ -399,12 +422,12 @@ def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str
             '  "status": "active", "scope": "coding|review|design|research|all"}],',
             ' "links": [{"source": "m1", "target": "m2", "strength": 0.0-1.0, "relation": "supports|conflicts|refines"}],',
             ' "cards": [{"id": "m1",',
-            '  "trigger": "什么场景触发这条记忆",',
-            '  "instruction": "AI 应该怎么做",',
-            '  "avoid": "AI 不应该做什么(可为空字符串)",',
-            '  "content": "完整描述(向后兼容,可从trigger+instruction生成)",',
+            f'  "trigger": "{trigger_ex}",',
+            f'  "instruction": "{instruction_ex}",',
+            f'  "avoid": "{avoid_ex}",',
+            f'  "content": "{content_ex}",',
             '  "firstSeen": "YYYY-MM-DD", "lastSeen": "YYYY-MM-DD",',
-            '  "evidence": [{"quote": "用户原话", "sessionId": "session-id", "date": "YYYY-MM-DD"}],',
+            f'  "evidence": [{{"quote": "{quote_ex}", "sessionId": "session-id", "date": "YYYY-MM-DD"}}],',
             '  "conflictsWith": ["m6"]}]}',
             "```",
             "",
@@ -420,9 +443,13 @@ def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str
             "- 矛盾处理：发现两条 memory 表面冲突时，用 trigger 区分适用场景，用 conflictsWith 标注关联",
             "  例：'先方案后执行' 和 '端到端自主授权' 不冲突——前者适用于开放设计任务，后者适用于用户明确授权时",
             "- 只提取跨项目通用的偏好",
-            "- 所有描述用中文",
+            lang_rule,
         ])
     elif tab == "rules":
+        en = lang == "en"
+        rule_title = "rule title" if en else "规则标题"
+        source_scenario = "source scenario" if en else "来源场景"
+        quote_ex = "user's original words" if en else "用户原话"
         # Same prompt as the "规则生成" preset in app.js
         parts.extend([
             "分析所有对话中用户纠正AI的场景，自动生成CLAUDE.md规则。",
@@ -446,10 +473,15 @@ def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str
             f"最终结果通过以下命令写入：{write_cmd} --mode replace <<'EVOLVE_EOF'",
             "JSON schema:",
             '{"rules": [{"id": "r1", "priority": "P0|P1|P2", "category": "准确性|风格|范围|工作流",',
-            '  "rule": "规则标题", "why": "来源场景", "frequency": N,',
-            '  "evidence": [{"quote": "用户原话", "session": "session-id"}]}]}',
+            f'  "rule": "{rule_title}", "why": "{source_scenario}", "frequency": N,',
+            f'  "evidence": [{{"quote": "{quote_ex}", "session": "session-id"}}]}}]}}',
         ])
     elif tab == "signals":
+        en = lang == "en"
+        user_quote_ex = "user's original words" if en else "用户原话"
+        ai_issue_ex = "what AI did wrong" if en else "AI做错了什么"
+        correction_ex = "what should be done" if en else "应该怎么做"
+        lang_rule = "- All descriptions in English" if en else "- 所有描述用中文"
         parts.extend([
             "TASK: 提取用户纠正 AI 的信号事件，构建纠正时间线。",
             "",
@@ -469,15 +501,21 @@ def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str
             '{"timeline": [{"date": "YYYY-MM-DD", "counts": {"style": N, "scope": N, "accuracy": N, "workflow": N}}],',
             ' "events": [{"id": "s1", "date": "YYYY-MM-DD", "session": "session-id",',
             '   "type": "style|scope|accuracy|workflow|overengineering",',
-            '   "userQuote": "用户原话", "aiIssue": "AI做错了什么", "correction": "应该怎么做",',
+            f'   "userQuote": "{user_quote_ex}", "aiIssue": "{ai_issue_ex}", "correction": "{correction_ex}",',
             '   "linkedRule": null}]}',
             "",
             "质量要求：",
             "- events 按时间倒序，每个附 session ID + 用户原话",
             "- timeline 覆盖查询日期范围内每天的统计",
-            "- 所有描述用中文",
+            lang_rule,
         ])
     elif tab == "patterns":
+        en = lang == "en"
+        pattern_name = "pattern name" if en else "模式名称"
+        detail_desc = "detailed description" if en else "详细描述"
+        cost_ex = "estimated impact" if en else "估算影响"
+        suggestion_ex = "improvement suggestion" if en else "改进建议"
+        lang_rule = "- All content in English" if en else "- 所有内容用中文"
         parts.extend([
             "TASK: 发现用户与 AI 协作中的重复模式 — 反复出现的问题、低效环节、知识盲区。",
             "",
@@ -495,17 +533,17 @@ def _build_evolve_prompt(handler, tab: str, source: str, date: str, project: str
             "",
             f"最终结果通过以下命令写入：{write_cmd} --mode replace <<'EVOLVE_EOF'",
             "JSON schema:",
-            '{"bubbles": [{"id": "p1", "label": "模式名称", "type": "error|efficiency|knowledge_gap|workflow",',
+            '{' + f'"bubbles": [{{"id": "p1", "label": "{pattern_name}", "type": "error|efficiency|knowledge_gap|workflow",',
             '   "frequency": N, "trend": "increasing|stable|decreasing"}],',
-            ' "cards": [{"id": "p1", "description": "详细描述", "frequency": N,',
-            '   "trend": "increasing|stable|decreasing", "cost": "估算影响",',
-            '   "suggestion": "改进建议", "sessions": ["session-id"]}]}',
+            f' "cards": [{{"id": "p1", "description": "{detail_desc}", "frequency": N,',
+            f'   "trend": "increasing|stable|decreasing", "cost": "{cost_ex}",',
+            f'   "suggestion": "{suggestion_ex}", "sessions": ["session-id"]}}]' + '}',
             "",
             "质量要求：",
             "- bubbles 和 cards 的 id 一一对应",
             "- 每个模式附具体 session 引用",
             "- 关注真正反复出现的模式（≥2次），不要列一次性事件",
-            "- 所有内容用中文",
+            lang_rule,
         ])
 
     parts.extend([

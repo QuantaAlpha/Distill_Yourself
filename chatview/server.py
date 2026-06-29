@@ -135,11 +135,12 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 date = params.get("date", ["7d"])[0]
                 project = params.get("project", [""])[0]
                 engine = params.get("engine", ["auto"])[0]
+                lang = params.get("lang", ["zh"])[0]
                 stream = params.get("stream", ["0"])[0] == "1"
                 if stream and tab in _AI_TABS:
-                    _handle_evolve_stream(self, tab, source, date, project, engine)
+                    _handle_evolve_stream(self, tab, source, date, project, engine, lang)
                 else:
-                    _json_response(self, _get_evolve_tab(self, tab, refresh, source, date, project, engine))
+                    _json_response(self, _get_evolve_tab(self, tab, refresh, source, date, project, engine, lang))
         # --- Cognitive Handbook (Digital Twin) endpoints ---
         elif path == "/api/twin/stats":
             _json_response(self, _db.get_twin_stats())

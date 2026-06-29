@@ -13,6 +13,7 @@ import {
   appendChatMsg, createAssistantTurn, sendChatStream,
   _appendContinueButton,
 } from './chat.js';
+import { t, getLang } from './lang.js';
 
 // Forward-import saveChatToStorage lazily to avoid circular deps with evolve-page.js
 // (both session-ai and evolve-page use saveChatToStorage, which lives in evolve-page).
@@ -82,7 +83,7 @@ export function submitSessionAi(prompt) {
   _setSessionAiButton(true);
   const assistantTurn = state.currentSessionId === targetSessionId
     ? createAssistantTurn(container) : null;
-  const handle = sendChatStream(text, "session", targetSessionId, undefined, cache.messages.slice(0, -1));
+  const handle = sendChatStream(text, "session", targetSessionId, { lang: getLang() }, cache.messages.slice(0, -1));
   state.sessionAiHandle = handle;
   handle
     .onText(chunk => {
@@ -106,7 +107,7 @@ export function submitSessionAi(prompt) {
       saveChatToStorage();
       if (assistantTurn && state.currentSessionId === targetSessionId) {
         assistantTurn.finalize(reply);
-        if (isTimeout) _appendContinueButton(container, () => submitSessionAi("继续"));
+        if (isTimeout) _appendContinueButton(container, () => submitSessionAi(t('chat.continue')));
       }
     })
     .onError(async (msg) => {
@@ -127,13 +128,13 @@ export function submitSessionAi(prompt) {
       state.sessionAiLoading = false;
       state.sessionAiHandle = null;
       _setSessionAiButton(false);
-      const reply = (partialText || "") + "\n\n*(已停止)*";
+      const reply = (partialText || "") + "\n\n" + t('chat.stopped');
       cache.messages.push({role: "assistant", content: reply});
       const { saveChatToStorage } = await import('./evolve-page.js');
       saveChatToStorage();
       if (assistantTurn && state.currentSessionId === targetSessionId) {
         assistantTurn.finalize(reply);
-        _appendContinueButton(container, () => submitSessionAi("继续"));
+        _appendContinueButton(container, () => submitSessionAi(t('chat.continue')));
       }
     });
 }

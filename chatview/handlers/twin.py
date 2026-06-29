@@ -106,6 +106,19 @@ def _run_twin_ai_stage(handler, prompt: str, stage_label: str) -> bool:
 def _handle_twin_analyze(handler):
     """POST /api/twin/analyze — run 4-stage cognitive handbook extraction via AI."""
     from chatview import db as _db
+    from chatview.handlers.base import _read_post_body
+    import json as _json
+
+    # Read lang from POST body if provided
+    raw = _read_post_body(handler)
+    lang = "zh"
+    if raw:
+        try:
+            body = _json.loads(raw)
+            lang = body.get("lang", "zh")
+        except Exception:
+            pass
+    en = lang == "en"
 
     cli_path = str(Path(__file__).resolve().parent.parent.parent / "analyze.py")
     run_id = "run_" + uuid.uuid4().hex[:12]
@@ -114,7 +127,8 @@ def _handle_twin_analyze(handler):
     _sse_event(handler, {"type": "text", "content": f"Twin run_id: {run_id}\n"})
 
     # Stage 1: Evidence event extraction
-    _sse_event(handler, {"type": "text", "content": "Stage 1/5: 从对话历史中提取决策事件 (Evidence Events)...\n"})
+    stage1_msg = "Stage 1/5: Extracting decision events (Evidence Events)...\n" if en else "Stage 1/5: 从对话历史中提取决策事件 (Evidence Events)...\n"
+    _sse_event(handler, {"type": "text", "content": stage1_msg})
 
     stage1_prompt = _build_twin_stage1_prompt(handler, cli_path, run_id)
     try:
@@ -124,7 +138,8 @@ def _handle_twin_analyze(handler):
         return
 
     # Stage 2: Judgment card distillation
-    _sse_event(handler, {"type": "text", "content": "\n\nStage 2/5: 从事件中蒸馏判断卡 (Judgment Cards)...\n"})
+    stage2_msg = "\n\nStage 2/5: Distilling judgment cards...\n" if en else "\n\nStage 2/5: 从事件中蒸馏判断卡 (Judgment Cards)...\n"
+    _sse_event(handler, {"type": "text", "content": stage2_msg})
 
     stage2_prompt = _build_twin_stage2_prompt(handler, cli_path, run_id)
     try:
@@ -134,7 +149,8 @@ def _handle_twin_analyze(handler):
         return
 
     # Stage 3: Cognitive trait inference
-    _sse_event(handler, {"type": "text", "content": "\n\nStage 3/5: 从判断卡归纳认知特质 (Cognitive Traits)...\n"})
+    stage3_msg = "\n\nStage 3/5: Inferring cognitive traits...\n" if en else "\n\nStage 3/5: 从判断卡归纳认知特质 (Cognitive Traits)...\n"
+    _sse_event(handler, {"type": "text", "content": stage3_msg})
 
     stage3_prompt = _build_twin_stage3_prompt(handler, cli_path, run_id)
     try:
@@ -144,7 +160,8 @@ def _handle_twin_analyze(handler):
         return
 
     # Stage 4: Compile Runtime Pack (pure Python, no AI)
-    _sse_event(handler, {"type": "text", "content": "\n\nStage 4/5: 编译 Runtime Pack (twin-compile)...\n"})
+    stage4_msg = "\n\nStage 4/5: Compiling Runtime Pack...\n" if en else "\n\nStage 4/5: 编译 Runtime Pack (twin-compile)...\n"
+    _sse_event(handler, {"type": "text", "content": stage4_msg})
     try:
         r = subprocess.run(
             [sys.executable, cli_path, "twin-compile", "--run-id", run_id],
@@ -160,13 +177,16 @@ def _handle_twin_analyze(handler):
         return
 
     # Stage 5: AI-based cognitive avatar selection
-    _sse_event(handler, {"type": "text", "content": "\n\nStage 5/5: 匹配认知模型头像...\n"})
+    stage5_msg = "\n\nStage 5/5: Matching cognitive model avatar...\n" if en else "\n\nStage 5/5: 匹配认知模型头像...\n"
+    _sse_event(handler, {"type": "text", "content": stage5_msg})
     try:
         avatar = _select_cognitive_avatar(force=True, run_id=run_id)
         if avatar:
-            _sse_event(handler, {"type": "text", "content": f"匹配结果: {avatar.get('model_name','')} ({avatar.get('persona_id','')})"})
+            match_prefix = "Match result" if en else "匹配结果"
+            _sse_event(handler, {"type": "text", "content": f"{match_prefix}: {avatar.get('model_name','')} ({avatar.get('persona_id','')})"})
         else:
-            _sse_event(handler, {"type": "text", "content": "未能匹配认知模型（可稍后重试）"})
+            no_match_msg = "Failed to match cognitive model (can retry later)" if en else "未能匹配认知模型（可稍后重试）"
+            _sse_event(handler, {"type": "text", "content": no_match_msg})
     except Exception as e:
         _sse_event(handler, {"type": "text", "content": f"头像匹配跳过: {e}"})
 
@@ -180,9 +200,11 @@ def _handle_twin_analyze(handler):
             label = t.replace("_", " ")
             summary_parts.append(f"{label}: {count}")
 
-    summary = ", ".join(summary_parts) if summary_parts else "暂无数据"
+    no_data_msg = "No data" if en else "暂无数据"
+    summary = ", ".join(summary_parts) if summary_parts else no_data_msg
+    complete_msg = "Analysis complete" if en else "分析完成"
     try:
-        _sse_event(handler, {"type": "text", "content": f"\n\n✅ 分析完成 — {summary}"})
+        _sse_event(handler, {"type": "text", "content": f"\n\n✅ {complete_msg} — {summary}"})
         _sse_event(handler, {"type": "done", "content": summary})
     except BrokenPipeError:
         pass

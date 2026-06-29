@@ -24,7 +24,7 @@
         <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
         </svg>
-        <input type="text" id="global-search" placeholder="搜索对话内容…" autocomplete="off">
+        <input type="text" id="global-search" placeholder="搜索对话内容…" data-i18n-placeholder="search.placeholder" autocomplete="off">
         <span id="search-stats" class="search-stats"></span>
         <kbd class="kbd-hint">/</kbd>
       </div>
@@ -32,6 +32,11 @@
         <select id="global-engine-select" title="AI Engine">
           <option value="claude">Claude</option>
         </select>
+        <div id="lang-toggle" class="lang-toggle" title="Language">
+          <button class="lang-opt" data-lang="zh">中</button>
+          <button class="lang-opt" data-lang="en">EN</button>
+          <span class="lang-slider"></span>
+        </div>
         <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">◐</button>
       </div>
     </header>
@@ -113,7 +118,7 @@
                 </div>
                 <div>
                   <h2 class="welcome-title">Chat Viewer</h2>
-                  <p class="welcome-subtitle">浏览和分析你的 AI 对话历史</p>
+                  <p class="welcome-subtitle" data-i18n="welcome.subtitle">浏览和分析你的 AI 对话历史</p>
                 </div>
               </div>
               <div class="welcome-stats" id="welcome-stats"></div>
@@ -125,7 +130,7 @@
                 </div>
                 <div>
                   <span class="welcome-card-title">Sessions</span>
-                  <span class="welcome-card-desc">按项目、来源和时间快速定位历史上下文。</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.sessions.desc">按项目、来源和时间快速定位历史上下文。</span>
                 </div>
               </button>
               <button class="welcome-card welcome-primary-card" data-action="ai">
@@ -134,7 +139,7 @@
                 </div>
                 <div>
                   <span class="welcome-card-title">AI Evolve</span>
-                  <span class="welcome-card-desc">生成画像、记忆、规则和协作模式。</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.evolve.desc">生成画像、记忆、规则和协作模式。</span>
                 </div>
               </button>
               <button class="welcome-card welcome-primary-card" data-action="twin">
@@ -143,13 +148,13 @@
                 </div>
                 <div>
                   <span class="welcome-card-title">Distill Yourself</span>
-                  <span class="welcome-card-desc">把判断卡和认知特质压缩成上下文包。</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.twin.desc">把判断卡和认知特质压缩成上下文包。</span>
                 </div>
               </button>
             </div>
             <div class="welcome-tools-head">
               <span>Insights</span>
-              <span>低成本查看使用模式、文件热点和代码资产</span>
+              <span data-i18n="welcome.insights.subtitle">低成本查看使用模式、文件热点和代码资产</span>
             </div>
             <div class="welcome-tool-grid">
               <button class="welcome-card welcome-tool-card" data-action="heatmap">
@@ -157,8 +162,8 @@
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 </div>
                 <div>
-                  <span class="welcome-card-title">工具热力图</span>
-                  <span class="welcome-card-desc">各工具使用频率趋势</span>
+                  <span class="welcome-card-title" data-i18n="welcome.heatmap.title">工具热力图</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.heatmap.desc">各工具使用频率趋势</span>
                 </div>
               </button>
               <button class="welcome-card welcome-tool-card" data-action="hotspots">
@@ -166,8 +171,8 @@
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 </div>
                 <div>
-                  <span class="welcome-card-title">文件热点</span>
-                  <span class="welcome-card-desc">最常操作的文件排行</span>
+                  <span class="welcome-card-title" data-i18n="welcome.hotspots.title">文件热点</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.hotspots.desc">最常操作的文件排行</span>
                 </div>
               </button>
               <button class="welcome-card welcome-tool-card" data-action="errors">
@@ -175,8 +180,8 @@
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 </div>
                 <div>
-                  <span class="welcome-card-title">错误模式</span>
-                  <span class="welcome-card-desc">高频报错归类分析</span>
+                  <span class="welcome-card-title" data-i18n="welcome.errors.title">错误模式</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.errors.desc">高频报错归类分析</span>
                 </div>
               </button>
               <button class="welcome-card welcome-tool-card" data-action="profile">
@@ -184,8 +189,8 @@
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
                 <div>
-                  <span class="welcome-card-title">用户画像</span>
-                  <span class="welcome-card-desc">AI 分析你的技术偏好</span>
+                  <span class="welcome-card-title" data-i18n="welcome.profile.title">用户画像</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.profile.desc">AI 分析你的技术偏好</span>
                 </div>
               </button>
               <button class="welcome-card welcome-tool-card" data-action="health">
@@ -193,8 +198,8 @@
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 </div>
                 <div>
-                  <span class="welcome-card-title">项目健康</span>
-                  <span class="welcome-card-desc">跨项目活跃度对比</span>
+                  <span class="welcome-card-title" data-i18n="welcome.health.title">项目健康</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.health.desc">跨项目活跃度对比</span>
                 </div>
               </button>
               <button class="welcome-card welcome-tool-card" data-action="snippets">
@@ -202,8 +207,8 @@
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                 </div>
                 <div>
-                  <span class="welcome-card-title">代码片段</span>
-                  <span class="welcome-card-desc">对话中产生的代码集锦</span>
+                  <span class="welcome-card-title" data-i18n="welcome.snippets.title">代码片段</span>
+                  <span class="welcome-card-desc" data-i18n="welcome.snippets.desc">对话中产生的代码集锦</span>
                 </div>
               </button>
             </div>
@@ -227,21 +232,21 @@
           <div id="twin-header">
             <div id="twin-breadcrumb"><span class="twin-bc-root">Distill Yourself</span></div>
             <div id="twin-actions">
-              <span id="twin-last-analyzed">尚未分析</span>
-              <button id="twin-btn-progress" class="btn-text hidden">📊 查看进度</button>
+              <span id="twin-last-analyzed" data-i18n="twin.notAnalyzed">尚未分析</span>
+              <button id="twin-btn-progress" class="btn-text hidden" data-i18n="twin.viewProgress">📊 查看进度</button>
               <button id="twin-btn-analyze" class="btn-text">🔄 Analyze</button>
               <button id="twin-btn-sync" class="btn-text">📤 Sync</button>
             </div>
           </div>
           <div id="twin-body">
-            <div id="twin-persona-card" role="button" tabindex="0" title="点击打开 Runtime Pack">
-              <div id="twin-persona-avatar" role="button" tabindex="0" title="选择认知类型">
+            <div id="twin-persona-card" role="button" tabindex="0" data-i18n-title="twin.openPack" title="点击打开 Runtime Pack">
+              <div id="twin-persona-avatar" role="button" tabindex="0" data-i18n-title="twin.selectType" title="选择认知类型">
                 <img id="twin-persona-img" src="" alt="Cognitive avatar" />
               </div>
               <div id="twin-persona-copy">
                 <div id="twin-persona-kicker">Cognitive Model</div>
-                <div id="twin-persona-title">等待认知模型</div>
-                <div id="twin-persona-subtitle">点击 Analyze 后匹配认知模型</div>
+                <div id="twin-persona-title" data-i18n="twin.awaitModel">等待认知模型</div>
+                <div id="twin-persona-subtitle" data-i18n="twin.awaitModelHint">点击 Analyze 后匹配认知模型</div>
                 <div id="twin-persona-traits"></div>
                 <div id="twin-persona-card-hint">Change avatar →</div>
               </div>
@@ -274,7 +279,7 @@
               </div>
               <div id="evolve-tab-content">
                 <div id="evolve-tab-header">
-                  <span id="evolve-tab-updated">尚未分析</span>
+                  <span id="evolve-tab-updated" data-i18n="evolve.notAnalyzed">尚未分析</span>
                   <button id="evolve-tab-refresh" class="btn-text">🔄 Refresh</button>
                   <button id="evolve-refresh-all" class="btn-text">🔄 All</button>
                   <button id="evolve-tab-sync" class="btn-text" disabled>📤 Sync</button>
@@ -282,7 +287,7 @@
                 <div id="evolve-sync-panel" class="hidden"></div>
                 <div id="evolve-tab-body">
                   <div class="evolve-empty-state">
-                    <p>点击刷新，开始分析最近的对话</p>
+                    <p data-i18n="evolve.emptyHint">点击刷新，开始分析最近的对话</p>
                   </div>
                 </div>
               </div>
@@ -296,7 +301,7 @@
               <div id="ai-chat-presets" class="preset-grid preset-grid-1col"></div>
               <div id="ai-chat-messages"></div>
               <div id="ai-chat-input-area">
-                <textarea id="ai-chat-input" placeholder="输入跨会话分析需求…" rows="1"></textarea>
+                <textarea id="ai-chat-input" placeholder="输入跨会话分析需求…" data-i18n-placeholder="ai.inputPlaceholder" rows="1"></textarea>
                 <button id="ai-chat-send">Send</button>
               </div>
             </div>
@@ -338,32 +343,32 @@
                 <div id="session-ai-presets" class="preset-grid preset-grid-1col">
                   <button class="preset-card" data-prompt="梳理本次对话的核心需求和目标。&#10;&#10;**工作流**：&#10;1. 运行 `read -s <session_id>` 获取对话摘要（用户消息+结论）&#10;2. 运行 `queries --session <session_id>` 提取所有用户原始输入&#10;3. 综合分析需求演变&#10;&#10;**输出格式**：&#10;- **背景**：一句话描述场景&#10;- **需求列表**（每条标注 ✅已完成 / 🔄进行中 / ❌未开始）：需求描述 | 验收标准&#10;- **需求变更**：对话中需求变化及原因&#10;- **遗漏风险**：可能被忽略的隐含需求">
                     <span class="preset-icon">📋</span>
-                    <div class="preset-info"><span class="preset-title">需求梳理</span><span class="preset-desc">提取需求列表，标注完成状态和优先级</span></div>
+                    <div class="preset-info"><span class="preset-title" data-i18n="preset.session.requirements.title">需求梳理</span><span class="preset-desc" data-i18n="preset.session.requirements.desc">提取需求列表，标注完成状态和优先级</span></div>
                   </button>
                   <button class="preset-card" data-prompt="提取本次对话中的技术决策和方案选择。&#10;&#10;**工作流**：&#10;1. 运行 `read -s <session_id>` 获取对话全貌&#10;2. 运行 `queries --session <session_id> -k 决定` 和 `-k 方案` 定位决策消息&#10;3. 对关键段落运行 `read <session_id>` 看完整上下文&#10;&#10;**输出格式**：每个决策点按 ADR 格式：&#10;1. ⭐ 决策问题&#10;2. 考虑的方案（含被否决的及原因）&#10;3. 最终选择及理由&#10;4. 潜在风险或后续影响&#10;按重要性排序，关键决策标 ⭐">
                     <span class="preset-icon">🎯</span>
-                    <div class="preset-info"><span class="preset-title">决策提取</span><span class="preset-desc">技术决策、方案选择及理由</span></div>
+                    <div class="preset-info"><span class="preset-title" data-i18n="preset.session.decisions.title">决策提取</span><span class="preset-desc" data-i18n="preset.session.decisions.desc">技术决策、方案选择及理由</span></div>
                   </button>
                   <button class="preset-card" data-prompt="提取本次对话中的所有问题和错误。&#10;&#10;**工作流**：&#10;1. 运行 `read <session_id>` 获取完整对话（含工具调用摘要）&#10;2. 关注 [tools: ...] 段落附近的错误上下文&#10;3. 运行 `queries --session <session_id> -k 错` 和 `-k bug` 定位问题讨论&#10;&#10;**输出格式**：每个问题：&#10;- **现象**：发生了什么&#10;- **根因**：为什么发生&#10;- **解法**：怎么解决的&#10;- **教训**：一句话可复用教训&#10;无明显踩坑则分析代码变更中的潜在隐患">
                     <span class="preset-icon">🐛</span>
-                    <div class="preset-info"><span class="preset-title">踩坑总结</span><span class="preset-desc">Bug、错误及解法，提炼可复用教训</span></div>
+                    <div class="preset-info"><span class="preset-title" data-i18n="preset.session.bugs.title">踩坑总结</span><span class="preset-desc" data-i18n="preset.session.bugs.desc">Bug、错误及解法，提炼可复用教训</span></div>
                   </button>
                   <button class="preset-card" data-prompt="Review all code changes in this session.&#10;&#10;**工作流**：&#10;1. 运行 `read <session_id>` 获取完整对话（含工具调用可见 Edit/Write 操作）&#10;2. 运行 `files --date 1d` 查看本次涉及的文件热点&#10;3. 对关键文件直接读取当前版本做 review&#10;&#10;**输出格式**：&#10;1. **Changes**: What was changed and why&#10;2. **Quality**: Readability, maintainability, performance&#10;3. **Bugs**: Potential bugs or missed edge cases&#10;4. **Security**: Injection, XSS, auth, data exposure risks&#10;5. **Improvements**: Specific suggestions with examples&#10;Severity: 🔴 Critical → 🟡 Warning → 🔵 Suggestion">
                     <span class="preset-icon">🔍</span>
-                    <div class="preset-info"><span class="preset-title">Code Review</span><span class="preset-desc">代码质量、安全性和改进点</span></div>
+                    <div class="preset-info"><span class="preset-title">Code Review</span><span class="preset-desc" data-i18n="preset.session.review.desc">代码质量、安全性和改进点</span></div>
                   </button>
                   <button class="preset-card" data-prompt="提取本次对话中所有未完成事项。&#10;&#10;**工作流**：&#10;1. 运行 `read -s <session_id>` 获取对话摘要&#10;2. 运行 `queries --session <session_id>` 看所有用户请求&#10;3. 对比请求 vs 实际完成，识别差距&#10;&#10;**输出格式**：&#10;- **未完成功能**：提到但未实现的功能&#10;- **遗留Bug**：已知未修复的问题&#10;- **优化建议**：可选的改进方向&#10;- **下一步**：建议的后续行动&#10;每项标注优先级 P0/P1/P2">
                     <span class="preset-icon">📝</span>
-                    <div class="preset-info"><span class="preset-title">待办提取</span><span class="preset-desc">未完成任务、遗留问题和下一步</span></div>
+                    <div class="preset-info"><span class="preset-title" data-i18n="preset.session.todos.title">待办提取</span><span class="preset-desc" data-i18n="preset.session.todos.desc">未完成任务、遗留问题和下一步</span></div>
                   </button>
                   <button class="preset-card" data-prompt="分析本次对话中用户对AI的纠正和修正。&#10;&#10;**工作流**：&#10;1. 运行 `read <session_id>` 获取完整对话&#10;2. 运行 `queries --session <session_id>` 提取用户原始消息&#10;3. 搜索纠正信号词：不是/不要/应该/你忘了/wrong/actually 等&#10;4. 分析纠正前后的上下文理解原因&#10;&#10;**输出格式**：每个纠正模式生成规则：&#10;- **规则**：一句话描述&#10;- **原因**：为什么需要&#10;- **示例**：正反例&#10;只提取有普遍复用价值的规则，可直接用于 CLAUDE.md">
                     <span class="preset-icon">🧠</span>
-                    <div class="preset-info"><span class="preset-title">规则提炼</span><span class="preset-desc">从纠正中提取 CLAUDE.md 规则建议</span></div>
+                    <div class="preset-info"><span class="preset-title" data-i18n="preset.session.rules.title">规则提炼</span><span class="preset-desc" data-i18n="preset.session.rules.desc">从纠正中提取 CLAUDE.md 规则建议</span></div>
                   </button>
                 </div>
                 <div id="session-ai-messages"></div>
                 <div id="session-ai-input-area">
-                  <textarea id="session-ai-input" placeholder="问关于这个会话的问题…" rows="1"></textarea>
+                  <textarea id="session-ai-input" placeholder="问关于这个会话的问题…" data-i18n-placeholder="session.ai.placeholder" rows="1"></textarea>
                   <button id="session-ai-send">Send</button>
                 </div>
               </div>

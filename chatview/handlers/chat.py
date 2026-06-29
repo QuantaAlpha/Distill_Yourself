@@ -123,7 +123,7 @@ def _compress_chat_history(messages: list) -> str:
         if role not in ("user", "assistant") or not isinstance(content, str):
             continue
         # Skip error/abort messages
-        if content.startswith("**Error:**") or content.endswith("*(已停止)*"):
+        if content.startswith("**Error:**") or content.endswith("*(已停止)*") or content.endswith("*(stopped)*"):
             continue
         valid.append((role, content))
 
@@ -169,6 +169,9 @@ def _compress_chat_history(messages: list) -> str:
 def _build_chat_prompt(handler, prompt: str, context_type: str, session_id: str, scope: dict = None, messages: list = None) -> str:
     """Build a context-enriched prompt for the AI engine with rich metadata and CLI tools."""
     cli_path = str(Path(__file__).parents[1].parent / "analyze.py")
+    lang = (scope or {}).get("lang", "zh")
+    if lang == "en":
+        prompt = prompt + "\n\nIMPORTANT: All your output text must be in English. Keep JSON keys unchanged. Translate all labels, descriptions, summaries into English unless they are direct quotes from the user's conversation history."
     context_parts = [
         f"You have a CLI tool for analyzing conversation history: python3 {cli_path} <command> [options]",
         "Commands: sessions, read <id> [-s summary], search <query>, queries [--session <id>] [-k keyword], corrections, decisions, errors, stats, files, highlights",
