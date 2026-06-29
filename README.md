@@ -258,3 +258,17 @@ Most commands support `--json` and filters such as `--source`, `--date`, `--proj
 ConvoLab 的会话索引、搜索、分析和配置回写都在本地完成。你的 Claude Code 与 Codex 对话数据只从本机目录读取，索引保存在本地 SQLite 中，不会被上传到 ConvoLab 的外部服务。
 
 当前前端会从 D3 官方 CDN 加载可视化库；这不会上传你的会话内容。如果你需要完全离线运行，可以后续把 D3 文件 vendored 到 `static/` 并改为本地引用。
+
+---
+
+## Community
+
+加入社区，交流 Distill Yourself 的使用经验、反馈和共创想法。
+
+### WeChat
+
+<img src="docs/images/community/wechat.png" alt="WeChat community QR code" width="240">
+
+### Discord
+
+[Join the Discord community](https://discord.gg/KDyuer49t)
