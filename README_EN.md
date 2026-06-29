@@ -96,7 +96,7 @@ The namesake feature. Analyzes your full conversation history across three layer
 
 The model includes a generated cognitive avatar and a one-line persona summary. Everything is traceable — click any trait to see the judgment cards and raw evidence behind it. Use it to understand what your future AI sessions should remember about how you think and decide.
 
-![Cognitive Model — avatar, evidence events, judgment cards, and traits](docs/images/readme/twin-cognitive-model.png)
+![Cognitive Model — avatar, evidence events, judgment cards, and traits](docs/images/readme/twin-cognitive-model-new.png)
 
 The Runtime Pack compiles these traits into a concise, readable summary of who you are as a developer — ready to be synced into your AI's config.
 
