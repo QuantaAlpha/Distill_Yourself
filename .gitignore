@@ -12,6 +12,9 @@ docs/decisions/
 docs/reference/
 docs/superpowers/
 docs/*
+!docs/images/
+!docs/images/community/
+!docs/images/community/wechat.png
 .planning/
 AGENTS.md
 DESIGN.md
