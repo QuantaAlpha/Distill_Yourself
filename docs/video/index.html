@@ -6,77 +6,174 @@
   <title>Distill Yourself Demo Video</title>
   <style>
     :root {
-      color-scheme: light;
+      color-scheme: dark;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f6f7f9;
-      color: #1f2328;
+      background: #080a0f;
+      color: #f6f8fb;
+    }
+
+    * {
+      box-sizing: border-box;
     }
 
     body {
       margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% 12%, rgb(38 99 235 / 28%), transparent 30rem),
+        radial-gradient(circle at 88% 10%, rgb(20 184 166 / 20%), transparent 28rem),
+        linear-gradient(145deg, #080a0f 0%, #111827 46%, #0b1120 100%);
     }
 
     main {
-      box-sizing: border-box;
-      max-width: 1080px;
+      width: min(1180px, 100%);
       margin: 0 auto;
-      padding: 40px 20px 56px;
+      padding: 32px 20px 56px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 34px;
+    }
+
+    .brand {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0;
+      color: #dbeafe;
+    }
+
+    .back-link {
+      border: 1px solid rgb(148 163 184 / 28%);
+      border-radius: 999px;
+      padding: 8px 13px;
+      color: #cbd5e1;
+      background: rgb(15 23 42 / 58%);
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .back-link:hover {
+      border-color: rgb(203 213 225 / 48%);
+      color: #fff;
+    }
+
+    .intro {
+      max-width: 780px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      margin-bottom: 12px;
+      border: 1px solid rgb(96 165 250 / 30%);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: #93c5fd;
+      background: rgb(30 64 175 / 18%);
+      font-size: 13px;
+      font-weight: 650;
     }
 
     h1 {
-      margin: 0 0 10px;
-      font-size: clamp(28px, 4vw, 42px);
+      margin: 0 0 12px;
+      font-size: clamp(34px, 5vw, 58px);
       line-height: 1.1;
+      letter-spacing: 0;
     }
 
     p {
-      margin: 0 0 24px;
-      color: #57606a;
-      font-size: 16px;
+      margin: 0;
+      max-width: 720px;
+      color: #b6c2d4;
+      font-size: 17px;
       line-height: 1.6;
+    }
+
+    .stage {
+      border: 1px solid rgb(148 163 184 / 24%);
+      border-radius: 18px;
+      padding: 10px;
+      background: linear-gradient(180deg, rgb(255 255 255 / 12%), rgb(255 255 255 / 4%));
+      box-shadow: 0 28px 80px rgb(0 0 0 / 38%);
     }
 
     video {
       display: block;
       width: 100%;
       max-height: 72vh;
-      border-radius: 8px;
+      border-radius: 12px;
       background: #000;
-      box-shadow: 0 20px 50px rgb(31 35 40 / 14%);
     }
 
     nav {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      margin-top: 24px;
+      margin-top: 18px;
     }
 
     a {
-      color: #0969da;
+      color: #93c5fd;
       text-decoration: none;
     }
 
     nav a {
-      border: 1px solid #d0d7de;
-      border-radius: 6px;
-      padding: 8px 12px;
-      background: #fff;
+      border: 1px solid rgb(148 163 184 / 24%);
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: #cbd5e1;
+      background: rgb(15 23 42 / 54%);
       font-size: 14px;
+      font-weight: 600;
     }
 
     nav a[aria-current="true"] {
-      border-color: #0969da;
+      border-color: rgb(96 165 250 / 75%);
       color: #fff;
-      background: #0969da;
+      background: linear-gradient(135deg, #2563eb, #0891b2);
+      box-shadow: 0 12px 24px rgb(37 99 235 / 26%);
+    }
+
+    @media (max-width: 640px) {
+      main {
+        padding: 20px 14px 36px;
+      }
+
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+        margin-bottom: 26px;
+      }
+
+      .stage {
+        border-radius: 14px;
+        padding: 6px;
+      }
+
+      video {
+        border-radius: 10px;
+      }
     }
   </style>
 </head>
 <body>
   <main>
-    <h1 id="title">Distill Yourself Demo Video</h1>
-    <p id="description">Watch the demo in your browser.</p>
-    <video id="player" controls preload="metadata" playsinline></video>
+    <header>
+      <a class="brand" href="../">Distill Yourself</a>
+      <a class="back-link" href="../">Back to docs</a>
+    </header>
+    <section class="intro" aria-labelledby="title">
+      <span class="eyebrow">Demo Library</span>
+      <h1 id="title">Distill Yourself Demo Video</h1>
+      <p id="description">Watch the demo in your browser.</p>
+    </section>
+    <section class="stage" aria-label="Video player">
+      <video id="player" controls preload="metadata" playsinline></video>
+    </section>
     <nav id="playlist" aria-label="Demo videos"></nav>
   </main>
 
