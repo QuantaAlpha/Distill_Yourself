@@ -8,7 +8,7 @@
 
 Your Claude Code and Codex sessions contain decisions, debugging insights, and preferences you've repeated dozens of times — but they vanish when the terminal closes. Distill Yourself indexes that history locally, makes it searchable, and writes selected insights back into your Claude Code config so you never repeat yourself.
 
-<img src="docs/images/readme/twin-cognitive-model-new.png" alt="Cognitive Model — avatar, evidence events, judgment cards, and traits" width="760">
+<img src="docs/images/readme/twin-cognitive-model-new.png" alt="Cognitive Model — avatar, evidence events, judgment cards, and traits" width="700">
 
 [Quick Start](#quick-start) · [Features](#features) · [User Guide](docs/USER_GUIDE.md) · [API Reference](#rest-api)
 

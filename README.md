@@ -8,7 +8,7 @@
 
 你与 Claude Code、Codex 的每次对话里都藏着决策、调试心得和反复强调的偏好——但终端一关就全没了。Distill Yourself 在本地索引这些历史，让它们可搜索、可分析，并把筛选后的洞察回写进 AI 配置文件，让你不用再重复教。
 
-<img src="docs/images/readme/twin-cognitive-model-new.png" alt="认知模型 — 头像、证据事件、判断卡片和特质" width="760">
+<img src="docs/images/readme/twin-cognitive-model-new.png" alt="认知模型 — 头像、证据事件、判断卡片和特质" width="700">
 
 [快速开始](#快速开始) · [功能特性](#功能特性) · [使用指南](docs/USER_GUIDE.md) · [API 参考](#rest-api)
 
