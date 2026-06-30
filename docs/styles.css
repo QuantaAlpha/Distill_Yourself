@@ -386,6 +386,8 @@ h1 {
 .section-block {
   position: relative;
   margin-bottom: 100px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
 }
 
 .section-heading {
