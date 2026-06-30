@@ -26,11 +26,11 @@ Your Claude Code and Codex sessions contain decisions, debugging insights, and p
 
 <div align="center">
 
-<a href="https://quantaalpha.com/Distill_Yourself/video/?v=full-demo">
+<a href="https://quantaalpha.com/Distill-Yourself/video/?v=full-demo">
   <img src="docs/images/readme/demo-preview.jpg" alt="Distill Yourself demo video preview" width="720">
 </a>
 
-[Click the preview to watch the full demo video (7:33)](https://quantaalpha.com/Distill_Yourself/video/?v=full-demo)
+[Click the preview to watch the full demo video (7:33)](https://quantaalpha.com/Distill-Yourself/video/?v=full-demo)
 
 </div>
 
@@ -38,10 +38,10 @@ Your Claude Code and Codex sessions contain decisions, debugging insights, and p
 
 ```bash
 # Install with uv (recommended)
-uv pip install git+https://github.com/QuantaAlpha/Distill_Yourself.git
+uv pip install git+https://github.com/QuantaAlpha/Distill-Yourself.git
 
 # Or with pip
-pip install git+https://github.com/QuantaAlpha/Distill_Yourself.git
+pip install git+https://github.com/QuantaAlpha/Distill-Yourself.git
 
 # Launch from any directory
 distill-yourself
@@ -51,8 +51,8 @@ distill-yourself
 **Option B — Clone and run directly (zero install):**
 
 ```bash
-git clone https://github.com/QuantaAlpha/Distill_Yourself.git
-cd Distill_Yourself
+git clone https://github.com/QuantaAlpha/Distill-Yourself.git
+cd Distill-Yourself
 
 # No dependencies — pure Python stdlib
 python3 server.py
@@ -108,7 +108,7 @@ The Runtime Pack compiles these traits into a concise, readable summary of who y
 
 ![Runtime Pack — cognitive traits compiled into a developer summary](docs/images/readme/twin-runtime-pack.png)
 
-[▶ Watch the Cognitive Model demo clip (1:55)](https://quantaalpha.com/Distill_Yourself/video/?v=cognitive-model)
+[▶ Watch the Cognitive Model demo clip (1:55)](https://quantaalpha.com/Distill-Yourself/video/?v=cognitive-model)
 
 ### Evolve Engine
 
@@ -126,7 +126,7 @@ Analyzes recurring preferences, corrections, and work patterns, then prepares co
 
 ![Evolve Rules — P0/P1/P2 with frequency and evidence](docs/images/readme/evolve-rules.png)
 
-[▶ Watch the Evolve demo clip (1:55)](https://quantaalpha.com/Distill_Yourself/video/?v=evolve)
+[▶ Watch the Evolve demo clip (1:55)](https://quantaalpha.com/Distill-Yourself/video/?v=evolve)
 
 ### Browse & Search
 
@@ -137,7 +137,7 @@ Analyzes recurring preferences, corrections, and work patterns, then prepares co
 
 ![Session detail view](docs/images/user-guide/02-session.jpg)
 
-[▶ Watch the Browse & Search demo clip (0:55)](https://quantaalpha.com/Distill_Yourself/video/?v=browse-search)
+[▶ Watch the Browse & Search demo clip (0:55)](https://quantaalpha.com/Distill-Yourself/video/?v=browse-search)
 
 ### Insights
 
@@ -151,7 +151,7 @@ Five analytics views computed locally — no AI engine needed:
 
 ![Tool usage heatmap](docs/images/readme/insights-heatmap.png)
 
-[▶ Watch the Insights demo clip (0:50)](https://quantaalpha.com/Distill_Yourself/video/?v=insights)
+[▶ Watch the Insights demo clip (0:50)](https://quantaalpha.com/Distill-Yourself/video/?v=insights)
 
 ### AI Chat
 
@@ -172,7 +172,7 @@ flowchart LR
 ## Architecture
 
 ```
-Distill_Yourself/
+Distill-Yourself/
 ├── server.py       # HTTP server, REST API, JSONL parser, AI proxy, SSE streaming
 ├── db.py           # SQLite storage, FTS5 search, pre-aggregated analytics
 ├── analyze.py      # Standalone CLI analytics & Evolve generators
@@ -267,8 +267,8 @@ PORT=3000 python3 server.py
 Contributions are welcome! Please open an issue first to discuss what you'd like to change.
 
 ```bash
-git clone https://github.com/QuantaAlpha/Distill_Yourself.git
-cd Distill_Yourself
+git clone https://github.com/QuantaAlpha/Distill-Yourself.git
+cd Distill-Yourself
 python3 server.py          # start dev server
 # open http://localhost:5757
 ```
