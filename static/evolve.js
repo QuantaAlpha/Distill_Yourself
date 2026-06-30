@@ -338,6 +338,7 @@
       date: scope.date || "7d",
       project: scope.project || "",
       engine: scope.engine || "auto",
+      lang: scope.lang || "zh",
     });
     tabs.forEach(tab => {
       if (getCachedTab(tab, scope)) return; // already in localStorage
@@ -370,6 +371,7 @@
       date: scope.date || "7d",
       project: scope.project || "",
       engine: scope.engine || "auto",
+      lang: scope.lang || "zh",
     });
 
     // AI tabs use SSE streaming for real-time progress

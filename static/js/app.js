@@ -7,7 +7,6 @@
 import { state } from './state.js';
 import { $, $$, dom, initDom } from './dom.js';
 import { api, initThemeToggle, esc, renderMarkdownSimple, readSseStream, autoResizeTextarea } from './utils.js';
-import { initLocaleToggle, applyI18nDom, t } from './i18n.js';
 import { renderSessions, renderProjects, updateWelcomeStats, registerSessionDeps } from './sessions.js';
 import { loadSession, applyUserOnlyFilter, registerConversationDeps, renderMessages } from './conversation.js';
 import { doSearch, renderSearchResults, jumpToMessage } from './search.js';
@@ -17,6 +16,7 @@ import { initAiPage, notifyEvolveScopeChanged, loadChatFromStorage, newGlobalCha
 import { exportMarkdown, copyConversation } from './export.js';
 import { openSessionAiPanel, updateSessionAiHeader, restoreSessionAiMessages, submitSessionAi, _stopSessionAi } from './session-ai.js';
 import { loadSessionSummary } from './session-summary.js';
+import { setLang, applyLang, getLang, t } from './lang.js';
 
 // ── Wire cross-module dependencies ─────────────────────────────
 registerSessionDeps({
@@ -192,6 +192,35 @@ function bindEvents() {
       if (typeof notifyEvolveScopeChanged === "function") notifyEvolveScopeChanged();
     });
   }
+
+  // Language toggle (pill switch)
+  const langToggle = $("#lang-toggle");
+  if (langToggle) {
+    const currentLang = getLang();
+    langToggle.dataset.active = currentLang;
+    langToggle.querySelectorAll(".lang-opt").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.lang === currentLang);
+      btn.addEventListener("click", () => {
+        const lang = btn.dataset.lang;
+        if (lang === getLang()) return;
+        setLang(lang);
+        langToggle.dataset.active = lang;
+        langToggle.querySelectorAll(".lang-opt").forEach(b => b.classList.toggle("active", b.dataset.lang === lang));
+        // Re-render presets (they use t() at render time)
+        const presetContainer = $("#ai-chat-presets");
+        if (presetContainer) {
+          presetContainer.removeAttribute("data-populated");
+          populateGlobalAiPresets();
+        }
+        // Re-render welcome stats (pass both sessions and projects)
+        const projects = state.allSessions ? [...new Set(state.allSessions.map(s => s.project).filter(Boolean))] : [];
+        updateWelcomeStats(state.allSessions, projects);
+      });
+    });
+  }
+
+  // Apply saved language on load
+  applyLang();
 
   // Global search
   dom.searchInput.addEventListener("input", () => {
@@ -558,12 +587,11 @@ function initResizeHandles() {
 // ── Init ───────────────────────────────────────────────────────
 async function init() {
   initThemeToggle();
-  initLocaleToggle();
   bindEvents();
   bindWelcomeCards();
   // Re-render JS-generated UI shell text when locale changes
   window.addEventListener("localechange", () => {
-    applyI18nDom(document);
+    applyLang(document);
     updateWelcomeStats(state.allSessions, state.allProjects || []);
     const presetContainer = $("#ai-chat-presets");
     if (presetContainer && presetContainer.dataset.populated) populateGlobalAiPresets();

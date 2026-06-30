@@ -8,7 +8,7 @@
 import { state } from './state.js';
 import { $, $$ } from './dom.js';
 import { esc, formatDate, formatTime, renderMarkdown } from './utils.js';
-import { t } from './i18n.js';
+import { t } from './lang.js';
 
 // ── Late-bound references to functions in other modules ──────────
 // Set by the main module via registerConversationDeps() to avoid

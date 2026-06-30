@@ -27,6 +27,26 @@
 }
 #global-engine-select:hover { border-color: var(--accent); color: var(--accent); }
 #global-engine-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.lang-toggle {
+  position: relative; display: inline-flex; align-items: center;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--bg-surface2); overflow: hidden; height: 26px;
+}
+.lang-opt {
+  position: relative; z-index: 1; border: none; background: none;
+  font: inherit; font-size: 11px; font-weight: 500;
+  padding: 0 10px; height: 100%; cursor: pointer;
+  color: var(--text-secondary); transition: color 0.2s;
+  line-height: 26px; white-space: nowrap;
+}
+.lang-opt.active { color: #fff; }
+.lang-slider {
+  position: absolute; top: 2px; left: 2px; height: calc(100% - 4px);
+  width: calc(50% - 2px); border-radius: 12px;
+  background: var(--accent); transition: transform 0.25s cubic-bezier(.4,0,.2,1);
+  pointer-events: none;
+}
+.lang-toggle[data-active="en"] .lang-slider { transform: translateX(100%); }
 .icon-btn {
   width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface2);

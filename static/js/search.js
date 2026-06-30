@@ -8,7 +8,7 @@
 import { state } from './state.js';
 import { dom } from './dom.js';
 import { esc, escRegex, formatDate } from './utils.js';
-import { t } from './i18n.js';
+import { t } from './lang.js';
 
 // ── Search ─────────────────────────────────────────────────────
 export async function doSearch(query) {
