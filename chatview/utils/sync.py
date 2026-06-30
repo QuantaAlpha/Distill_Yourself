@@ -8,6 +8,7 @@ import fcntl
 import shutil
 import time
 from pathlib import Path
+from typing import Optional, Union
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -23,7 +24,7 @@ MAX_BACKUP_COUNT = 5
 # ---------------------------------------------------------------------------
 
 
-def _backup_path(target_path: Path | None = None, ts: float | None = None) -> Path:
+def _backup_path(target_path: Optional[Path] = None, ts: Optional[float] = None) -> Path:
     """Return the backup file path with a timestamp suffix."""
     path = target_path or CLAUDE_MD_PATH
     ts = ts or time.time()
@@ -31,7 +32,7 @@ def _backup_path(target_path: Path | None = None, ts: float | None = None) -> Pa
 
 
 def _cleanup_old_backups(
-    target_path: Path | None = None,
+    target_path: Optional[Path] = None,
     max_age_days: int = MAX_BACKUP_AGE_DAYS,
     max_count: int = MAX_BACKUP_COUNT,
 ) -> int:
@@ -98,7 +99,7 @@ def _safe_write_claude_md(
     marker_start: str = "",
     marker_end: str = "",
     verify_markers: bool = True,
-    target_path: str | Path | None = None,
+    target_path: Optional[Union[str, Path]] = None,
 ) -> dict:
     """Write ``content`` to ``~/.claude/CLAUDE.md`` with backup, lock, and verification.
 

@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -731,7 +732,7 @@ user's trait combination (4-8 words, e.g. "Minimalist Architect", "Evidence-Driv
     # Parse AI response — robust JSON extraction
     text = stdout.strip()
 
-    def _extract_json(text: str) -> dict | None:
+    def _extract_json(text: str) -> Optional[dict]:
         """Scan text for the first valid JSON object with expected keys."""
         depth = 0
         in_str = False
