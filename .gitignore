@@ -4,7 +4,8 @@
 .claude/
 .knowhow/
 .superpowers/
-skills/
+skills/*
+!skills/distill-yourself/
 docs/specs/
 docs/plans/
 docs/research/

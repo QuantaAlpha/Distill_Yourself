@@ -9,19 +9,23 @@ dependencies = []
 
 [project.scripts]
 distill-yourself = "server:main"
+distill = "chatview.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = [".", "chatview"]
-include = [
+# Strict allowlist — ship only the package, top-level modules, web assets and
+# the bundled skill. Avoids leaking tests/, site/, .github/, READMEs into
+# site-packages (a top-level site/ would shadow the stdlib `site` module).
+only-include = [
+    "chatview",
     "server.py",
     "db.py",
     "analyze.py",
     "start.sh",
-    "chatview/**",
-    "static/**",
-    "docs/**",
+    "static",
+    "docs",
+    "skills/distill-yourself",
 ]

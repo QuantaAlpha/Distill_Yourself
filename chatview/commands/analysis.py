@@ -27,6 +27,67 @@ def _init_index():
         sys.stdout = old
 
 
+def cmd_refresh(args):
+    """Force a re-index: scan JSONL, rebuild SQLite + aggregates.
+
+    Mirrors the web app's /api/refresh. Run this before commands that only
+    read the SQLite cache (aggregates / profile-digest) when sessions may
+    have changed since the last index.
+    """
+    want_json = getattr(args, "json", False)
+    force = getattr(args, "force", False)
+    if want_json:
+        # build_index() prints progress to stdout — suppress it so --json
+        # output stays pure JSON that json.loads() can consume.
+        old = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            index = build_index(force=force)
+        finally:
+            sys.stdout = old
+    else:
+        index = build_index(force=force)
+
+    summary = {
+        "sessions": len(index.get("sessions", {})),
+        "projects": len(index.get("projects", {})),
+    }
+    if want_json:
+        print(json.dumps(summary, ensure_ascii=False))
+    else:
+        print(f"OK: index refreshed — {summary['sessions']} sessions")
+
+
+def cmd_install_skill(args):
+    """Copy the bundled distill-yourself skill into Claude Code (and Codex) skills dir.
+
+    Source is shipped alongside the package at <root>/skills/distill-yourself.
+    Targets: ~/.claude/skills/distill-yourself, and ~/.codex/skills/distill-yourself
+    if ~/.codex exists. Pass --force to overwrite an existing copy.
+    """
+    import shutil
+
+    src = Path(__file__).resolve().parents[2] / "skills" / "distill-yourself"
+    if not src.is_dir():
+        print(f"ERROR: bundled skill not found at {src}", file=sys.stderr)
+        sys.exit(1)
+
+    targets = [Path.home() / ".claude" / "skills" / "distill-yourself"]
+    if (Path.home() / ".codex").is_dir():
+        targets.append(Path.home() / ".codex" / "skills" / "distill-yourself")
+
+    force = getattr(args, "force", False)
+    for dst in targets:
+        if dst.exists():
+            if not force:
+                print(f"SKIP: {dst} already exists (use --force to overwrite)")
+                continue
+            shutil.rmtree(dst)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dst)
+        print(f"OK: installed skill -> {dst}")
+
+
 def _apply_filters(sessions: dict, args) -> dict:
     """Filter sessions by date/source/project from CLI args."""
     filtered = {}

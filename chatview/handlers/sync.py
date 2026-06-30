@@ -25,9 +25,12 @@ def _sanitize_filename(text: str) -> str:
 
 
 def _evolve_sync_memory_preview(mem_data: dict) -> dict:
-    """Generate preview of what memory sync would do."""
+    """Generate preview of what memory sync would do.
+
+    Pure read-only: does not create directories or files. The directory is
+    created by _evolve_sync_memory_execute when actually writing.
+    """
     nodes = {n["id"]: n for n in mem_data.get("nodes", [])}
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 
     files = []
     for nid, node in nodes.items():

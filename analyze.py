@@ -24,6 +24,7 @@ from chatview.commands.evolve import (  # noqa: F401
     cmd_profile_digest,
     cmd_aggregates,
     cmd_evolve_write,
+    cmd_evolve_sync,
 )
 from chatview.commands.corrections import (  # noqa: F401
     _data_corrections,
@@ -48,6 +49,8 @@ from chatview.commands.analysis import (  # noqa: F401
     cmd_stats,
     _data_files,
     cmd_files,
+    cmd_refresh,
+    cmd_install_skill,
 )
 from chatview.commands.twin import (  # noqa: F401
     cmd_twin_stats,

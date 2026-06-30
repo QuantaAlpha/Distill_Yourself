@@ -917,3 +917,57 @@ def cmd_evolve_write(args):
 
     _db.evolve_upsert(tab, source, date, project, engine, json.dumps(result, ensure_ascii=False))
     print(f"OK: {mode} {tab} \u2192 SQLite")
+
+
+def cmd_evolve_sync(args):
+    """Sync staged Evolve data (SQLite) to Claude Code config files.
+
+    Reuses chatview.handlers.sync so the written format matches the web app
+    exactly (front matter, markers, filenames) \u2014 no drift.
+
+      --tab memory   -> ~/.claude/memory/evolve_<id>.md (+ MEMORY.md index)
+      --tab profile  -> ~/.claude/CLAUDE.md marked section
+
+    Reads the same SQLite scope key that `evolve-write` wrote to. Default is
+    preview (no writes); pass --execute to actually write.
+    """
+    from chatview import db as _db
+    from chatview.handlers.sync import (
+        _evolve_sync_memory_preview, _evolve_sync_memory_execute,
+        _evolve_sync_claude_md_preview, _evolve_sync_claude_md_execute,
+    )
+    _db.init_db()
+
+    tab = args.tab  # "memory" | "profile"
+    source = getattr(args, "source", "all") or "all"
+    date = getattr(args, "date", "7d") or "7d"
+    project = getattr(args, "project", "") or ""
+    engine = getattr(args, "engine", "auto") or "auto"
+    execute = getattr(args, "execute", False)
+
+    row = _db.evolve_get(tab, source, date, project, engine)
+    if not row:
+        print(json.dumps({
+            "error": f"{tab} cache not found for scope "
+                     f"(source={source}, date={date}, project={project or '-'}, engine={engine}). "
+                     f"Stage it first: `evolve-write --tab {tab} --source {source} --date {date}`."
+        }, ensure_ascii=False))
+        sys.exit(1)
+
+    data = row["data"]
+    action = "execute" if execute else "preview"
+    if tab == "memory":
+        fn = _evolve_sync_memory_execute if execute else _evolve_sync_memory_preview
+    else:  # profile -> CLAUDE.md
+        fn = _evolve_sync_claude_md_execute if execute else _evolve_sync_claude_md_preview
+
+    try:
+        result = fn(data)
+    except (KeyError, TypeError, ValueError) as e:
+        print(json.dumps({
+            "error": f"staged {tab} data is malformed: {type(e).__name__}: {e}. "
+                     f"Re-stage with `evolve-write --tab {tab}`."
+        }, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"tab": tab, "action": action, "result": result},
+                     ensure_ascii=False, indent=2))

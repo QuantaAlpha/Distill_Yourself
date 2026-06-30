@@ -11,13 +11,14 @@ import sys
 
 from chatview.commands.analysis import (
     cmd_sessions, cmd_read, cmd_search, cmd_queries, cmd_stats, cmd_files,
+    cmd_refresh, cmd_install_skill,
 )
 from chatview.commands.corrections import (
     cmd_corrections, cmd_decisions, cmd_errors, cmd_highlights,
 )
 from chatview.commands.evolve import (
     cmd_evolve_rules, cmd_evolve_signals, cmd_evolve_patterns,
-    cmd_evolve_write, cmd_aggregates, cmd_profile_digest,
+    cmd_evolve_write, cmd_evolve_sync, cmd_aggregates, cmd_profile_digest,
 )
 from chatview.commands.twin import (
     cmd_twin_stats, cmd_twin_events, cmd_twin_cards, cmd_twin_traits,
@@ -97,7 +98,29 @@ Examples:
     p_ew.add_argument("--project", default="", help="Scope: project filter")
     p_ew.add_argument("--engine", default="auto", help="Scope: AI engine used (auto/codex/claude)")
 
-    sub.add_parser("aggregates", help="Print pre-computed aggregates from SQLite DB as JSON")
+    p_es = sub.add_parser("evolve-sync",
+                          help="Sync staged Evolve data (SQLite) to ~/.claude config files")
+    p_es.add_argument("--tab", required=True, choices=["memory", "profile"],
+                       help="What to sync: memory -> memory/*.md, profile -> CLAUDE.md")
+    p_es.add_argument("--execute", action="store_true",
+                       help="Actually write files (default: preview only, no writes)")
+    p_es.add_argument("--source", default="all", help="Scope: data source (all/claude/codex)")
+    p_es.add_argument("--date", default="7d", help="Scope: date range (7d/30d/90d/all)")
+    p_es.add_argument("--project", default="", help="Scope: project filter")
+    p_es.add_argument("--engine", default="auto", help="Scope: AI engine used (auto/codex/claude)")
+
+    p_refresh = sub.add_parser("refresh",
+                               help="Force re-index: scan JSONL, rebuild SQLite + aggregates")
+    p_refresh.add_argument("--force", action="store_true",
+                            help="Re-parse all files even if unchanged")
+    p_refresh.add_argument("--json", action="store_true", help="Output build summary as JSON")
+
+    p_is = sub.add_parser("install-skill",
+                          help="Copy the bundled distill-yourself skill into ~/.claude/skills (and Codex)")
+    p_is.add_argument("--force", action="store_true", help="Overwrite if already installed")
+
+    p_agg = sub.add_parser("aggregates", help="Print pre-computed aggregates from SQLite DB as JSON")
+    p_agg.add_argument("--json", action="store_true", help="Output as JSON (always JSON regardless)")
     sub.add_parser("profile-digest", parents=[shared], help="Pre-computed profile digest for sub-agents (JSON)")
 
     sub.add_parser("twin-stats", parents=[shared], help="Show Cognitive Handbook statistics")
@@ -162,6 +185,8 @@ Examples:
         "stats": cmd_stats, "files": cmd_files, "highlights": cmd_highlights,
         "evolve-rules": cmd_evolve_rules, "evolve-signals": cmd_evolve_signals,
         "evolve-patterns": cmd_evolve_patterns, "evolve-write": cmd_evolve_write,
+        "evolve-sync": cmd_evolve_sync,
+        "refresh": cmd_refresh, "install-skill": cmd_install_skill,
         "aggregates": cmd_aggregates,
         "profile-digest": cmd_profile_digest,
         "twin-stats": cmd_twin_stats,
