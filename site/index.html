@@ -5,7 +5,774 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Distill Yourself turns forgotten Claude Code and Codex conversations into reusable judgment, decisions, and collaboration memory.">
   <title>Distill Yourself</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="preload" as="image" href="assets/digital.jpg" fetchpriority="high">
+  <style>
+:root {
+  color-scheme: dark;
+  --bg: #05080d;
+  --bg-2: #081119;
+  --panel: rgba(8, 18, 28, 0.82);
+  --panel-strong: rgba(10, 24, 36, 0.94);
+  --line: rgba(142, 224, 255, 0.22);
+  --line-strong: rgba(142, 224, 255, 0.42);
+  --text: #f3f7fb;
+  --muted: #9fb1c2;
+  --soft: #d6e5ef;
+  --cyan: #35d9ff;
+  --green: #54f2b6;
+  --amber: #ffc857;
+  --blue: #66a6ff;
+  --violet: #a892ff;
+  --danger: #ff6f91;
+  --shadow-cyan: 0 0 32px rgba(53, 217, 255, 0.22);
+  --shadow-green: 0 0 28px rgba(84, 242, 182, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    linear-gradient(rgba(53, 217, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 217, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(8, 30, 46, 0.62), transparent 38rem),
+    linear-gradient(180deg, var(--bg), #071017 44%, #05080d);
+  background-size: 42px 42px, 42px 42px, auto, auto;
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  letter-spacing: 0;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent, rgba(84, 242, 182, 0.07), transparent),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 5px);
+  opacity: 0.42;
+  mix-blend-mode: screen;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.page-shell {
+  position: relative;
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+}
+
+.site-header {
+  position: sticky;
+  top: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 58px;
+  margin: 14px 0 22px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 10, 16, 0.76);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--soft);
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(84, 242, 182, 0.55);
+  border-radius: 8px;
+  color: var(--green);
+  background: linear-gradient(135deg, rgba(84, 242, 182, 0.16), rgba(53, 217, 255, 0.08));
+  box-shadow: var(--shadow-green);
+  font-size: 0.74rem;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nav-links a {
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.nav-links a:hover,
+.nav-links a:focus-visible {
+  color: var(--text);
+  border-color: var(--line);
+  background: rgba(53, 217, 255, 0.08);
+  outline: none;
+}
+
+.hero-section {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  padding: 68px 0 34px;
+  text-align: center;
+}
+
+.hero-section::before,
+.hero-section::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 1px;
+  height: 96px;
+  background: linear-gradient(180deg, transparent, var(--cyan), transparent);
+  opacity: 0.55;
+}
+
+.hero-section::before {
+  top: 0;
+}
+
+.hero-section::after {
+  bottom: -34px;
+}
+
+.hero-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 176px;
+  height: 156px;
+  margin-bottom: 14px;
+}
+
+.core-ring,
+.core-ring span {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(53, 217, 255, 0.24);
+  border-radius: 50%;
+}
+
+.core-ring {
+  transform: rotateX(68deg);
+  box-shadow: inset 0 0 18px rgba(53, 217, 255, 0.14), 0 0 24px rgba(84, 242, 182, 0.16);
+}
+
+.core-ring span:nth-child(1) {
+  inset: 18px 7px;
+  border-color: rgba(84, 242, 182, 0.3);
+}
+
+.core-ring span:nth-child(2) {
+  inset: 36px 22px;
+  border-color: rgba(255, 200, 87, 0.24);
+}
+
+.core-ring span:nth-child(3) {
+  inset: 52px 46px;
+  border-color: rgba(53, 217, 255, 0.34);
+}
+
+.hero-emblem {
+  position: relative;
+  z-index: 2;
+  width: 138px;
+  height: auto;
+  filter: drop-shadow(0 0 20px rgba(53, 217, 255, 0.22));
+}
+
+.eyebrow,
+.feature-kicker {
+  margin: 0;
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  max-width: 980px;
+  margin-bottom: 14px;
+  font-size: 4.5rem;
+  line-height: 0.98;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.hero-subtitle {
+  width: min(880px, 100%);
+  margin: 0 auto 28px;
+  color: var(--soft);
+  font-size: 1.28rem;
+  line-height: 1.75;
+}
+
+.hero-actions,
+.community-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(8, 18, 28, 0.74);
+  color: var(--text);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.action-btn:hover,
+.action-btn:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(84, 242, 182, 0.72);
+  background: rgba(12, 31, 43, 0.92);
+  box-shadow: var(--shadow-cyan);
+  outline: none;
+}
+
+.action-btn.primary {
+  border-color: rgba(84, 242, 182, 0.72);
+  color: #04110d;
+  background: linear-gradient(135deg, var(--green), var(--cyan));
+  box-shadow: 0 0 24px rgba(84, 242, 182, 0.22);
+  font-weight: 800;
+}
+
+.action-btn.muted {
+  color: #b8c8d6;
+  border-color: rgba(159, 177, 194, 0.24);
+}
+
+.btn-icon {
+  color: currentColor;
+  font-size: 0.75rem;
+}
+
+.signal-tags {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+}
+
+.signal-tags span {
+  padding: 6px 10px;
+  border: 1px solid rgba(53, 217, 255, 0.2);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(53, 217, 255, 0.05);
+  font-size: 0.82rem;
+}
+
+.hero-preview {
+  position: relative;
+  margin: 22px auto 90px;
+}
+
+.screen-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(142, 224, 255, 0.28);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.52), var(--shadow-cyan);
+  cursor: zoom-in;
+}
+
+.screen-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.08), transparent 32%, transparent 64%, rgba(53, 217, 255, 0.09));
+}
+
+.screen-frame img {
+  width: 100%;
+  height: auto;
+}
+
+.large-screen img {
+  border-top: 1px solid rgba(142, 224, 255, 0.16);
+}
+
+.window-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(142, 224, 255, 0.16);
+  background: rgba(4, 12, 18, 0.9);
+}
+
+.window-bar i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  opacity: 0.9;
+}
+
+.window-bar i:nth-child(2) {
+  background: var(--amber);
+}
+
+.window-bar i:nth-child(3) {
+  background: var(--green);
+}
+
+.section-block {
+  position: relative;
+  margin-bottom: 100px;
+}
+
+.section-heading {
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+
+.section-heading.wide-heading {
+  max-width: 860px;
+}
+
+.section-heading h2,
+.strip-copy h2 {
+  margin: 8px 0 12px;
+  color: var(--text);
+  font-size: 2.25rem;
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.section-heading p,
+.strip-copy p {
+  color: var(--muted);
+  font-size: 1.03rem;
+}
+
+.problem-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.problem-card {
+  position: relative;
+  min-height: 208px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(53, 217, 255, 0.1), rgba(84, 242, 182, 0.04)),
+    rgba(8, 18, 28, 0.74);
+  overflow: hidden;
+}
+
+.problem-card::after {
+  content: "";
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--green), transparent);
+}
+
+.card-index {
+  color: var(--cyan);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.problem-card h3 {
+  margin: 38px 0 12px;
+  color: var(--text);
+  font-size: 1.24rem;
+  line-height: 1.25;
+}
+
+.problem-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.showcase-stack {
+  display: grid;
+  gap: 22px;
+}
+
+.showcase-item {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 1.42fr);
+  align-items: center;
+  gap: 26px;
+  min-height: 430px;
+  padding: 24px;
+  border: 1px solid rgba(142, 224, 255, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(11, 26, 38, 0.86), rgba(5, 12, 19, 0.78));
+}
+
+.showcase-item.reverse {
+  grid-template-columns: minmax(0, 1.42fr) minmax(260px, 0.78fr);
+}
+
+.showcase-item.reverse .showcase-copy {
+  order: 2;
+}
+
+.showcase-item.reverse .screen-frame {
+  order: 1;
+}
+
+.showcase-copy h3 {
+  margin: 8px 0 12px;
+  color: var(--text);
+  font-size: 1.7rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.showcase-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.video-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(142, 224, 255, 0.28);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    linear-gradient(rgba(53, 217, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 217, 255, 0.08) 1px, transparent 1px),
+    rgba(4, 10, 16, 0.82);
+  background-size: 28px 28px, 28px 28px, auto;
+  box-shadow: var(--shadow-green);
+}
+
+.video-frame video {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: #000;
+  object-fit: contain;
+}
+
+.video-showcase {
+  border-color: rgba(84, 242, 182, 0.28);
+  background:
+    linear-gradient(135deg, rgba(84, 242, 182, 0.1), rgba(53, 217, 255, 0.05)),
+    rgba(5, 12, 19, 0.86);
+}
+
+.cognitive-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  align-items: center;
+  gap: 30px;
+  padding: 28px;
+  border: 1px solid rgba(84, 242, 182, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(84, 242, 182, 0.09), transparent),
+    rgba(7, 16, 24, 0.86);
+}
+
+.cognitive-strip img {
+  width: 100%;
+  border: 1px solid rgba(142, 224, 255, 0.18);
+  border-radius: 8px;
+}
+
+.community-section {
+  padding: 36px;
+  border: 1px solid rgba(142, 224, 255, 0.22);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(53, 217, 255, 0.12), rgba(84, 242, 182, 0.06)),
+    rgba(5, 12, 19, 0.88);
+}
+
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 34px 0 48px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(2, 6, 10, 0.82);
+  backdrop-filter: blur(14px);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-card,
+.lightbox-card {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: calc(100vh - 44px);
+  padding: 24px;
+  border: 1px solid rgba(142, 224, 255, 0.35);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.62), var(--shadow-cyan);
+  overflow: auto;
+}
+
+.modal-card h2 {
+  margin: 0 44px 8px 0;
+  font-size: 1.4rem;
+}
+
+.modal-card p {
+  color: var(--muted);
+}
+
+.modal-card img {
+  width: min(260px, 100%);
+  margin: 18px auto 0;
+  border-radius: 8px;
+}
+
+.lightbox-card {
+  width: min(1120px, 100%);
+  padding: 14px;
+}
+
+.lightbox-card img {
+  width: 100%;
+  max-height: calc(100vh - 96px);
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(142, 224, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.modal-close:hover,
+.modal-close:focus-visible {
+  border-color: var(--green);
+  outline: none;
+}
+
+.toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 100;
+  max-width: min(360px, calc(100% - 44px));
+  padding: 12px 14px;
+  border: 1px solid rgba(84, 242, 182, 0.35);
+  border-radius: 8px;
+  background: rgba(5, 16, 22, 0.96);
+  color: var(--soft);
+  box-shadow: var(--shadow-green);
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .page-shell {
+    width: min(100% - 28px, 760px);
+  }
+
+  h1 {
+    font-size: 3.3rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1.12rem;
+  }
+
+  .problem-grid,
+  .cognitive-strip,
+  .showcase-item,
+  .showcase-item.reverse {
+    grid-template-columns: 1fr;
+  }
+
+  .showcase-item.reverse .showcase-copy,
+  .showcase-item.reverse .screen-frame {
+    order: initial;
+  }
+
+  .showcase-item {
+    min-height: auto;
+  }
+
+}
+
+@media (max-width: 680px) {
+  body {
+    font-size: 15px;
+  }
+
+  .page-shell {
+    width: min(100% - 20px, 520px);
+  }
+
+  .site-header {
+    position: relative;
+    top: auto;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nav-links {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .hero-section {
+    padding-top: 34px;
+  }
+
+  .hero-core {
+    width: 142px;
+    height: 126px;
+  }
+
+  .hero-emblem {
+    width: 112px;
+  }
+
+  h1 {
+    font-size: 2.55rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1rem;
+    line-height: 1.68;
+  }
+
+  .action-btn {
+    width: 100%;
+  }
+
+  .hero-preview {
+    margin-bottom: 64px;
+  }
+
+  .section-block {
+    margin-bottom: 68px;
+  }
+
+  .section-heading h2,
+  .strip-copy h2 {
+    font-size: 1.72rem;
+  }
+
+  .showcase-item,
+  .community-section,
+  .cognitive-strip {
+    padding: 18px;
+  }
+
+  .showcase-copy h3 {
+    font-size: 1.34rem;
+  }
+}
+  </style>
 </head>
 <body>
   <div class="page-shell">
@@ -29,7 +796,7 @@
             <span></span>
             <span></span>
           </div>
-          <img class="hero-emblem" src="assets/digital.jpg" alt="Distill Yourself digital core" decoding="async">
+          <img class="hero-emblem" src="assets/digital.jpg" alt="Distill Yourself digital core" width="374" height="318" fetchpriority="high" decoding="async">
         </div>
 
         <h1 id="hero-title">Distill Yourself</h1>
@@ -76,7 +843,7 @@
       <section class="hero-preview" aria-label="Cognitive model screenshot">
         <button class="screen-frame large-screen" type="button" data-lightbox="assets/twin-cognitive-model.jpg" aria-label="Open cognitive model screenshot">
           <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-          <img src="assets/twin-cognitive-model.jpg" alt="Distill Yourself cognitive model showing avatar, evidence events, judgment cards, and cognitive traits" decoding="async">
+          <img src="assets/twin-cognitive-model.jpg" alt="Distill Yourself cognitive model showing avatar, evidence events, judgment cards, and cognitive traits" width="1200" height="768" decoding="async">
         </button>
       </section>
 
@@ -120,7 +887,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/home.jpg" aria-label="Open product home screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/home.jpg" alt="Distill Yourself home overview showing sessions and analysis entry points" loading="lazy" decoding="async">
+              <img src="assets/home.jpg" alt="Distill Yourself home overview showing sessions and analysis entry points" width="1200" height="752" loading="lazy" decoding="async">
             </button>
           </article>
 
@@ -132,7 +899,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/overview.jpg" aria-label="Open overview screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/overview.jpg" alt="Overview dashboard screenshot" loading="lazy" decoding="async">
+              <img src="assets/overview.jpg" alt="Overview dashboard screenshot" width="1200" height="586" loading="lazy" decoding="async">
             </button>
           </article>
 
@@ -144,7 +911,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/twin-runtime-pack.jpg" aria-label="Open runtime pack screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/twin-runtime-pack.jpg" alt="Runtime Pack screenshot showing cognitive traits compiled into a developer profile" loading="lazy" decoding="async">
+              <img src="assets/twin-runtime-pack.jpg" alt="Runtime Pack screenshot showing cognitive traits compiled into a developer profile" width="1200" height="732" loading="lazy" decoding="async">
             </button>
           </article>
 
@@ -156,7 +923,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/session.jpg" aria-label="Open conversation session screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/session.jpg" alt="Conversation session detail screenshot" loading="lazy" decoding="async">
+              <img src="assets/session.jpg" alt="Conversation session detail screenshot" width="1200" height="585" loading="lazy" decoding="async">
             </button>
           </article>
 
@@ -168,7 +935,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/tool_use.jpg" aria-label="Open tool use screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/tool_use.jpg" alt="Tool use analytics screenshot" loading="lazy" decoding="async">
+              <img src="assets/tool_use.jpg" alt="Tool use analytics screenshot" width="1200" height="589" loading="lazy" decoding="async">
             </button>
           </article>
 
@@ -179,7 +946,7 @@
               <p>从会话索引、搜索、洞察，到认知模型和 Runtime Pack，看一次完整的经验蒸馏流程。</p>
             </div>
             <div class="video-frame" aria-label="Distill Yourself product demo video">
-              <video controls preload="metadata" playsinline>
+              <video controls preload="none" poster="assets/overview.jpg" playsinline>
                 <source src="assets/demo.mp4" type="video/mp4">
                 Your browser does not support the video tag.
               </video>
@@ -194,7 +961,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/style.jpg" aria-label="Open style screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/style.jpg" alt="Style distillation screenshot" loading="lazy" decoding="async">
+              <img src="assets/style.jpg" alt="Style distillation screenshot" width="1200" height="826" loading="lazy" decoding="async">
             </button>
           </article>
         </div>
@@ -207,7 +974,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/profile-radar.png" aria-label="Open profile radar screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/profile-radar.png" alt="Profile radar screenshot" loading="lazy" decoding="async">
+              <img src="assets/profile-radar.png" alt="Profile radar screenshot" width="1400" height="529" loading="lazy" decoding="async">
             </button>
           </article>
 
@@ -219,7 +986,7 @@
             </div>
             <button class="screen-frame" type="button" data-lightbox="assets/evolve-rules.jpg" aria-label="Open evolve rules screenshot">
               <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-              <img src="assets/evolve-rules.jpg" alt="Evolve rules screenshot" loading="lazy" decoding="async">
+              <img src="assets/evolve-rules.jpg" alt="Evolve rules screenshot" width="1200" height="939" loading="lazy" decoding="async">
             </button>
           </article>
       </section>
@@ -230,7 +997,7 @@
           <h2>从日志、偏好到认知画像</h2>
           <p>Distill Yourself 不只是保存对话，而是把其中反复出现的判断方式提炼成下一次协作可消费的上下文。</p>
         </div>
-        <img src="assets/persona-contact-sheet.jpg" alt="Cognitive avatar contact sheet" loading="lazy" decoding="async">
+        <img src="assets/persona-contact-sheet.jpg" alt="Cognitive avatar contact sheet" width="1200" height="600" loading="lazy" decoding="async">
       </section>
 
       <section id="community" class="section-block community-section" aria-labelledby="community-title">
@@ -258,7 +1025,7 @@
       <button class="modal-close" type="button" data-close-modal aria-label="Close WeChat QR">×</button>
       <h2 id="wechat-title">WeChat Community</h2>
       <p>扫码加入社区，交流 Distill Yourself 的使用经验、反馈和共创想法。</p>
-      <img src="assets/wechat.png" alt="WeChat community QR code" loading="lazy" decoding="async">
+      <img src="assets/wechat.png" alt="WeChat community QR code" width="885" height="1488" loading="lazy" decoding="async">
     </div>
   </div>
 
