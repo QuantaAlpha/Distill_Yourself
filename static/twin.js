@@ -245,7 +245,7 @@
     renderPersonaOptions(sel, manualOption ? manualOption.avatarId : "");
 
     if (traits && traits.length) {
-      fetch(`/api/twin/avatar-selection?lang=${encodeURIComponent(_getLang())}`)
+      fetch(_withRunId("/api/twin/avatar-selection"))
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data && data.persona_id) {
@@ -852,25 +852,27 @@
       _updateAnalyzeButton();
       return;
     }
-    if (!_activeRunId) {
-      // Resolve default run scope first, then load overview exactly once.
-      fetch("/api/twin/resume", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lang: _getLang() }),
+    // Always resolve the authoritative latest run on open, then load overview
+    // exactly once. A stale stored id (e.g. a deleted/cancelled run) would
+    // otherwise scope every read to nothing, forever.
+    fetch("/api/twin/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lang: _getLang() }),
+    })
+      .then(r => r.json())
+      .then((d) => {
+        if (d && d.ok && d.run && d.run.run_id) {
+          _activeRunId = d.run.run_id;
+          try { localStorage.setItem("twin-active-run-id", _activeRunId); } catch (e) {}
+        } else {
+          // Authoritative "no run" response: drop any stale stored id, go global.
+          _activeRunId = "";
+          try { localStorage.removeItem("twin-active-run-id"); } catch (e) {}
+        }
       })
-        .then(r => r.json())
-        .then((d) => {
-          if (d && d.ok && d.run && d.run.run_id) {
-            _activeRunId = d.run.run_id;
-            try { localStorage.setItem("twin-active-run-id", _activeRunId); } catch (e) {}
-          }
-        })
-        .catch(() => {})
-        .finally(() => { loadOverview(); });
-    } else {
-      loadOverview();
-    }
+      .catch(() => { /* network error: keep the stored id, do NOT clear */ })
+      .finally(() => { loadOverview(); });
     _updateAnalyzeButton();
   };
 

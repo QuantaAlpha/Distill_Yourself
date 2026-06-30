@@ -651,16 +651,24 @@ def _handle_twin_resume(handler):
     from chatview import db as _db
     _db.init_db()
 
-    tables = ["evidence_events", "judgment_cards", "cognitive_traits"]
+    # Each table's recency column differs: cognitive_traits has only updated_at.
+    # A wrong/missing column raises OperationalError (caught by the inner except
+    # below), silently dropping that table from "latest run" selection, so resume
+    # would not be authoritative.
+    table_ts = {
+        "evidence_events": "created_at",
+        "judgment_cards": "created_at",
+        "cognitive_traits": "updated_at",
+    }
     latest_run_id = None
     latest_created = ""
 
     try:
         conn = _db.get_conn()
-        for table in tables:
+        for table, ts_col in table_ts.items():
             try:
                 row = conn.execute(
-                    f"SELECT run_id, MAX(created_at) as latest FROM {table} "
+                    f"SELECT run_id, MAX({ts_col}) as latest FROM {table} "
                     f"WHERE run_id IS NOT NULL AND run_id != ''"
                 ).fetchone()
                 if row and row["latest"] and row["latest"] > latest_created:
@@ -822,27 +830,38 @@ def _handle_twin_sync(handler):
     # Read lang from POST body if provided
     raw = _read_post_body(handler)
     lang = "zh"
+    run_id = ""
     if raw:
         try:
             body = _json.loads(raw)
             lang = body.get("lang", "zh")
+            run_id = body.get("run_id", "") or ""
         except Exception:
             pass
 
-    CLAUDE_MD_PATH = Path.home() / ".claude" / "CLAUDE.md"
+    CLAUDE_MD_PATH = Path(
+        os.environ.get("CHATVIEW_CLAUDE_MD") or (Path.home() / ".claude" / "CLAUDE.md")
+    )
     CM_MARKER_START = "<!-- cognitive-handbook:start -->"
     CM_MARKER_END = "<!-- cognitive-handbook:end -->"
 
+    sync_where = "status IN ('confirmed','emerging')"
+    sync_params = ()
+    if run_id:
+        sync_where += " AND run_id=?"
+        sync_params = (run_id,)
     try:
         cards = _db.cm_get_all(
             "judgment_cards",
-            where="status IN ('confirmed','emerging')",
+            where=sync_where,
+            params=sync_params,
             order="confidence DESC",
             limit=25,
         )
         traits = _db.cm_get_all(
             "cognitive_traits",
-            where="status IN ('confirmed','emerging')",
+            where=sync_where,
+            params=sync_params,
             order="strength DESC",
             limit=15,
         )

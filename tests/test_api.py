@@ -361,5 +361,225 @@ class TestTwinCancel(APITestCase):
         self.assertIn("error", body)
 
 
+# ---------------------------------------------------------------------------
+# Tier-2: run_id run-scoping (twin views / sync / avatar scope to active run)
+# ---------------------------------------------------------------------------
+
+def _seed_event(run_id, eid, idx, created_at=None):
+    from chatview import db as _db
+    data = {
+        "run_id": run_id, "session_id": "sess-scope", "event_index": idx,
+        "signal_type": "correction", "signal_intensity": 0.8,
+        "domain": "coding/test", "lesson": f"lesson {eid}",
+    }
+    if created_at is not None:
+        data["created_at"] = created_at
+    _db.cm_upsert("evidence_events", eid, data)
+
+
+def _seed_card(run_id, cid, when, judgment, status="confirmed"):
+    from chatview import db as _db
+    _db.cm_upsert("judgment_cards", cid, {
+        "run_id": run_id, "applies_when": when, "judgment": judgment,
+        "confidence": 0.7, "status": status,
+    })
+
+
+def _seed_trait(run_id, tid, name, status="confirmed"):
+    from chatview import db as _db
+    _db.cm_upsert("cognitive_traits", tid, {
+        "run_id": run_id, "name": name, "category": "价值取向",
+        "description": f"desc {tid}", "strength": 0.8, "status": status,
+    })
+
+
+class TestTwinRunScopingReads(APITestCase):
+    """run_id query param scopes cards/traits/events/overview/runtime-preview."""
+    RUN_A = "run_scope_A"
+    RUN_B = "run_scope_B"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from chatview import db as _db
+        _db.init_db()
+        # Run A: 2 of each. Run B: 1 of each. Totals = 3.
+        _seed_card(cls.RUN_A, "jc_a1", "when a1", "judge a1")
+        _seed_card(cls.RUN_A, "jc_a2", "when a2", "judge a2")
+        _seed_card(cls.RUN_B, "jc_b1", "when b1", "judge b1")
+        _seed_trait(cls.RUN_A, "ct_a1", "Trait A1")
+        _seed_trait(cls.RUN_A, "ct_a2", "Trait A2")
+        _seed_trait(cls.RUN_B, "ct_b1", "Trait B1")
+        _seed_event(cls.RUN_A, "ev_a1", 1)
+        _seed_event(cls.RUN_A, "ev_a2", 2)
+        _seed_event(cls.RUN_B, "ev_b1", 3)
+
+    def test_cards_scoped_by_run_id(self):
+        _, body = self._get(f"/api/twin/cards?run_id={self.RUN_A}")
+        self.assertEqual(len(body["cards"]), 2)
+        self.assertTrue(all(c["run_id"] == self.RUN_A for c in body["cards"]))
+        _, allb = self._get("/api/twin/cards")
+        self.assertEqual(len(allb["cards"]), 3)
+
+    def test_traits_scoped_by_run_id(self):
+        _, body = self._get(f"/api/twin/traits?run_id={self.RUN_A}")
+        self.assertEqual(len(body["traits"]), 2)
+        _, allb = self._get("/api/twin/traits")
+        self.assertEqual(len(allb["traits"]), 3)
+
+    def test_events_scoped_by_run_id(self):
+        _, body = self._get(f"/api/twin/events?run_id={self.RUN_A}")
+        self.assertEqual(len(body["events"]), 2)
+        _, allb = self._get("/api/twin/events")
+        self.assertEqual(len(allb["events"]), 3)
+
+    def test_overview_counts_scoped_by_run_id(self):
+        _, body = self._get(f"/api/twin/overview?run_id={self.RUN_A}")
+        self.assertEqual(body["cards"]["count"], 2)
+        self.assertEqual(body["traits"]["count"], 2)
+        self.assertEqual(body["events"]["count"], 2)
+        _, allb = self._get("/api/twin/overview")
+        self.assertEqual(allb["cards"]["count"], 3)
+        self.assertEqual(allb["traits"]["count"], 3)
+        self.assertEqual(allb["events"]["count"], 3)
+
+    def test_runtime_preview_scoped_by_run_id(self):
+        _, body = self._get(f"/api/twin/runtime-preview?run_id={self.RUN_A}")
+        self.assertEqual(body["card_count"], 2)
+        self.assertEqual(body["trait_count"], 2)
+        _, allb = self._get("/api/twin/runtime-preview")
+        self.assertEqual(allb["card_count"], 3)
+        self.assertEqual(allb["trait_count"], 3)
+
+    def test_unknown_run_id_returns_empty_200(self):
+        for ep in ("cards", "traits", "events"):
+            code, body = self._get(f"/api/twin/{ep}?run_id=run_does_not_exist")
+            self.assertEqual(code, 200)
+            self.assertEqual(len(body[ep]), 0)
+        code, ov = self._get("/api/twin/overview?run_id=run_does_not_exist")
+        self.assertEqual(code, 200)
+        self.assertEqual(ov["cards"]["count"], 0)
+
+    def test_hostile_run_id_is_bound_param(self):
+        import urllib.parse
+        hostile = urllib.parse.quote("zzz' OR 1=1 --")
+        code, body = self._get(f"/api/twin/cards?run_id={hostile}")
+        self.assertEqual(code, 200)
+        # Bound param => literal match => zero rows, NOT all rows, NOT a 500.
+        self.assertEqual(len(body["cards"]), 0)
+
+
+class TestTwinResumeLatestTrait(APITestCase):
+    """resume must consider cognitive_traits.updated_at (no created_at column)."""
+    RUN_OLD = "run_old_event"
+    RUN_NEW = "run_new_trait"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from chatview import db as _db
+        _db.init_db()
+        # Old run: only an event, created long ago.
+        _seed_event(cls.RUN_OLD, "ev_old", 1, created_at="2020-01-01T00:00:00")
+        # New run: only a trait (auto updated_at = now), no events/cards.
+        _seed_trait(cls.RUN_NEW, "ct_new", "Fresh Trait", status="emerging")
+
+    def test_resume_picks_run_with_latest_trait(self):
+        code, body = self._post("/api/twin/resume", {"lang": "en"})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        # Buggy resume (MAX(created_at) on traits => NULL) would return RUN_OLD.
+        self.assertEqual(body["run"]["run_id"], self.RUN_NEW)
+
+
+class TestTwinAvatarScoping(APITestCase):
+    """avatar-selection + overview avatar scope to run_id, no global fallback."""
+    RUN_A = "run_av_A"
+    RUN_B = "run_av_B"
+    AVATAR = {"persona_id": "alpha", "model_id": "m1"}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from chatview import db as _db
+        _db.init_db()
+        _seed_trait(cls.RUN_A, "ct_av_a1", "Av Trait A1", status="confirmed")
+        _seed_trait(cls.RUN_A, "ct_av_a2", "Av Trait A2", status="emerging")
+        _seed_trait(cls.RUN_B, "ct_av_b1", "Av Trait B1", status="confirmed")
+        # Force traits old so the avatar cache (stamped now) is always fresher,
+        # regardless of utcnow()/now() timezone skew between cm_upsert/evolve_upsert.
+        conn = _db.get_conn()
+        conn.execute("UPDATE cognitive_traits SET updated_at='2000-01-01T00:00:00'")
+        conn.commit()
+        # Avatar cache exists ONLY for run A (scope project=run_id).
+        _db.evolve_upsert("twin_avatar", "all", "all", cls.RUN_A, "auto",
+                          json.dumps(cls.AVATAR))
+
+    def test_avatar_selection_scoped_to_run(self):
+        code, body = self._get(f"/api/twin/avatar-selection?run_id={self.RUN_A}")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["persona_id"], "alpha")
+
+    def test_avatar_selection_global_has_no_cache(self):
+        # No run_id => project="" scope => no cache => 404 (not a cross-run leak).
+        code, _ = self._get("/api/twin/avatar-selection")
+        self.assertEqual(code, 404)
+
+    def test_overview_avatar_scoped_to_run(self):
+        _, a = self._get(f"/api/twin/overview?run_id={self.RUN_A}")
+        self.assertIsNotNone(a["avatar_selection"])
+        self.assertEqual(a["avatar_selection"]["persona_id"], "alpha")
+        # Run B has no avatar cache and must NOT fall back to evolve_latest.
+        _, b = self._get(f"/api/twin/overview?run_id={self.RUN_B}")
+        self.assertIsNone(b["avatar_selection"])
+        # No run_id may still use the global latest cache.
+        _, g = self._get("/api/twin/overview")
+        self.assertIsNotNone(g["avatar_selection"])
+
+
+class TestTwinSyncScoping(APITestCase):
+    """sync scopes to run_id AND never touches the real ~/.claude/CLAUDE.md."""
+    RUN_A = "run_sync_A"
+    RUN_B = "run_sync_B"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from chatview import db as _db
+        _db.init_db()
+        _seed_card(cls.RUN_A, "jc_sync_a", "WHEN_ALPHA", "JUDGE_ALPHA")
+        _seed_trait(cls.RUN_A, "ct_sync_a", "TRAIT_ALPHA")
+        _seed_card(cls.RUN_B, "jc_sync_b", "WHEN_BETA", "JUDGE_BETA")
+        _seed_trait(cls.RUN_B, "ct_sync_b", "TRAIT_BETA")
+
+    def test_sync_scoped_and_real_file_untouched(self):
+        tmp_md = Path(self._tmpdir) / "synced_CLAUDE.md"
+        real_md = Path.home() / ".claude" / "CLAUDE.md"
+        before_exists = real_md.exists()
+        before_content = real_md.read_text(encoding="utf-8") if before_exists else None
+
+        os.environ["CHATVIEW_CLAUDE_MD"] = str(tmp_md)
+        try:
+            code, body = self._post("/api/twin/sync",
+                                    {"run_id": self.RUN_A, "lang": "en"})
+            self.assertEqual(code, 200)
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["cards_synced"], 1)
+            self.assertEqual(body["traits_synced"], 1)
+
+            written = tmp_md.read_text(encoding="utf-8")
+            self.assertIn("JUDGE_ALPHA", written)
+            self.assertIn("TRAIT_ALPHA", written)
+            self.assertNotIn("JUDGE_BETA", written)
+            self.assertNotIn("TRAIT_BETA", written)
+        finally:
+            os.environ.pop("CHATVIEW_CLAUDE_MD", None)
+
+        # Safety: the user's real global prefs file must be untouched.
+        self.assertEqual(real_md.exists(), before_exists)
+        if before_exists:
+            self.assertEqual(real_md.read_text(encoding="utf-8"), before_content)
+
+
 if __name__ == "__main__":
     unittest.main()
