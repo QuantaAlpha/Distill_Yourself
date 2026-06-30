@@ -67,6 +67,43 @@
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeModals();
+    if (event.key === "Escape") {
+      closeModals();
+      closeVideoModal();
+    }
   });
+
+  // ── Video modal ──
+  const videoOverlay = $("#video-modal-overlay");
+  const videoModalPlayer = $("#video-modal-player");
+  const demoVideoWrap = $("#demo-video-wrap");
+  const demoVideo = $("#demo-video");
+
+  function openVideoModal() {
+    if (!demoVideo || !videoModalPlayer) return;
+    videoModalPlayer.src = demoVideo.querySelector("source")?.src || demoVideo.src;
+    videoModalPlayer.currentTime = 0;
+    videoOverlay.classList.add("active");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeVideoModal() {
+    if (!videoOverlay || !videoOverlay.classList.contains("active")) return;
+    videoOverlay.classList.remove("active");
+    videoModalPlayer.pause();
+    videoModalPlayer.removeAttribute("src");
+    document.body.style.overflow = "";
+  }
+
+  if (demoVideoWrap) {
+    demoVideoWrap.addEventListener("click", openVideoModal);
+  }
+  if ($("#video-modal-close")) {
+    $("#video-modal-close").addEventListener("click", closeVideoModal);
+  }
+  if (videoOverlay) {
+    videoOverlay.addEventListener("click", (e) => {
+      if (e.target === videoOverlay) closeVideoModal();
+    });
+  }
 })();

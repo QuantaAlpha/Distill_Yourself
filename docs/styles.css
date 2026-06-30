@@ -530,6 +530,126 @@ h1 {
     rgba(5, 12, 19, 0.86);
 }
 
+/* ── Clickable video overlay ── */
+.video-clickable {
+  cursor: pointer;
+}
+
+.video-play-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.video-clickable:hover .video-play-overlay {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.video-play-overlay svg {
+  width: 62px;
+  height: 62px;
+  filter: drop-shadow(0 2px 12px rgba(0,0,0,0.5));
+  transition: transform 0.2s;
+}
+
+.video-clickable:hover .video-play-overlay svg {
+  transform: scale(1.1);
+}
+
+/* ── Chapter links ── */
+.video-chapter-links {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.video-chapter-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 10, 16, 0.66);
+  color: var(--soft);
+  font-size: 0.92rem;
+  font-weight: 600;
+  transition: border-color 0.16s, background 0.16s;
+}
+
+.video-chapter-link:hover {
+  border-color: rgba(84, 242, 182, 0.5);
+  background: rgba(53, 217, 255, 0.08);
+  color: var(--text);
+}
+
+.video-chapter-link .ch-duration {
+  color: var(--cyan);
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── Video modal ── */
+.video-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+}
+
+.video-modal-overlay.active {
+  display: flex;
+}
+
+.video-modal {
+  position: relative;
+  width: min(92vw, 1200px);
+  cursor: default;
+}
+
+.video-modal video {
+  display: block;
+  width: 100%;
+  max-height: 85vh;
+  border-radius: 8px;
+  box-shadow: 0 0 60px rgba(53, 217, 255, 0.25), 0 32px 80px rgba(0, 0, 0, 0.6);
+}
+
+.video-modal-close {
+  position: absolute;
+  top: -42px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 12px;
+  color: var(--muted);
+  background: rgba(4, 10, 16, 0.7);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.video-modal-close:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
 .cognitive-strip {
   display: grid;
   grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);

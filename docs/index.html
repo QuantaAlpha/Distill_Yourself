@@ -17,6 +17,7 @@
       <nav class="nav-links" aria-label="Page sections">
         <a href="#problem">Problem</a>
         <a href="#overview">Overview</a>
+        <a href="video/">Demo</a>
         <a href="#community">Community</a>
       </nav>
     </header>
@@ -42,7 +43,7 @@
             <span class="btn-icon" aria-hidden="true">▶</span>
             Demo
           </a>
-          <a class="action-btn" href="https://github.com/QuantaAlpha/Distill_Yourself" target="_blank" rel="noreferrer">
+          <a class="action-btn" href="https://github.com/QuantaAlpha/Distill-Yourself" target="_blank" rel="noreferrer">
             <span class="btn-icon" aria-hidden="true">◆</span>
             GitHub
           </a>
@@ -112,6 +113,28 @@
         </div>
 
         <div class="showcase-stack">
+          <article class="showcase-item reverse video-showcase">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Product Demo</span>
+              <h3>Watch Distill Yourself in action</h3>
+              <p>从会话索引、搜索、洞察，到认知模型和 Runtime Pack，看一次完整的经验蒸馏流程。</p>
+              <nav class="video-chapter-links">
+                <a class="video-chapter-link" href="video/?v=cognitive-model">Cognitive Model <span class="ch-duration">1:55</span></a>
+                <a class="video-chapter-link" href="video/?v=evolve">Evolve Engine <span class="ch-duration">1:55</span></a>
+                <a class="video-chapter-link" href="video/?v=browse-search">Browse &amp; Search <span class="ch-duration">0:55</span></a>
+                <a class="video-chapter-link" href="video/?v=insights">Insights <span class="ch-duration">0:50</span></a>
+              </nav>
+            </div>
+            <div class="video-frame video-clickable" id="demo-video-wrap" aria-label="Click to play demo video">
+              <div class="video-play-overlay" id="demo-play-btn">
+                <svg viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="38" fill="rgba(0,0,0,0.45)" stroke="rgba(255,255,255,0.8)" stroke-width="2.5"/><polygon points="33,24 33,56 58,40" fill="rgba(255,255,255,0.92)"/></svg>
+              </div>
+              <video id="demo-video" preload="metadata" playsinline poster="images/readme/demo-preview.jpg">
+                <source src="assets/demo.mp4" type="video/mp4">
+              </video>
+            </div>
+          </article>
+
           <article class="showcase-item">
             <div class="showcase-copy">
               <span class="feature-kicker">Product Home</span>
@@ -172,20 +195,6 @@
             </button>
           </article>
 
-          <article class="showcase-item video-showcase">
-            <div class="showcase-copy">
-              <span class="feature-kicker">Product Demo</span>
-              <h3>Watch Distill Yourself in action</h3>
-              <p>从会话索引、搜索、洞察，到认知模型和 Runtime Pack，看一次完整的经验蒸馏流程。</p>
-            </div>
-            <div class="video-frame" aria-label="Distill Yourself product demo video">
-              <video controls preload="metadata" playsinline>
-                <source src="assets/demo.mp4" type="video/mp4">
-                Your browser does not support the video tag.
-              </video>
-            </div>
-          </article>
-
           <article class="showcase-item">
             <div class="showcase-copy">
               <span class="feature-kicker">Style Distillation</span>
@@ -240,7 +249,7 @@
           <p>加入社区，交流 Distill Yourself 的使用经验、反馈和共创想法。</p>
         </div>
         <div class="community-actions">
-          <a class="action-btn primary" href="https://github.com/QuantaAlpha/Distill_Yourself" target="_blank" rel="noreferrer">GitHub</a>
+          <a class="action-btn primary" href="https://github.com/QuantaAlpha/Distill-Yourself" target="_blank" rel="noreferrer">GitHub</a>
           <a class="action-btn" href="https://discord.gg/KDyuer49t" target="_blank" rel="noreferrer">Discord</a>
           <button class="action-btn" type="button" data-open-wechat>WeChat QR</button>
         </div>
@@ -270,6 +279,13 @@
   </div>
 
   <div class="toast" role="status" aria-live="polite" hidden></div>
+
+  <div class="video-modal-overlay" id="video-modal-overlay">
+    <div class="video-modal">
+      <button class="video-modal-close" id="video-modal-close" type="button">ESC to close</button>
+      <video id="video-modal-player" controls autoplay playsinline></video>
+    </div>
+  </div>
 
   <script src="script.js"></script>
 </body>
