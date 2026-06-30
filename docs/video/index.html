@@ -455,6 +455,90 @@
       line-height: 1.55;
     }
 
+    /* ── Video modal ── */
+    .video-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.88);
+      backdrop-filter: blur(12px);
+      cursor: pointer;
+    }
+
+    .video-modal-overlay.active {
+      display: flex;
+    }
+
+    .video-modal {
+      position: relative;
+      width: min(92vw, 1200px);
+      cursor: default;
+    }
+
+    .video-modal video {
+      width: 100%;
+      max-height: 85vh;
+      border-radius: 8px;
+      box-shadow: 0 0 60px rgba(53, 217, 255, 0.25), 0 32px 80px rgba(0, 0, 0, 0.6);
+    }
+
+    .video-modal-close {
+      position: absolute;
+      top: -42px;
+      right: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px 12px;
+      color: var(--muted);
+      background: rgba(4, 10, 16, 0.7);
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .video-modal-close:hover {
+      color: var(--text);
+      border-color: var(--line-strong);
+    }
+
+    /* ── Clickable player overlay ── */
+    .player-wrap {
+      position: relative;
+      cursor: pointer;
+    }
+
+    .player-wrap .play-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.25);
+      transition: background 0.2s;
+    }
+
+    .player-wrap:hover .play-overlay {
+      background: rgba(0, 0, 0, 0.12);
+    }
+
+    .play-overlay svg {
+      width: 64px;
+      height: 64px;
+      filter: drop-shadow(0 2px 12px rgba(0,0,0,0.5));
+      transition: transform 0.2s;
+    }
+
+    .player-wrap:hover .play-overlay svg {
+      transform: scale(1.1);
+    }
+
     .footer-actions {
       display: flex;
       align-items: center;
@@ -565,7 +649,12 @@
               <div class="panel-title" id="stage-title">Distill Yourself Demo Video</div>
               <div class="panel-status">HD</div>
             </div>
-            <video id="player" controls preload="none" playsinline></video>
+            <div class="player-wrap" id="player-wrap">
+              <div class="play-overlay" id="play-overlay">
+                <svg viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="38" fill="rgba(0,0,0,0.45)" stroke="rgba(255,255,255,0.8)" stroke-width="2.5"/><polygon points="33,24 33,56 58,40" fill="rgba(255,255,255,0.92)"/></svg>
+              </div>
+              <video id="player" preload="none" playsinline></video>
+            </div>
           </section>
           <nav class="chapter-strip" id="playlist" aria-label="Demo videos"></nav>
         </div>
@@ -602,6 +691,13 @@
         <a class="action-link" href="https://github.com/QuantaAlpha/Distill-Yourself#quick-start">Read Quick Start</a>
       </div>
     </main>
+  </div>
+
+  <div class="video-modal-overlay" id="video-modal-overlay">
+    <div class="video-modal" id="video-modal">
+      <button class="video-modal-close" id="modal-close">ESC to close</button>
+      <video id="modal-player" controls autoplay playsinline></video>
+    </div>
   </div>
 
   <script>
@@ -717,6 +813,34 @@
       }
       chapterCards.appendChild(card);
     }
+
+    // ── Video modal logic ──
+    const overlay = document.getElementById("video-modal-overlay");
+    const modalPlayer = document.getElementById("modal-player");
+    const playerWrap = document.getElementById("player-wrap");
+
+    function openModal() {
+      modalPlayer.src = player.src;
+      modalPlayer.currentTime = 0;
+      overlay.classList.add("active");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeModal() {
+      overlay.classList.remove("active");
+      modalPlayer.pause();
+      modalPlayer.removeAttribute("src");
+      document.body.style.overflow = "";
+    }
+
+    playerWrap.addEventListener("click", openModal);
+    document.getElementById("modal-close").addEventListener("click", closeModal);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && overlay.classList.contains("active")) closeModal();
+    });
 
     video.points.forEach(([title, body]) => {
       const card = document.createElement("article");
