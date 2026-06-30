@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Distill Yourself turns forgotten Claude Code and Codex conversations into reusable judgment, decisions, and collaboration memory.">
+  <title>Distill Yourself</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header" aria-label="Primary navigation">
+      <a class="brand-lockup" href="#top" aria-label="Distill Yourself home">
+        <span class="brand-mark">DY</span>
+        <span>Distill Yourself</span>
+      </a>
+      <nav class="nav-links" aria-label="Page sections">
+        <a href="#problem">Problem</a>
+        <a href="#overview">Overview</a>
+        <a href="#community">Community</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero-section" aria-labelledby="hero-title">
+        <div class="hero-core">
+          <div class="core-ring" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <img class="hero-emblem" src="assets/digital.png" alt="Distill Yourself digital core" decoding="async">
+        </div>
+
+        <h1 id="hero-title">Distill Yourself</h1>
+        <p class="hero-subtitle">
+          专治 Claude Code、Codex 的&quot;反复教不会&quot;：Distill Yourself 把你被遗忘的判断、决策，蒸馏成可复用资产
+        </p>
+
+        <div class="hero-actions" aria-label="Project links">
+          <a class="action-btn primary" href="https://github.com/QuantaAlpha/Distill_Yourself" target="_blank" rel="noreferrer">
+            <span class="btn-icon" aria-hidden="true">◆</span>
+            GitHub
+          </a>
+          <a class="action-btn" href="https://discord.gg/KDyuer49t" target="_blank" rel="noreferrer">
+            <span class="btn-icon" aria-hidden="true">◈</span>
+            Discord
+          </a>
+          <button class="action-btn" type="button" data-open-wechat>
+            <span class="btn-icon" aria-hidden="true">▣</span>
+            WeChat
+          </button>
+          <button class="action-btn muted" type="button" data-coming-soon="arXiv">
+            <span class="btn-icon" aria-hidden="true">⌁</span>
+            arXiv
+          </button>
+          <button class="action-btn muted" type="button" data-coming-soon="Hugging Face">
+            <span class="btn-icon" aria-hidden="true">▤</span>
+            Hugging Face
+          </button>
+        </div>
+
+        <div class="signal-tags" aria-label="Project highlights">
+          <span>Claude Code</span>
+          <span>Codex</span>
+          <span>SQLite FTS5</span>
+          <span>No API key</span>
+          <span>Local-first</span>
+        </div>
+      </section>
+
+      <section class="hero-preview" aria-label="Cognitive model screenshot">
+        <button class="screen-frame large-screen" type="button" data-lightbox="assets/twin-cognitive-model.png" aria-label="Open cognitive model screenshot">
+          <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+          <img src="assets/twin-cognitive-model.png" alt="Distill Yourself cognitive model showing avatar, evidence events, judgment cards, and cognitive traits" decoding="async">
+        </button>
+      </section>
+
+      <section id="problem" class="section-block problem-section" aria-labelledby="problem-title">
+        <div class="section-heading">
+          <p class="eyebrow">Problem</p>
+          <h2 id="problem-title">AI 协作记忆正在不断流失</h2>
+        </div>
+        <div class="problem-grid">
+          <article class="problem-card">
+            <span class="card-index">01</span>
+            <h3>反复纠正，反复遗忘</h3>
+            <p>你讲过的风格、边界和偏好，会在新会话里重新归零。</p>
+          </article>
+          <article class="problem-card">
+            <span class="card-index">02</span>
+            <h3>判断沉没在日志里</h3>
+            <p>架构取舍、排错路径、产品判断都散落在对话历史中。</p>
+          </article>
+          <article class="problem-card">
+            <span class="card-index">03</span>
+            <h3>新会话从零开始</h3>
+            <p>AI 无法继承你的长期决策方式，只能一次次重新学习。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="overview" class="section-block overview-section" aria-labelledby="overview-title">
+        <div class="section-heading wide-heading">
+          <p class="eyebrow">Overview</p>
+          <h2 id="overview-title">把历史对话蒸馏成下一次协作能用的资产</h2>
+          <p>从会话浏览、工具使用、行为信号，到个人风格和可复用判断，Distill Yourself 把散落的 AI 对话变成可追溯、可分析、可回写的工作记忆。</p>
+        </div>
+
+        <div class="showcase-stack">
+          <article class="showcase-item">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Product Home</span>
+              <h3>Start from a command center for your AI history</h3>
+              <p>从总览页进入会话、洞察、Evolve 和 Distill Yourself，让所有历史入口集中在一个工作台里。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/home.png" aria-label="Open product home screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/home.png" alt="Distill Yourself home overview showing sessions and analysis entry points" loading="lazy" decoding="async">
+            </button>
+          </article>
+
+          <article class="showcase-item reverse">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Conversation Asset</span>
+              <h3>Conversation history becomes a working surface</h3>
+              <p>跨 Claude Code 和 Codex 汇总会话、项目和上下文，让被遗忘的历史重新变成可检索资产。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/overview.png" aria-label="Open overview screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/overview.png" alt="Overview dashboard screenshot" loading="lazy" decoding="async">
+            </button>
+          </article>
+
+          <article class="showcase-item">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Runtime Pack</span>
+              <h3>Compile traits into context future agents can use</h3>
+              <p>认知特质会被压缩成简洁的 Runtime Pack，方便同步到 AI 配置里，让下一次会话继承你的判断方式。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/twin-runtime-pack.png" aria-label="Open runtime pack screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/twin-runtime-pack.png" alt="Runtime Pack screenshot showing cognitive traits compiled into a developer profile" loading="lazy" decoding="async">
+            </button>
+          </article>
+
+          <article class="showcase-item reverse">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Structured Recall</span>
+              <h3>Find decisions, corrections, and context</h3>
+              <p>把用户提问、AI 回复、工具调用和会话摘要分层呈现，让长对话也能快速回看。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/session.jpg" aria-label="Open conversation session screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/session.jpg" alt="Conversation session detail screenshot" loading="lazy" decoding="async">
+            </button>
+          </article>
+
+          <article class="showcase-item">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Tool Signals</span>
+              <h3>See how you work with AI</h3>
+              <p>从工具调用、文件热点和错误模式中看清 AI 协作里的真实工作流。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/tool_use.png" aria-label="Open tool use screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/tool_use.png" alt="Tool use analytics screenshot" loading="lazy" decoding="async">
+            </button>
+          </article>
+
+          <article class="showcase-item video-showcase">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Product Demo</span>
+              <h3>Watch Distill Yourself in action</h3>
+              <p>从会话索引、搜索、洞察，到认知模型和 Runtime Pack，看一次完整的经验蒸馏流程。</p>
+            </div>
+            <div class="video-frame" aria-label="Distill Yourself product demo video">
+              <video controls preload="metadata" playsinline>
+                <source src="assets/demo.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          </article>
+
+          <article class="showcase-item">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Style Distillation</span>
+              <h3>Distill your collaboration style</h3>
+              <p>从历史对话里提炼你的沟通偏好、决策方式和工作边界。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/style.png" aria-label="Open style screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/style.png" alt="Style distillation screenshot" loading="lazy" decoding="async">
+            </button>
+          </article>
+        </div>
+
+          <article class="showcase-item">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Profile Radar</span>
+              <h3>Your AI collaboration profile becomes visible</h3>
+              <p>Profile Radar 把历史对话里反复出现的能力维度和协作偏好可视化，让“AI 眼里的你”不再只是一段模糊描述。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/profile-radar.png" aria-label="Open profile radar screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/profile-radar.png" alt="Profile radar screenshot" loading="lazy" decoding="async">
+            </button>
+          </article>
+
+          <article class="showcase-item reverse">
+            <div class="showcase-copy">
+              <span class="feature-kicker">Rules</span>
+              <h3>Repeated corrections become explicit rules</h3>
+              <p>反复出现的纠正会被整理成优先级明确的规则，附带频率和证据，让未来的 AI 协作少踩同一类坑。</p>
+            </div>
+            <button class="screen-frame" type="button" data-lightbox="assets/evolve-rules.png" aria-label="Open evolve rules screenshot">
+              <span class="window-bar" aria-hidden="true"><i></i><i></i><i></i></span>
+              <img src="assets/evolve-rules.png" alt="Evolve rules screenshot" loading="lazy" decoding="async">
+            </button>
+          </article>
+      </section>
+
+      <section class="section-block cognitive-strip" aria-label="Cognitive model visual strip">
+        <div class="strip-copy">
+          <p class="eyebrow">Cognitive Layer</p>
+          <h2>从日志、偏好到认知画像</h2>
+          <p>Distill Yourself 不只是保存对话，而是把其中反复出现的判断方式提炼成下一次协作可消费的上下文。</p>
+        </div>
+        <img src="assets/persona-contact-sheet.png" alt="Cognitive avatar contact sheet" loading="lazy" decoding="async">
+      </section>
+
+      <section id="community" class="section-block community-section" aria-labelledby="community-title">
+        <div class="section-heading">
+          <p class="eyebrow">Community</p>
+          <h2 id="community-title">一起打磨 AI 协作记忆层</h2>
+          <p>加入社区，交流 Distill Yourself 的使用经验、反馈和共创想法。</p>
+        </div>
+        <div class="community-actions">
+          <a class="action-btn primary" href="https://github.com/QuantaAlpha/Distill_Yourself" target="_blank" rel="noreferrer">GitHub</a>
+          <a class="action-btn" href="https://discord.gg/KDyuer49t" target="_blank" rel="noreferrer">Discord</a>
+          <button class="action-btn" type="button" data-open-wechat>WeChat QR</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Distill Yourself</span>
+      <span>Local-first collaboration memory for Claude Code and Codex.</span>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop" data-modal="wechat" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="wechat-title">
+      <button class="modal-close" type="button" data-close-modal aria-label="Close WeChat QR">×</button>
+      <h2 id="wechat-title">WeChat Community</h2>
+      <p>扫码加入社区，交流 Distill Yourself 的使用经验、反馈和共创想法。</p>
+      <img src="assets/wechat.png" alt="WeChat community QR code" loading="lazy" decoding="async">
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="lightbox" hidden>
+    <div class="lightbox-card" role="dialog" aria-modal="true" aria-label="Screenshot preview">
+      <button class="modal-close" type="button" data-close-modal aria-label="Close preview">×</button>
+      <img data-lightbox-image alt="">
+    </div>
+  </div>
+
+  <div class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
