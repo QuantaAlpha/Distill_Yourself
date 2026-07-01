@@ -539,6 +539,38 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
             _handle_twin_cancel(self)
         elif parsed.path == "/api/twin/sync":
             _handle_twin_sync(self)
+        elif parsed.path == "/api/session/rename":
+            from chatview.handlers.base import _read_post_body
+
+            raw = _read_post_body(self)
+            if raw is None:
+                return  # _read_post_body already sent error
+            try:
+                body = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                _error(self, 400, "Invalid JSON")
+                return
+            sid = body.get("id", "") if isinstance(body, dict) else ""
+            title = body.get("title", "") if isinstance(body, dict) else ""
+            if not isinstance(sid, str) or not isinstance(title, str):
+                _error(self, 400, "id and title must be strings")
+                return
+            title = title.strip()
+            if not sid or not title:
+                _error(self, 400, "Missing id or title")
+                return
+            if not _db.rename_session(sid, title):
+                _error(self, 404, "Session not found")
+                return
+            # Update in-memory index
+            from chatview import index as _idx
+
+            with _idx._index_lock:
+                sessions = _idx._index.get("sessions", {})
+                if sid in sessions:
+                    sessions[sid]["title"] = title
+                _idx._index_gen += 1
+            _json_response(self, {"ok": True})
         elif parsed.path.startswith("/api/session/") and parsed.path.endswith("/star"):
             sid = parsed.path[len("/api/session/") : -len("/star")]
             import chatview.db as _db

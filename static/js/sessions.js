@@ -23,6 +23,7 @@ registerI18n({
     'sessions.date.3months': '3 个月',
     'sessions.loadMore': '+ {n} 更多会话',
     'sessions.msgs': '条消息',
+    'sessions.rename': '重命名',
     'sessions.delete': '删除',
     'sessions.deleteIcon': '✕',
     'sessions.deleteConfirm': '确认删除"{title}"？',
@@ -38,6 +39,7 @@ registerI18n({
     'sessions.date.3months': '3 Months',
     'sessions.loadMore': '+ {n} more sessions',
     'sessions.msgs': 'msgs',
+    'sessions.rename': 'Rename',
     'sessions.delete': 'Delete session',
     'sessions.deleteIcon': '✕',
     'sessions.deleteConfirm': 'Delete "{title}"?',
@@ -200,6 +202,7 @@ export function renderSessions(sessions) {
       <div class="session-header-row">
         <div class="session-title">${esc(s.title)}</div>
         <div class="session-header-actions">
+          <button class="session-rename-btn" title="${esc(t('sessions.rename') || 'Rename')}">&#9998;</button>
           <button class="session-star-btn" title="${s.starred ? 'Unstar' : 'Star'}">${starIcon}</button>
           <button class="session-delete-btn" title="${esc(t('sessions.delete') || 'Delete')}">${t('sessions.deleteIcon') || '✕'}</button>
         </div>
@@ -212,7 +215,7 @@ export function renderSessions(sessions) {
       </div>
     `;
     li.addEventListener("click", (e) => {
-      if (e.target.closest('.session-delete-btn') || e.target.closest('.session-star-btn')) return;
+      if (e.target.closest('.session-delete-btn') || e.target.closest('.session-star-btn') || e.target.closest('.session-rename-btn')) return;
       _deps.switchSidebarPanel("sessions"); _deps.loadSession(s.id);
     });
     // Delete button handler
@@ -234,6 +237,48 @@ export function renderSessions(sessions) {
           if (window.showToast) window.showToast.error('Delete failed: ' + err.message);
           else alert('Delete failed: ' + err.message);
         }
+      });
+    }
+    // Rename button handler
+    const renameBtn = li.querySelector('.session-rename-btn');
+    if (renameBtn) {
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const titleEl = li.querySelector('.session-title');
+        const oldTitle = s.title;
+        titleEl.contentEditable = 'true';
+        titleEl.focus();
+        const range = document.createRange();
+        range.selectNodeContents(titleEl);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+
+        let cancelled = false;
+        const onKeydown = (ke) => {
+          if (ke.key === 'Enter') { ke.preventDefault(); titleEl.blur(); }
+          if (ke.key === 'Escape') { cancelled = true; titleEl.blur(); }
+        };
+        const finishEdit = () => {
+          titleEl.contentEditable = 'false';
+          titleEl.removeEventListener('keydown', onKeydown);
+          if (cancelled) { titleEl.textContent = oldTitle; return; }
+          const newTitle = (titleEl.textContent || '').trim();
+          titleEl.textContent = newTitle || oldTitle;
+          if (newTitle && newTitle !== oldTitle) {
+            fetch('/api/session/rename', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({id: s.id, title: newTitle})
+            }).then(r => {
+              if (!r.ok) { titleEl.textContent = oldTitle; s.title = oldTitle; }
+            }).catch(() => { titleEl.textContent = oldTitle; s.title = oldTitle; });
+            s.title = newTitle;
+          } else {
+            titleEl.textContent = oldTitle;
+          }
+        };
+        titleEl.addEventListener('blur', finishEdit, {once: true});
+        titleEl.addEventListener('keydown', onKeydown);
       });
     }
     // Star button handler

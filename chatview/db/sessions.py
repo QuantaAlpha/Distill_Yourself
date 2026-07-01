@@ -320,6 +320,30 @@ def search_title_fts(query: str, limit=50) -> list:
 # ---------------------------------------------------------------------------
 # Single-session lookups
 # ---------------------------------------------------------------------------
+def rename_session(session_id: str, new_title: str) -> bool:
+    """Rename a session and update the FTS entry. Returns True if found."""
+    conn = get_conn()
+    old_row = conn.execute(
+        "SELECT rowid, title, project_name FROM sessions WHERE id=?", (session_id,)
+    ).fetchone()
+    if not old_row:
+        return False
+    # Delete old FTS entry
+    conn.execute(
+        "INSERT INTO sessions_fts(sessions_fts, rowid, title, project_name) VALUES('delete', ?,?,?)",
+        (old_row["rowid"], old_row["title"] or "", old_row["project_name"] or ""),
+    )
+    # Update session title
+    conn.execute("UPDATE sessions SET title=? WHERE id=?", (new_title, session_id))
+    # Insert new FTS entry
+    conn.execute(
+        "INSERT INTO sessions_fts(rowid, title, project_name) VALUES (?,?,?)",
+        (old_row["rowid"], new_title, old_row["project_name"] or ""),
+    )
+    maybe_commit(conn)
+    return True
+
+
 def get_session_meta(session_id: str) -> Optional[dict]:
     """Return a single session dict by exact ID match only.  Returns None if not found."""
     conn = get_conn()

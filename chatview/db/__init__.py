@@ -7,6 +7,7 @@ Usage:
 from .core import get_conn, init_db, query_in_chunks, DB_PATH, CACHE_DIR, begin_bulk, end_bulk, bulk_commit
 from .sessions import (
     upsert_session,
+    rename_session,
     rebuild_fts,
     prune_stale_sessions,
     get_filtered_sessions,
@@ -77,6 +78,7 @@ __all__ = [
     "end_bulk",
     "bulk_commit",
     "upsert_session",
+    "rename_session",
     "rebuild_fts",
     "prune_stale_sessions",
     "get_filtered_sessions",
