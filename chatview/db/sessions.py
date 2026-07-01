@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
-from .core import get_conn, query_in_chunks
+from .core import get_conn, maybe_commit, query_in_chunks
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def upsert_session(meta: dict, user_texts: list, assistant_snippets: list):
             [(r["id"], r["text"]) for r in new_ids],
         )
 
-    conn.commit()
+    maybe_commit(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def rebuild_fts():
     conn = get_conn()
     conn.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
     conn.execute("INSERT INTO sessions_fts(sessions_fts) VALUES('rebuild')")
-    conn.commit()
+    maybe_commit(conn)
 
 
 def prune_stale_sessions(valid_file_paths) -> int:
@@ -172,7 +172,7 @@ def prune_stale_sessions(valid_file_paths) -> int:
         chunk = stale_ids[i : i + 900]
         ph = ",".join("?" * len(chunk))
         conn.execute(f"DELETE FROM sessions WHERE id IN ({ph})", chunk)
-    conn.commit()
+    maybe_commit(conn)
     return len(stale_ids)
 
 

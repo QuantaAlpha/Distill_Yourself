@@ -26,9 +26,34 @@ def get_conn() -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA busy_timeout=30000")
         _local.conn = conn
     return conn
+
+
+# ---------------------------------------------------------------------------
+# Bulk mode — suppress per-row commits during index rebuilds
+# ---------------------------------------------------------------------------
+def begin_bulk():
+    """Enter bulk mode: maybe_commit() becomes a no-op until end_bulk()."""
+    _local.bulk = True
+
+
+def end_bulk():
+    """Exit bulk mode and commit any pending writes."""
+    _local.bulk = False
+    get_conn().commit()
+
+
+def bulk_commit():
+    """Explicit mid-bulk commit (call periodically to bound transaction size)."""
+    get_conn().commit()
+
+
+def maybe_commit(conn: sqlite3.Connection):
+    """Commit unless in bulk mode. Use instead of conn.commit() in CRUD helpers."""
+    if not getattr(_local, "bulk", False):
+        conn.commit()
 
 
 # SQLite 限制单条语句的宿主参数个数（旧版默认 999，新版 32766）。会话数很多时

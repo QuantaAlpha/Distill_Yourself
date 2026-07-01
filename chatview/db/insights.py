@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 
-from .core import get_conn
+from .core import get_conn, maybe_commit
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ def set_aggregate(key: str, value: str):
         "INSERT OR REPLACE INTO aggregates (key, value, updated_at) VALUES (?,?,?)",
         (key, value, now),
     )
-    conn.commit()
+    maybe_commit(conn)
 
 
 def refresh_aggregates():
@@ -81,7 +81,7 @@ def clear_session_insights(session_id: str):
         "insight_snippets",
     ):
         conn.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
-    conn.commit()
+    maybe_commit(conn)
 
 
 def bulk_insert_tool_usage(rows: list):
@@ -93,7 +93,7 @@ def bulk_insert_tool_usage(rows: list):
         "INSERT OR REPLACE INTO insight_tool_usage (session_id, day, tool_name, count) VALUES (?,?,?,?)",
         rows,
     )
-    conn.commit()
+    maybe_commit(conn)
 
 
 def bulk_insert_file_refs(rows: list):
@@ -105,7 +105,7 @@ def bulk_insert_file_refs(rows: list):
         "INSERT OR REPLACE INTO insight_file_refs (session_id, file_path, count, project) VALUES (?,?,?,?)",
         rows,
     )
-    conn.commit()
+    maybe_commit(conn)
 
 
 def bulk_insert_errors(rows: list):
@@ -117,7 +117,7 @@ def bulk_insert_errors(rows: list):
         "INSERT OR REPLACE INTO insight_errors (session_id, error_key, day, project, count) VALUES (?,?,?,?,?)",
         rows,
     )
-    conn.commit()
+    maybe_commit(conn)
 
 
 def bulk_insert_snippets(rows: list):
@@ -129,7 +129,7 @@ def bulk_insert_snippets(rows: list):
         "INSERT INTO insight_snippets (session_id, language, code, context, date, applied) VALUES (?,?,?,?,?,?)",
         rows,
     )
-    conn.commit()
+    maybe_commit(conn)
 
 
 def query_tool_heatmap():

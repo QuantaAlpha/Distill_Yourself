@@ -4,7 +4,7 @@ Usage:
     from chatview.db import get_conn, init_db, upsert_session, ...
 """
 
-from .core import get_conn, init_db, query_in_chunks, DB_PATH, CACHE_DIR
+from .core import get_conn, init_db, query_in_chunks, DB_PATH, CACHE_DIR, begin_bulk, end_bulk, bulk_commit
 from .sessions import (
     upsert_session,
     rebuild_fts,
@@ -73,6 +73,9 @@ __all__ = [
     "query_in_chunks",
     "DB_PATH",
     "CACHE_DIR",
+    "begin_bulk",
+    "end_bulk",
+    "bulk_commit",
     "upsert_session",
     "rebuild_fts",
     "prune_stale_sessions",

@@ -205,28 +205,36 @@ def build_index(force: bool = False) -> dict:
     # Parse files that changed (parallel)
     new_sessions = {}
     if to_parse:
-        with ThreadPoolExecutor(max_workers=MAX_SEARCH_WORKERS) as pool:
-            futures = {
-                pool.submit(extract_metadata, fp): (fp, pn) for fp, pn in to_parse
-            }
-            for future in as_completed(futures):
-                fp, pn = futures[future]
-                try:
-                    meta = future.result()
-                    if meta:
-                        meta["project"] = pn
-                        meta["projectName"] = pretty_project_name(pn)
-                        meta["source"] = "claude"
-                        meta["_mtime"] = current_files.get(fp, 0)
-                        new_sessions[meta["id"]] = meta
-                        _db.upsert_session(
-                            meta,
-                            meta.get("userTexts", []),
-                            meta.get("assistantSnippets", []),
-                        )
-                        _store_session_insights(meta)
-                except Exception as e:
-                    print(f"Error parsing {fp}: {e}")
+        _db.begin_bulk()
+        bulk_n = 0
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_SEARCH_WORKERS) as pool:
+                futures = {
+                    pool.submit(extract_metadata, fp): (fp, pn) for fp, pn in to_parse
+                }
+                for future in as_completed(futures):
+                    fp, pn = futures[future]
+                    try:
+                        meta = future.result()
+                        if meta:
+                            meta["project"] = pn
+                            meta["projectName"] = pretty_project_name(pn)
+                            meta["source"] = "claude"
+                            meta["_mtime"] = current_files.get(fp, 0)
+                            new_sessions[meta["id"]] = meta
+                            _db.upsert_session(
+                                meta,
+                                meta.get("userTexts", []),
+                                meta.get("assistantSnippets", []),
+                            )
+                            _store_session_insights(meta)
+                            bulk_n += 1
+                            if bulk_n % 50 == 0:
+                                _db.bulk_commit()
+                    except Exception as e:
+                        print(f"Error parsing {fp}: {e}")
+        finally:
+            _db.end_bulk()
 
     # Merge with cache (keep unchanged sessions from cache) — O(N) via dict lookup
     new_by_path = {}
@@ -270,27 +278,35 @@ def build_index(force: bool = False) -> dict:
 
     codex_new = {}
     if codex_to_parse:
-        with ThreadPoolExecutor(max_workers=MAX_SEARCH_WORKERS) as pool:
-            futures = {
-                pool.submit(extract_codex_metadata, fp): fp for fp in codex_to_parse
-            }
-            for future in as_completed(futures):
-                fp = futures[future]
-                try:
-                    meta = future.result()
-                    if meta:
-                        meta["projectName"] = _codex_project_name(meta.get("cwd", ""))
-                        meta["project"] = "codex"
-                        meta["_mtime"] = current_files.get(fp, 0)
-                        codex_new[meta["id"]] = meta
-                        _db.upsert_session(
-                            meta,
-                            meta.get("userTexts", []),
-                            meta.get("assistantSnippets", []),
-                        )
-                        _store_session_insights(meta)
-                except Exception as e:
-                    print(f"Error parsing Codex {fp}: {e}")
+        _db.begin_bulk()
+        bulk_n = 0
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_SEARCH_WORKERS) as pool:
+                futures = {
+                    pool.submit(extract_codex_metadata, fp): fp for fp in codex_to_parse
+                }
+                for future in as_completed(futures):
+                    fp = futures[future]
+                    try:
+                        meta = future.result()
+                        if meta:
+                            meta["projectName"] = _codex_project_name(meta.get("cwd", ""))
+                            meta["project"] = "codex"
+                            meta["_mtime"] = current_files.get(fp, 0)
+                            codex_new[meta["id"]] = meta
+                            _db.upsert_session(
+                                meta,
+                                meta.get("userTexts", []),
+                                meta.get("assistantSnippets", []),
+                            )
+                            _store_session_insights(meta)
+                            bulk_n += 1
+                            if bulk_n % 50 == 0:
+                                _db.bulk_commit()
+                    except Exception as e:
+                        print(f"Error parsing Codex {fp}: {e}")
+        finally:
+            _db.end_bulk()
 
     # Merge Codex sessions — O(N) via dict lookup
     codex_new_by_path = {}
@@ -332,18 +348,24 @@ def build_index(force: bool = False) -> dict:
     # Backfill DB from cached sessions (only if DB is missing entries)
     db_count = _db.get_conn().execute("SELECT count(*) FROM sessions").fetchone()[0]
     if db_count < len(sessions):
+        _db.begin_bulk()
         backfill_count = 0
-        for sid, meta in sessions.items():
-            exists = (
-                _db.get_conn()
-                .execute("SELECT 1 FROM sessions WHERE id=?", (sid,))
-                .fetchone()
-            )
-            if not exists:
-                _db.upsert_session(
-                    meta, meta.get("userTexts", []), meta.get("assistantSnippets", [])
+        try:
+            for sid, meta in sessions.items():
+                exists = (
+                    _db.get_conn()
+                    .execute("SELECT 1 FROM sessions WHERE id=?", (sid,))
+                    .fetchone()
                 )
-                backfill_count += 1
+                if not exists:
+                    _db.upsert_session(
+                        meta, meta.get("userTexts", []), meta.get("assistantSnippets", [])
+                    )
+                    backfill_count += 1
+                    if backfill_count % 50 == 0:
+                        _db.bulk_commit()
+        finally:
+            _db.end_bulk()
         if backfill_count:
             print(f"DB backfill: {backfill_count} sessions")
 
@@ -366,25 +388,31 @@ def build_index(force: bool = False) -> dict:
         )
         backfill_t = time.time()
         backfill_n = 0
-        for sid, meta in sessions.items():
-            if sid in existing_insight_sids:
-                continue
-            fp = meta.get("filePath", "")
-            source = meta.get("source", "claude")
-            if fp and os.path.exists(fp):
-                try:
-                    fresh = (
-                        extract_codex_metadata(fp)
-                        if source == "codex"
-                        else extract_metadata(fp)
-                    )
-                    if fresh:
-                        fresh["projectName"] = meta.get("projectName", "")
-                        fresh["date"] = meta.get("date", "")
-                        _store_session_insights(fresh)
-                        backfill_n += 1
-                except Exception:
-                    pass
+        _db.begin_bulk()
+        try:
+            for sid, meta in sessions.items():
+                if sid in existing_insight_sids:
+                    continue
+                fp = meta.get("filePath", "")
+                source = meta.get("source", "claude")
+                if fp and os.path.exists(fp):
+                    try:
+                        fresh = (
+                            extract_codex_metadata(fp)
+                            if source == "codex"
+                            else extract_metadata(fp)
+                        )
+                        if fresh:
+                            fresh["projectName"] = meta.get("projectName", "")
+                            fresh["date"] = meta.get("date", "")
+                            _store_session_insights(fresh)
+                            backfill_n += 1
+                            if backfill_n % 50 == 0:
+                                _db.bulk_commit()
+                    except Exception:
+                        pass
+        finally:
+            _db.end_bulk()
         print(
             f"  Insight backfill: {backfill_n} sessions in {time.time() - backfill_t:.1f}s"
         )
