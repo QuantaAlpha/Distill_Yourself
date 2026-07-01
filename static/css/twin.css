@@ -808,6 +808,59 @@ html[data-theme="dark"] {
 .twin-dim-empty { font-size: 12px; color: var(--text-muted); font-style: italic; padding: 4px 0; }
 .twin-empty-state { text-align: center; padding: 60px 24px; color: var(--text-muted); }
 .twin-empty-state p:first-child { font-size: 20px; margin-bottom: 8px; }
+.twin-overview-run-switcher {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--twin-progress-surface);
+}
+.twin-overview-run-switcher-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.twin-overview-run-switcher-head strong {
+  flex: 1 1 auto;
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+.twin-overview-run-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.twin-overview-run-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--twin-progress-row);
+  color: var(--text);
+  cursor: pointer;
+}
+.twin-overview-run-chip.is-current {
+  border-color: var(--twin-progress-running-border);
+  background: var(--twin-progress-running-bg);
+}
+.twin-overview-run-chip:hover { border-color: var(--accent); }
+.twin-overview-run-id {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+.twin-overview-run-counts {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 
 /* Twin dimension detail */
 .twin-detail-header {
@@ -1050,7 +1103,7 @@ html[data-theme="dark"] {
 }
 
 /* ── Recent runs history (below the progress stream) ───────────────────────
-   Newest first, max 5. Rows view history; resume uses an explicit button. */
+   Newest first, max 10. Rows view history; resume uses an explicit button. */
 .twin-run-history {
   margin: 22px 4px 4px;
   padding-top: 16px;

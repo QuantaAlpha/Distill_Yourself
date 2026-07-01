@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 
 
@@ -51,11 +52,20 @@ class TestFrontendRoutingStatic(unittest.TestCase):
 
     def test_keyboard_help_matches_actual_main_view_shortcuts(self):
         html = read_index_html()
-
-        self.assertIn("<tr><td><kbd>2</kbd></td><td>AI Evolve</td></tr>", html)
-        self.assertIn("<tr><td><kbd>4</kbd></td><td>Distill Yourself</td></tr>", html)
-        self.assertNotIn("<tr><td><kbd>2</kbd></td><td>Sessions</td></tr>", html)
-        self.assertNotIn("<tr><td><kbd>4</kbd></td><td>AI page</td></tr>", html)
+        self.assertRegex(
+            html,
+            re.compile(r"<td><kbd>2</kbd></td>\s*<td>AI Evolve</td>"),
+        )
+        self.assertRegex(
+            html,
+            re.compile(r"<td><kbd>4</kbd></td>\s*<td>Distill Yourself</td>"),
+        )
+        self.assertNotRegex(
+            html, re.compile(r"<td><kbd>2</kbd></td>\s*<td>Sessions</td>")
+        )
+        self.assertNotRegex(
+            html, re.compile(r"<td><kbd>4</kbd></td>\s*<td>AI page</td>")
+        )
 
     def test_poll_reruns_active_search_after_index_generation_changes(self):
         script = read_app_js()
@@ -67,7 +77,9 @@ class TestFrontendRoutingStatic(unittest.TestCase):
         html = read_index_html()
         script = read_app_js()
 
-        self.assertEqual(html.count('<button class="welcome-card'), 9)
+        self.assertEqual(
+            len(re.findall(r'<button\b[^>]*class="welcome-card\b', html)), 9
+        )
         for action in (
             "sessions",
             "ai",
@@ -175,10 +187,16 @@ class TestFrontendRoutingStatic(unittest.TestCase):
         self.assertIn('li.addEventListener("contextmenu"', evolve_page)
         self.assertIn('data-action="rename"', evolve_page)
         self.assertIn('data-action="delete"', evolve_page)
-        self.assertIn('chat-meta', evolve_page)
+        self.assertIn("chat-meta", evolve_page)
         self.assertIn(".chat-history-menu", chat_css)
         self.assertIn(".chat-meta", chat_css)
         self.assertIn(".session-item.active .chat-history-more", chat_css)
+
+    def test_evolve_updated_header_is_js_owned_not_static_i18n_default(self):
+        html = read_index_html()
+
+        self.assertIn('id="evolve-tab-updated"', html)
+        self.assertNotIn('id="evolve-tab-updated" data-i18n="evolve.notAnalyzed"', html)
 
 
 if __name__ == "__main__":

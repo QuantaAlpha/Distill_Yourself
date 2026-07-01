@@ -546,6 +546,9 @@
         "twin.empty.traitData": "暂无数据",
         "twin.overview.startHint": "点击 <b>Analyze</b> 开始从对话历史中提取认知模型",
         "twin.overview.pipeline": "4 阶段流水线：事件提取 → 判断卡蒸馏 → 认知特质归纳 → Runtime 编译",
+        "twin.overview.runSwitcher": "切换历史运行",
+        "twin.overview.viewingRun": "当前 overview：{id}",
+        "twin.overview.openProgress": "查看进度",
         "twin.count": "{n} 条",
         "twin.empty.eventsShort": "暂无事件。",
         "twin.field.reaction": "反应:",
@@ -594,7 +597,7 @@
         "twin.progress.failedWith": "上次运行失败：{msg}",
         "twin.progress.interrupted": "当前没有运行中的分析进程，以下为上一次运行的进度。",
         "twin.progress.empty": "暂无进度记录。点击 Analyze 开始分析。",
-        "twin.progress.history.title": "历史记录（最近 5 次）",
+        "twin.progress.history.title": "历史记录（最近 10 次）",
         "twin.progress.history.empty": "暂无历史运行记录。",
         "twin.progress.history.current": "当前",
         "twin.progress.rs.completed": "已完成",
@@ -705,6 +708,9 @@
         "twin.empty.traitData": "No data",
         "twin.overview.startHint": "Click <b>Analyze</b> to extract your cognitive model from conversation history",
         "twin.overview.pipeline": "4-stage pipeline: event extraction → card distillation → trait generalization → Runtime compile",
+        "twin.overview.runSwitcher": "Switch historical run",
+        "twin.overview.viewingRun": "Overview run: {id}",
+        "twin.overview.openProgress": "View progress",
         "twin.count": "{n}",
         "twin.empty.eventsShort": "No events yet.",
         "twin.field.reaction": "Reaction:",
@@ -753,7 +759,7 @@
         "twin.progress.failedWith": "Last run failed: {msg}",
         "twin.progress.interrupted": "No analysis is running right now. Showing the progress of the last run.",
         "twin.progress.empty": "No progress recorded yet. Click Analyze to start.",
-        "twin.progress.history.title": "Recent runs (last 5)",
+        "twin.progress.history.title": "Recent runs (last 10)",
         "twin.progress.history.empty": "No past runs yet.",
         "twin.progress.history.current": "Current",
         "twin.progress.rs.completed": "Completed",
@@ -1446,12 +1452,12 @@
   }
 
   /** Fetch + render the recent-runs history list BELOW the progress stream.
-   * Newest first, max 5. The list lives in its own container so refreshing it
+   * Newest first, max 10. The list lives in its own container so refreshing it
    * never disturbs a live SSE stream rendered in #twin-stream-output. */
   function _renderRunHistory() {
     const progress = document.getElementById("twin-analysis-progress");
     if (!progress) return;
-    fetch("/api/twin/runs")
+    fetch("/api/twin/runs?limit=10")
       .then(r => r.json())
       .then((p) => {
         const runs = (p && p.ok && Array.isArray(p.runs)) ? p.runs : [];
@@ -1766,21 +1772,80 @@
   }
 
   // ── Overview: Vertical Pipeline Layout ──
-  function loadOverview() {
+  function loadOverview(runId) {
     _reloadCurrentView = null;
+    const requestedRunId = runId || "";
     const url = "/api/twin/overview";
-    fetch(_withRunId(url, { includeViewRun: false }))
+    fetch(requestedRunId ? _runScopedUrl(url, requestedRunId) : _withRunId(url, { includeViewRun: false }))
       .then(r => r.json())
       .then((data) => {
         overviewData = data;
         if (data && data.run_id) {
-          if (!_viewRunId) _setViewRunId(data.run_id);
+          if (requestedRunId || !_viewRunId) _setViewRunId(data.run_id);
         } else {
           _setViewRunId("");
         }
         renderOverview(data);
       })
       .catch(() => { renderOverviewEmpty(); if (window.showToast) window.showToast.error('Failed to load overview', 0, { label: 'Retry', callback: () => loadOverview() }); });
+  }
+
+  function _renderOverviewRunSwitcher(container, currentRunId) {
+    if (!container || !currentRunId) return;
+    let mount = container.querySelector(".twin-overview-run-switcher");
+    if (!mount) {
+      mount = document.createElement("div");
+      mount.className = "twin-overview-run-switcher";
+      container.insertBefore(mount, container.firstChild);
+    }
+    fetch("/api/twin/runs?limit=10")
+      .then(r => r.json())
+      .then((p) => {
+        const runs = ((p && p.ok && Array.isArray(p.runs)) ? p.runs : [])
+          .filter((run) => {
+            const stats = (run && run.stats) || {};
+            return (stats.events || 0) + (stats.cards || 0) + (stats.traits || 0) > 0;
+          });
+        if (!runs.length) {
+          mount.remove();
+          return;
+        }
+        let html = '<div class="twin-overview-run-switcher-head">' +
+          '<span>' + esc(_tt("twin.overview.runSwitcher")) + '</span>' +
+          '<strong>' + esc(_tt("twin.overview.viewingRun", { id: currentRunId })) + '</strong>' +
+          '<button type="button" class="btn btn-ghost btn-sm twin-overview-progress-btn">' +
+          esc(_tt("twin.overview.openProgress")) + '</button>' +
+          '</div><div class="twin-overview-run-list">';
+        runs.forEach((run) => {
+          const rid = run.run_id || "";
+          if (!rid) return;
+          const shortId = rid.length > 14 ? rid.slice(0, 14) + "..." : rid;
+          const stats = run.stats || {};
+          html += '<button type="button" class="twin-overview-run-chip' +
+            (rid === currentRunId ? " is-current" : "") +
+            '" data-run-id="' + esc(rid) + '">' +
+            '<span class="twin-run-badge rs-' + esc(run.status || "empty") + '">' +
+            esc(_tt(_runStatusKey(run.status))) + '</span>' +
+            '<span class="twin-overview-run-id">' + esc(shortId) + '</span>' +
+            '<span class="twin-overview-run-counts">' +
+            esc(_tt("twin.progress.stats", {
+              events: stats.events || 0,
+              cards: stats.cards || 0,
+              traits: stats.traits || 0,
+            })) + '</span>' +
+            '</button>';
+        });
+        html += '</div>';
+        mount.innerHTML = html;
+        mount.querySelectorAll(".twin-overview-run-chip").forEach((btn) => {
+          const rid = btn.getAttribute("data-run-id");
+          if (!rid) return;
+          btn.onclick = () => loadOverview(rid);
+        });
+        const progressBtn = mount.querySelector(".twin-overview-progress-btn");
+        if (progressBtn) progressBtn.onclick = () => _selectTwinRunForViewing(currentRunId);
+      })
+      .catch(() => {});
   }
 
   function _confColor(conf) {
@@ -1983,6 +2048,7 @@
     html += '</div>'; // close .twin-pipeline
 
     container.innerHTML = html;
+    _renderOverviewRunSwitcher(container, data.run_id || _viewRunId || "");
 
     // ─── Click handlers ───
     // Pipeline header pills
@@ -2996,7 +3062,8 @@
   // ── Sync ──
   function startSync() {
     if (!confirm(_tt("twin.sync.confirm"))) return;
-    const body = _activeRunId ? { run_id: _activeRunId } : {};
+    const syncRunId = _viewRunId || _activeRunId;
+    const body = syncRunId ? { run_id: syncRunId } : {};
     body.lang = _getLang();
     fetch("/api/twin/sync", {
       method: "POST",

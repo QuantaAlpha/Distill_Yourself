@@ -47,6 +47,14 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
+  function _getEvolveUpdatedEl() {
+    const el = $("#evolve-tab-updated");
+    if (el && el.hasAttribute("data-i18n")) {
+      el.removeAttribute("data-i18n");
+    }
+    return el;
+  }
+
   // ── i18n (shared via app.js) ──
   let _i18nRegistered = false;
   function _registerEvolveI18n() {
@@ -274,7 +282,7 @@
     const body = $("#evolve-tab-body");
     if (!body || body.querySelector(".evolve-tab-panel")) return;
     body.innerHTML = `<div class="evolve-empty-state evolve-progress-check"><div class="evolve-empty-icon">⏳</div><p class="evolve-empty-title">${_tt("evolve.status.checking")}</p></div>`;
-    const updatedEl = $("#evolve-tab-updated");
+    const updatedEl = _getEvolveUpdatedEl();
     if (updatedEl) {
       updatedEl.textContent = _tt("evolve.status.checking");
       updatedEl.classList.add("loading");
@@ -369,7 +377,7 @@
 
   function _updateEvolveHeader(tab, scope) {
     const targetTab = tab || evolveActiveTab;
-    const updatedEl = $("#evolve-tab-updated");
+    const updatedEl = _getEvolveUpdatedEl();
     if (!updatedEl) return;
 
     const requestScope = scope || getEvolveScope();
@@ -417,6 +425,26 @@
     }
     updatedEl.textContent = _tt("evolve.status.never");
     updatedEl.classList.remove("loading");
+  }
+
+  function _refreshRecoveredRun(tab, requestScope) {
+    const scope = requestScope || getEvolveScope();
+    const params = _progressParams(scope, tab);
+    return fetch(`/api/evolve/progress?${params}`)
+      .then((r) => r.json())
+      .then((payload) => {
+        if (!payload || !payload.ok) return null;
+        _applyRecoveredRun(
+          tab,
+          payload.run,
+          !!payload.running,
+          scope,
+          payload.cache,
+          !!payload.stale,
+        );
+        return payload;
+      })
+      .catch(() => null);
   }
 
   function _progressSummaryHtml(tab, state, live) {
@@ -1375,6 +1403,8 @@
     if (evolveStreamAborts[tab]) evolveStreamAborts[tab].abort();
     const abortCtrl = new AbortController();
     abortCtrl.detachOnly = false;
+    abortCtrl.keepRecoveredPollers = false;
+    abortCtrl.requestScope = requestScope;
     evolveStreamAborts[tab] = abortCtrl;
     _markTabLoading(tab, requestScope);
     // Track that a stream is in progress (for page-refresh recovery)
@@ -1400,6 +1430,9 @@
       .finally(() => {
         if (evolveStreamAborts[tab] === abortCtrl)
           delete evolveStreamAborts[tab];
+        if (abortCtrl.detachOnly && abortCtrl.keepRecoveredPollers) {
+          _scheduleRecoveredRunPoll(tab, requestScope);
+        }
         _syncEvolveChrome(tab, requestScope);
         // Clear the mid-analysis flag if no other streams are active
         if (Object.keys(evolveStreamAborts).length === 0) {
@@ -1444,6 +1477,7 @@
       cancelled = !!(data && data.ok);
     } catch (e) {}
     if (!cancelled && !evolveStreamAborts[tab]) {
+      await _refreshRecoveredRun(tab, scope);
       _syncEvolveChrome(tab, scope);
       return;
     }
@@ -1456,7 +1490,7 @@
     try {
       localStorage.removeItem(`${EVOLVE_ACTIVE_RUN_KEY}::${tab}`);
     } catch (e) {}
-    const updatedEl = $("#evolve-tab-updated");
+    const updatedEl = _getEvolveUpdatedEl();
     if (updatedEl) {
       updatedEl.textContent = _tt("evolve.status.stopped");
       updatedEl.classList.remove("loading");
@@ -3195,6 +3229,7 @@
     Object.entries(evolveStreamAborts).forEach(([tab, ctrl]) => {
       if (detachOnly) {
         ctrl.detachOnly = true;
+        ctrl.keepRecoveredPollers = !!keepRecoveredPollers;
         evolveDetachedTabs[tab] = true;
       }
       ctrl.abort();
@@ -3251,4 +3286,5 @@
   // app.js runs its first applyI18nDom before this module loads, so refresh once after registering.
   _registerEvolveI18n();
   if (window.applyI18nDom) window.applyI18nDom(document);
+  _getEvolveUpdatedEl();
 })();

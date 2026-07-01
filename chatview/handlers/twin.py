@@ -1141,14 +1141,14 @@ def _handle_twin_resume(handler):
 def _handle_twin_runs(handler):
     """GET /api/twin/runs — list the most recent twin analysis runs.
 
-    Returns up to 5 distinct run_ids (newest first) with their derived
+    Returns up to 10 distinct run_ids (newest first) with their derived
     {run_id, status, stats, checkpoints, ts}, so the UI can render a recent
     history list below the current progress summary.
     """
     from chatview import db as _db
 
     _db.init_db()
-    limit = 5
+    limit = 10
     try:
         from urllib.parse import urlparse, parse_qs
 
@@ -1156,7 +1156,7 @@ def _handle_twin_runs(handler):
         if qs.get("limit"):
             limit = max(1, min(20, int(qs["limit"][0])))
     except Exception:
-        limit = 5
+        limit = 10
 
     runs = []
     try:

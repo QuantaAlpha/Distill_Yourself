@@ -388,13 +388,13 @@ class TwinIntegrityTestCase(unittest.TestCase):
         self.assertFalse(resp["running"])
 
     def test_twin_runs_lists_recent_runs_newest_first_and_capped(self):
-        """GET /api/twin/runs returns at most 5 distinct runs, newest first,
+        """GET /api/twin/runs returns at most 10 distinct runs, newest first,
         each with derived status/stats/checkpoints so the UI can render a
         recent-history list below the current progress summary."""
         from chatview.handlers import twin as _twin
 
-        # Seed 6 runs with ascending created_at so ordering is deterministic.
-        for i in range(1, 7):
+        # Seed 12 runs with ascending created_at so ordering is deterministic.
+        for i in range(1, 13):
             run_id = f"run_{i:02d}"
             db.cm_upsert("evidence_events", f"ev_{i}", {
                 "run_id": run_id,
@@ -403,7 +403,7 @@ class TwinIntegrityTestCase(unittest.TestCase):
                 "lesson": f"lesson {i}",
                 "signal_type": "correction",
                 "domain": "coding/scope",
-                "created_at": f"2026-06-2{i}T10:00:00",
+                "created_at": f"2026-06-{10 + i:02d}T10:00:00",
             })
             db.save_checkpoint(run_id, 1, "completed")
 
@@ -428,10 +428,10 @@ class TwinIntegrityTestCase(unittest.TestCase):
 
         self.assertTrue(resp["ok"])
         runs = resp["runs"]
-        # Capped at 5 and newest first.
-        self.assertEqual(len(runs), 5)
-        self.assertEqual(runs[0]["run_id"], "run_06")
-        self.assertEqual(runs[-1]["run_id"], "run_02")
+        # Capped at 10 and newest first.
+        self.assertEqual(len(runs), 10)
+        self.assertEqual(runs[0]["run_id"], "run_12")
+        self.assertEqual(runs[-1]["run_id"], "run_03")
         # Each run carries derived stats + checkpoints + a timestamp.
         self.assertEqual(runs[0]["stats"]["events"], 1)
         self.assertEqual(runs[0]["checkpoints"].get("1"), "completed")

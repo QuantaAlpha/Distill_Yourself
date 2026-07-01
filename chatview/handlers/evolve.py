@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -28,9 +29,11 @@ _AI_TABS = set(_EVOLVE_TABS)
 # ---------------------------------------------------------------------------
 # Active evolve analysis state (for /api/evolve/cancel + /api/evolve/progress)
 # ---------------------------------------------------------------------------
-_active_evolve_runs = {}  # {run_id: {"tab", "source", "date", "project", "engine", "proc"}}
+_active_evolve_runs = {}  # {run_id: {"tab", "source", "date", "project", "engine", "proc", "starting", "finalizing", "phase_started_at"}}
 _cancelled_evolve_run_ids = set()
 _evolve_lock = threading.Lock()
+_EVOLVE_STARTING_GRACE_SECONDS = 15
+_EVOLVE_FINALIZING_GRACE_SECONDS = 15
 
 
 def _get_evolve_tab(
@@ -200,17 +203,35 @@ def _handle_evolve_stream(
             "project": project or "",
             "engine": engine,
             "proc": None,
+            "starting": True,
+            "finalizing": False,
+            "phase_started_at": time.time(),
         }
 
     _start_sse(handler)
     _sse_event(handler, {"type": "run", "run_id": run_id})
     proc_ref = [None]
+
+    def _on_proc_start(proc):
+        should_kill = False
+        with _evolve_lock:
+            should_kill = run_id in _cancelled_evolve_run_ids
+            active = _active_evolve_runs.get(run_id)
+            if active is not None:
+                active["proc"] = proc
+                active["starting"] = False
+                active["finalizing"] = False
+                active["phase_started_at"] = time.time()
+        if should_kill:
+            _kill_evolve_process(proc)
+
     stream = _run_ai_engine_stream(
         prompt,
         allow_write=True,
         timeout=timeout,
         engine_override=engine,
         proc_ref=proc_ref,
+        on_proc_start=_on_proc_start,
     )
     disconnected = False
     last_error = None  # track last error/timeout reason for DB-empty fallback
@@ -239,16 +260,6 @@ def _handle_evolve_stream(
                 )
                 return
             etype = evt.get("type") if isinstance(evt, dict) else None
-            if proc_ref[0] is not None:
-                with _evolve_lock:
-                    _active_evolve_runs[run_id] = {
-                        "tab": tab,
-                        "source": source or "all",
-                        "date": date or "7d",
-                        "project": project or "",
-                        "engine": engine,
-                        "proc": proc_ref[0],
-                    }
             if etype == "tool" and evt.get("status") == "running":
                 step_count += 1
             if etype == "text":
@@ -310,6 +321,9 @@ def _handle_evolve_stream(
                 _cancelled_evolve_run_ids.discard(run_id)
             elif stream_finished and run_id in _active_evolve_runs:
                 _active_evolve_runs[run_id]["proc"] = None
+                _active_evolve_runs[run_id]["starting"] = False
+                _active_evolve_runs[run_id]["finalizing"] = True
+                _active_evolve_runs[run_id]["phase_started_at"] = time.time()
             else:
                 _active_evolve_runs.pop(run_id, None)
 
@@ -411,7 +425,7 @@ def _latest_evolve_run_info(
 
 def _is_evolve_run_active(run: dict) -> bool:
     """Return whether a persisted run still has a live backend request/process."""
-    if not run:
+    if not run or run.get("status") != "running":
         return False
     with _evolve_lock:
         active = _active_evolve_runs.get(run["run_id"])
@@ -419,7 +433,13 @@ def _is_evolve_run_active(run: dict) -> bool:
         return False
     proc = active.get("proc")
     if proc is None:
-        return True
+        phase_started_at = active.get("phase_started_at") or 0
+        elapsed = time.time() - float(phase_started_at or 0)
+        if active.get("starting"):
+            return elapsed < _EVOLVE_STARTING_GRACE_SECONDS
+        if active.get("finalizing"):
+            return elapsed < _EVOLVE_FINALIZING_GRACE_SECONDS
+        return False
     try:
         return proc.poll() is None
     except Exception:
@@ -534,7 +554,9 @@ def _handle_evolve_cancel(handler, raw_body):
 
     with _evolve_lock:
         active = _active_evolve_runs.get(run["run_id"])
-    if not active:
+    if not active or not _is_evolve_run_active(run):
+        with _evolve_lock:
+            _active_evolve_runs.pop(run["run_id"], None)
         _json_response(handler, {"ok": False, "error": "No active analysis"})
         return
 

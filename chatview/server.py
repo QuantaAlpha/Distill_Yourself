@@ -45,6 +45,7 @@ from chatview.handlers.twin import (
     _handle_twin_cancel,
     _handle_twin_progress,
     _handle_twin_runs,
+    _twin_run_info_for,
 )
 from chatview.index import (
     INDEX_CACHE,
@@ -74,6 +75,45 @@ def _int_param(params, key, default, *, minimum=1, maximum=100000):
     except (ValueError, TypeError):
         val = default
     return max(minimum, min(val, maximum))
+
+
+def _select_default_twin_overview_run_id():
+    """Choose the best renderable run for the default Twin overview."""
+    try:
+        recent = _db.list_recent_run_ids(20)
+    except Exception:
+        recent = []
+
+    candidates = []
+    for index, entry in enumerate(recent):
+        run_id = entry.get("run_id")
+        if not run_id:
+            continue
+        try:
+            info = _twin_run_info_for(run_id)
+        except Exception:
+            continue
+        stats = info.get("stats") or {}
+        total = (stats.get("events") or 0) + (stats.get("cards") or 0) + (stats.get("traits") or 0)
+        if total <= 0:
+            continue
+        checkpoints = info.get("checkpoints") or {}
+        if not checkpoints:
+            continue
+        completed_stages = sum(1 for status in checkpoints.values() if status == "completed")
+        status = info.get("status") or ""
+        if completed_stages >= 5:
+            rank = 0
+        elif status in ("partial", "interrupted") or completed_stages > 0:
+            rank = 1
+        else:
+            rank = 2
+        candidates.append((rank, index, run_id))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[0][2]
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +252,7 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         elif path == "/api/twin/overview":
             overview = {}
             requested_run_id = params.get("run_id", [None])[0]
-            run_id = requested_run_id or _db.get_latest_completed_run_id()
+            run_id = requested_run_id or _select_default_twin_overview_run_id()
             # When a run is explicit, or a completed run exists, scope to it.
             # Otherwise fall back to legacy global aggregation.
             _ow = ("run_id=?", (run_id,)) if run_id else ("", ())

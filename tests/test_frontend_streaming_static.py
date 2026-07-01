@@ -144,7 +144,17 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("_selectTwinRunForViewing(rid)", history_body)
         self.assertIn("twin-run-resume", history_body)
         self.assertIn("_startAnalysisWithResume(rid)", history_body)
-        self.assertNotIn("const go = () => { if (!analysisRunning) _startAnalysisWithResume(rid); };", history_body)
+        self.assertNotIn(
+            "const go = () => { if (!analysisRunning) _startAnalysisWithResume(rid); };",
+            history_body,
+        )
+
+    def test_twin_history_fetches_ten_runs_and_label_matches(self):
+        script = read_static("twin.js")
+
+        self.assertIn('fetch("/api/twin/runs?limit=10")', script)
+        self.assertIn('"twin.progress.history.title": "历史记录（最近 10 次）"', script)
+        self.assertIn('"twin.progress.history.title": "Recent runs (last 10)"', script)
 
     def test_twin_separates_viewed_run_from_running_run_and_default_overview(self):
         script = read_static("twin.js")
@@ -156,12 +166,21 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("function _loadDefaultOverview()", script)
         self.assertIn("function _selectTwinRunForViewing(runId)", script)
 
+    def test_twin_overview_has_run_switcher(self):
+        script = read_static("twin.js")
+
+        self.assertIn(
+            "function _renderOverviewRunSwitcher(container, currentRunId)", script
+        )
+        self.assertIn("loadOverview(rid)", script)
+        self.assertIn("twin-overview-run-switcher", script)
+
     def test_twin_progress_css_uses_theme_tokens_and_dark_overrides(self):
         css = read_static("css/twin.css")
 
         self.assertIn("--twin-progress-success", css)
         self.assertIn("--twin-progress-running", css)
-        self.assertIn('--twin-progress-surface', css)
+        self.assertIn("--twin-progress-surface", css)
         self.assertIn('html[data-theme="dark"]', css)
 
     def test_evolve_no_cache_is_not_rendered_as_failure(self):
@@ -425,6 +444,23 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("if (!detachOnly)", abort_body)
         self.assertIn("keepRecoveredPollers", abort_body)
         self.assertIn("_stopRecoveredRunPoll(tab)", abort_body)
+        self.assertIn("ctrl.keepRecoveredPollers = !!keepRecoveredPollers;", abort_body)
+
+    def test_evolve_detach_only_restarts_recovered_poll_for_page_reentry(self):
+        script = read_static("evolve.js")
+        stream_body = script[
+            script.index("function _fetchEvolveTabStream") : script.index(
+                "function _setEvolveRefreshButton",
+                script.index("function _fetchEvolveTabStream"),
+            )
+        ]
+
+        self.assertIn("abortCtrl.keepRecoveredPollers = false;", stream_body)
+        self.assertIn(
+            "if (abortCtrl.detachOnly && abortCtrl.keepRecoveredPollers) {",
+            stream_body,
+        )
+        self.assertIn("_scheduleRecoveredRunPoll(tab, requestScope);", stream_body)
 
     def test_evolve_locale_change_preserves_recovered_running_panel(self):
         script = read_static("evolve.js")
@@ -440,6 +476,13 @@ class TestFrontendStreamingStatic(unittest.TestCase):
             "!_isTabBusy(evolveActiveTab, getEvolveScope())",
             locale_body,
         )
+
+    def test_evolve_header_dynamic_node_removes_static_i18n_binding(self):
+        script = read_static("evolve.js")
+
+        self.assertIn("function _getEvolveUpdatedEl()", script)
+        self.assertIn('el.hasAttribute("data-i18n")', script)
+        self.assertIn('el.removeAttribute("data-i18n")', script)
 
     def test_evolve_refresh_controls_use_scope_aware_loading_checks(self):
         script = read_static("evolve.js")

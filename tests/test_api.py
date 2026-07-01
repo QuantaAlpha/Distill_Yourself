@@ -576,6 +576,128 @@ class TestEvolveCancel(APITestCase):
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"], "No active analysis")
 
+    def test_cancel_ignores_stale_running_row_without_active_backend_run(self):
+        from chatview import db as _db
+        from chatview.handlers import evolve as _evolve
+
+        _db.init_db()
+        run_id = _db.evolve_run_start(
+            "profile",
+            "all",
+            "7d",
+            "",
+            "auto",
+            lang="zh",
+            snapshot={"text": "stale run"},
+        )
+
+        code, body = self._post(
+            "/api/evolve/cancel",
+            {
+                "tab": "profile",
+                "scope": {
+                    "source": "all",
+                    "date": "7d",
+                    "project": "",
+                    "engine": "auto",
+                },
+            },
+        )
+        self.assertEqual(code, 200)
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"], "No active analysis")
+        self.assertNotIn(run_id, _evolve._active_evolve_runs)
+
+
+class TestEvolveRunLiveness(APITestCase):
+    def test_starting_run_without_proc_is_temporarily_active(self):
+        from chatview import db as _db
+        from chatview.handlers import evolve as _evolve
+
+        _db.init_db()
+        run_id = _db.evolve_run_start(
+            "profile",
+            "all",
+            "7d",
+            "",
+            "auto",
+            lang="zh",
+            snapshot={"text": "starting"},
+        )
+        _evolve._active_evolve_runs[run_id] = {
+            "tab": "profile",
+            "source": "all",
+            "date": "7d",
+            "project": "",
+            "engine": "auto",
+            "proc": None,
+            "starting": True,
+            "finalizing": False,
+            "phase_started_at": time.time(),
+        }
+
+        run = _db.evolve_run_get(run_id)
+        self.assertTrue(_evolve._is_evolve_run_active(run))
+
+    def test_starting_run_without_proc_expires_to_stale(self):
+        from chatview import db as _db
+        from chatview.handlers import evolve as _evolve
+
+        _db.init_db()
+        run_id = _db.evolve_run_start(
+            "profile",
+            "all",
+            "7d",
+            "",
+            "auto",
+            lang="zh",
+            snapshot={"text": "starting"},
+        )
+        _evolve._active_evolve_runs[run_id] = {
+            "tab": "profile",
+            "source": "all",
+            "date": "7d",
+            "project": "",
+            "engine": "auto",
+            "proc": None,
+            "starting": True,
+            "finalizing": False,
+            "phase_started_at": time.time()
+            - (_evolve._EVOLVE_STARTING_GRACE_SECONDS + 5),
+        }
+
+        run = _db.evolve_run_get(run_id)
+        self.assertFalse(_evolve._is_evolve_run_active(run))
+
+    def test_finalizing_run_without_proc_is_temporarily_active(self):
+        from chatview import db as _db
+        from chatview.handlers import evolve as _evolve
+
+        _db.init_db()
+        run_id = _db.evolve_run_start(
+            "memory",
+            "all",
+            "7d",
+            "",
+            "auto",
+            lang="zh",
+            snapshot={"text": "finishing"},
+        )
+        _evolve._active_evolve_runs[run_id] = {
+            "tab": "memory",
+            "source": "all",
+            "date": "7d",
+            "project": "",
+            "engine": "auto",
+            "proc": None,
+            "starting": False,
+            "finalizing": True,
+            "phase_started_at": time.time(),
+        }
+
+        run = _db.evolve_run_get(run_id)
+        self.assertTrue(_evolve._is_evolve_run_active(run))
+
 
 class TestGetSessionNotFound(APITestCase):
     def test_nonexistent_session_returns_404(self):
@@ -681,6 +803,7 @@ class TestTwinCancel(APITestCase):
         self.assertFalse(body["ok"])
         self.assertIn("error", body)
 
+
 class TestTwinResumeCheckpointOnly(APITestCase):
     def test_checkpoint_only_interrupted_run_is_resumable(self):
         """A failed early-stage run with no extracted rows still appears in resume."""
@@ -703,12 +826,18 @@ class TestTwinResumeCheckpointOnly(APITestCase):
 # Tier-2: run_id run-scoping (twin views / sync / avatar scope to active run)
 # ---------------------------------------------------------------------------
 
+
 def _seed_event(run_id, eid, idx, created_at=None):
     from chatview import db as _db
+
     data = {
-        "run_id": run_id, "session_id": "sess-scope", "event_index": idx,
-        "signal_type": "correction", "signal_intensity": 0.8,
-        "domain": "coding/test", "lesson": f"lesson {eid}",
+        "run_id": run_id,
+        "session_id": "sess-scope",
+        "event_index": idx,
+        "signal_type": "correction",
+        "signal_intensity": 0.8,
+        "domain": "coding/test",
+        "lesson": f"lesson {eid}",
     }
     if created_at is not None:
         data["created_at"] = created_at
@@ -717,28 +846,48 @@ def _seed_event(run_id, eid, idx, created_at=None):
 
 def _seed_card(run_id, cid, when, judgment, status="confirmed"):
     from chatview import db as _db
-    _db.cm_upsert("judgment_cards", cid, {
-        "run_id": run_id, "applies_when": when, "judgment": judgment,
-        "confidence": 0.7, "status": status,
-    })
+
+    _db.cm_upsert(
+        "judgment_cards",
+        cid,
+        {
+            "run_id": run_id,
+            "applies_when": when,
+            "judgment": judgment,
+            "confidence": 0.7,
+            "status": status,
+        },
+    )
 
 
 def _seed_trait(run_id, tid, name, status="confirmed"):
     from chatview import db as _db
-    _db.cm_upsert("cognitive_traits", tid, {
-        "run_id": run_id, "name": name, "category": "价值取向",
-        "description": f"desc {tid}", "strength": 0.8, "status": status,
-    })
+
+    _db.cm_upsert(
+        "cognitive_traits",
+        tid,
+        {
+            "run_id": run_id,
+            "name": name,
+            "category": "价值取向",
+            "description": f"desc {tid}",
+            "strength": 0.8,
+            "status": status,
+        },
+    )
 
 
 class TestTwinRunScopingReads(APITestCase):
     """run_id query param scopes cards/traits/events/overview/runtime-preview."""
+
     RUN_A = "run_scope_A"
     RUN_B = "run_scope_B"
+    RUN_C = "run_scope_C"
 
     def setUp(self):
         super().setUp()
         from chatview import db as _db
+
         _db.init_db()
         # Run A: 2 of each. Run B: 1 of each. Totals = 3.
         _seed_card(self.RUN_A, "jc_a1", "when a1", "judge a1")
@@ -785,6 +934,8 @@ class TestTwinRunScopingReads(APITestCase):
 
         for stage in range(1, 6):
             _db.save_checkpoint(self.RUN_A, stage, "completed")
+        for stage in range(1, 6):
+            _db.save_checkpoint(self.RUN_C, stage, "completed")
         for stage in range(1, 3):
             _db.save_checkpoint(self.RUN_B, stage, "completed")
         _db.save_checkpoint(self.RUN_B, 3, "cancelled")
@@ -794,6 +945,29 @@ class TestTwinRunScopingReads(APITestCase):
         self.assertEqual(body["traits"]["count"], 2)
         self.assertEqual(body["events"]["count"], 2)
         self.assertEqual(body["run_id"], self.RUN_A)
+
+    def test_overview_without_run_id_can_fallback_to_partial_run_with_data(self):
+        from chatview import db as _db
+
+        for stage in range(1, 6):
+            _db.save_checkpoint(self.RUN_C, stage, "completed")
+        _db.save_checkpoint(self.RUN_B, 1, "completed")
+        _db.save_checkpoint(self.RUN_B, 2, "cancelled")
+
+        _, body = self._get("/api/twin/overview")
+        self.assertEqual(body["cards"]["count"], 1)
+        self.assertEqual(body["traits"]["count"], 1)
+        self.assertEqual(body["events"]["count"], 1)
+        self.assertEqual(body["run_id"], self.RUN_B)
+
+    def test_twin_runs_default_limit_is_ten(self):
+        from chatview import db as _db
+
+        for i in range(12):
+            _db.save_checkpoint(f"history_{i:02d}", 1, "completed")
+
+        _, body = self._get("/api/twin/runs")
+        self.assertEqual(len(body["runs"]), 10)
 
     def test_runtime_preview_scoped_by_run_id(self):
         _, body = self._get(f"/api/twin/runtime-preview?run_id={self.RUN_A}")
@@ -814,6 +988,7 @@ class TestTwinRunScopingReads(APITestCase):
 
     def test_hostile_run_id_is_bound_param(self):
         import urllib.parse
+
         hostile = urllib.parse.quote("zzz' OR 1=1 --")
         code, body = self._get(f"/api/twin/cards?run_id={hostile}")
         self.assertEqual(code, 200)
@@ -823,12 +998,14 @@ class TestTwinRunScopingReads(APITestCase):
 
 class TestTwinResumeLatestTrait(APITestCase):
     """resume must consider cognitive_traits.updated_at (no created_at column)."""
+
     RUN_OLD = "run_old_event"
     RUN_NEW = "run_new_trait"
 
     def setUp(self):
         super().setUp()
         from chatview import db as _db
+
         _db.init_db()
         # Old run: only an event, created long ago.
         _seed_event(self.RUN_OLD, "ev_old", 1, created_at="2020-01-01T00:00:00")
@@ -845,6 +1022,7 @@ class TestTwinResumeLatestTrait(APITestCase):
 
 class TestTwinAvatarScoping(APITestCase):
     """avatar-selection + overview avatar scope to run_id, no global fallback."""
+
     RUN_A = "run_av_A"
     RUN_B = "run_av_B"
     AVATAR = {"persona_id": "alpha", "model_id": "m1"}
@@ -852,6 +1030,7 @@ class TestTwinAvatarScoping(APITestCase):
     def setUp(self):
         super().setUp()
         from chatview import db as _db
+
         _db.init_db()
         _seed_trait(self.RUN_A, "ct_av_a1", "Av Trait A1", status="confirmed")
         _seed_trait(self.RUN_A, "ct_av_a2", "Av Trait A2", status="emerging")
@@ -890,6 +1069,7 @@ class TestTwinAvatarScoping(APITestCase):
 
 class TestTwinSyncScoping(APITestCase):
     """sync scopes to run_id AND never touches the real ~/.claude/CLAUDE.md."""
+
     RUN_A = "run_sync_A"
     RUN_B = "run_sync_B"
 
@@ -908,8 +1088,9 @@ class TestTwinSyncScoping(APITestCase):
 
         os.environ["CHATVIEW_CLAUDE_MD"] = str(tmp_md)
         try:
-            code, body = self._post("/api/twin/sync",
-                                    {"run_id": self.RUN_A, "lang": "en"})
+            code, body = self._post(
+                "/api/twin/sync", {"run_id": self.RUN_A, "lang": "en"}
+            )
             self.assertEqual(code, 200)
             self.assertTrue(body["ok"])
             self.assertEqual(body["cards_synced"], 1)
