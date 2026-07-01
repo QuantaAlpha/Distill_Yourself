@@ -265,6 +265,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_messages_session      ON messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_messages_role         ON messages(role);
         CREATE INDEX IF NOT EXISTS idx_messages_session_role ON messages(session_id, role);
+        CREATE INDEX IF NOT EXISTS idx_messages_session_idx  ON messages(session_id, idx);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
             text,

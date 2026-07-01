@@ -52,9 +52,24 @@ distill stats --date all                          # 全局计数
 | `distill highlights --limit 20` | 按纠正/决策密度排序的高信号会话 |
 | `distill read <id> -s` | 读某个会话（summary 模式，看上下文） |
 | `distill search "<关键词>"` | 全文检索 |
+| `distill search-plus "<关键词>"` | 高召回混合检索：FTS + token/synonym/title/project，返回匹配原因 |
+| `distill find-repeats "<自然语言问题>"` | 找重复/相近证据并分桶 rerank：强证据 / 相关上下文 / 弱匹配 / artifacts |
+| `distill session-brief <id>` | 快速看一个 session 的元数据、消息计数、首尾用户请求、artifact 计数 |
+| `distill read-window <id> --idx N` / `--batch '[...]'` | 只读某条命中附近的小窗口；多个候选用 batch 一次核验 |
+| `distill evidence-audit` | 抽查 corrections/decisions 里明显的 agent prompt、任务通知、IDE 上下文噪声 |
 | `distill decisions` / `distill errors` | 架构决策点 / 复发错误 |
 
 通用过滤参数：`--source claude|codex|all`、`--date 7d|30d|90d|all`、`--project <名>`、`--limit N`、`--json`。
+
+先判断查询类型，再选工具；目标是**质量路由 + 快速核验**，不要把某个排行命令当作所有场景的默认答案：
+
+- **短 exact 偏好/纠正原话**（如"不要过度设计"）：先 `search "<原话>" --json --limit 20`。若需要 match reasons / artifact 标记，可直接用 `search-plus "<原话>" --json --limit 20`。前几条已有 2+ 条直接用户原话时，用 `read-window --batch` 核验后停止；不要升级到 `find-repeats`。
+- **短技术词 / 工具名 anchor**（如"UI test"、"search-plus"、"find-repeats"）：这不是偏好原话。先 `search "<anchor>" --json --limit 20`；若只是想定位相关 session，拿到线索就停。不要因为少于 2 条直接用户偏好就升级 `search-plus` 或 `find-repeats`。
+- **短但非 exact 的偏好概念**（如"最小改动"、"先确认 scope"）：不要先对完整抽象句跑重检索。先拆 2-4 个具体 anchor 用 `search "<anchor>" --json --limit 20`（如"最小必要逻辑"、"保持 diff 最小"、"先确认"、"只读分析"、"不要改文件"）；若直接用户证据不足，再用 `search-plus` 补召回。最后用 `read-window --batch` 核验；`find-repeats` 只作诊断，不作主证据来源。
+- **明确主题/实体/项目/历史事件**（如"之前 AutoResearch 怎么做的"、"某项目里反复说的 X"）：若 query 已经是明确 topic/episode，可直接用 `find-repeats "<自然语言问题>" --json` 找 `strong_evidence`；否则先用 `search "<关键词>" --json --limit 10` 做 cheap probe。命中主要是 IDE/file context、任务产物或零结果时，不要硬凑证据，升级到 `find-repeats`。对前 2-3 个 session 跑 `session-brief` / `read-window --batch` 核验。
+- **全局画像 / Memory 蒸馏**：先用 `profile-digest` / `aggregates` / `stats` 定位假设，再按假设类型选择上面三条路由追证据。
+- **范围控制**：`--date all` 可以用，但不要默认当作唯一范围。若用户问题明显属于某项目或近期上下文，先带 `--project` / `--date 30d|90d` 缩小噪声；证据不足时再扩大到 all。
+- **怀疑噪声污染**：跑 `evidence-audit --json` 估计污染来源。agent/subagent 工作产物、任务通知、IDE/file 上下文不硬过滤，工具会标记 `artifactReason` 并降权；只有人工核验后才决定是否作为证据。
 
 ---
 
@@ -74,7 +89,7 @@ distill stats --date all                          # 全局计数
 
 **产出**：跨项目复用的偏好卡片。**写回**：`~/.claude/memory/evolve_<id>.md`，并更新 memory 索引。
 
-1. **ORIENT/EXPLORE**：digest 看 corrections/queries → 对高信号点跑 `corrections` / `read <id> -s` 看上下文。
+1. **ORIENT/EXPLORE**：digest 看 corrections/queries → 对高信号点按 Step 2 路由检索；候选证据必须用 `read-window` / `session-brief` 看上下文。
 2. **DISTILL**：每条偏好提炼成一张卡片，必须有证据：
    - `label`：一句话偏好（"擅自扩展 scope 前先确认"）
    - `evidence`：2-4 条原始引用，带 `session_id`，区分纠正/接受信号
@@ -140,6 +155,10 @@ distill evolve-patterns --json   # 反复出现的问题聚类 + 建议
 
 # 预览与写回纪律（硬性）
 
+- **排行不是结论。** `search` / `search-plus` / `find-repeats` 只负责召回、分桶和解释匹配原因；写入 memory/profile 前必须读取原始上下文，确认是用户原话、纠正、明确接受信号，或 IDE 上下文里抽出的真实 `My request`。
+- **artifact 不是主证据。** 带 `artifactReason` 的候选只作为诊断/线索；除非 `read-window` 证明其中包含明确用户请求，否则不要作为偏好/画像的 primary evidence。
+- **IDE/file context 不是偏好证据。** `# Context from my IDE setup`、`Active file`、`Open tabs`、`<output-file>`、`task-notification`、review/task prompt 默认降权；它们可以帮助定位 session，但不能按数量当作直接用户偏好。
+- **避免 assistant echo。** 只引用 assistant 对用户偏好的复述是不够的；要找到对应的用户原话或用户接受/纠正信号。
 - **不预览，不写回。** 任何对 `~/.claude/CLAUDE.md` / `~/.claude/memory/` 的写入，必须先把完整内容/diff 给用户看，得到明确确认才动手。
 - **只碰该碰的。** 写 `CLAUDE.md` 只动 evolve 标记区段，不动用户其它内容；写 memory 只新增/更新 `evolve_*.md`。
 - **可追溯。** 每条洞见都要能指回原始 `session_id`，不允许凭印象编造。
@@ -153,6 +172,11 @@ distill evolve-patterns --json   # 反复出现的问题聚类 + 建议
 |------|------|
 | `distill`（console script） | 全局入口（= `chatview.cli:main`），装包后任意目录可用 |
 | `distill refresh [--force]` | 扫 JSONL 重建 SQLite + 聚合（等价网页 `/api/refresh`） |
+| `distill search-plus "<关键词>"` | 高召回混合搜索，保留并降权 artifact 候选 |
+| `distill find-repeats "<问题>"` | 重复证据 rerank，输出 strong/related/weak/artifacts 分桶 |
+| `distill session-brief <id>` | session 级快速摘要，用于判断是否继续深读 |
+| `distill read-window <id> --idx N [--radius 2]` / `--batch '[...]'` | 读取命中附近局部上下文，多个窗口用 batch |
+| `distill evidence-audit [--kind all]` | 审计明显噪声证据来源 |
 | `distill evolve-sync --tab memory\|profile [--execute]` | 把暂存的 evolve 数据写回 `~/.claude/`，复用 `sync.py`，默认 preview |
 | `distill install-skill [--force]` | 把本 skill 拷进 `~/.claude/skills/`（及 `~/.codex/skills/`） |
 

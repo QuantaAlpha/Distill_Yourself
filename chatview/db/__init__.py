@@ -17,6 +17,8 @@ from .sessions import (
     get_session_meta,
     get_session_by_partial_id,
     get_session_messages,
+    get_message_window,
+    verify_fts_integrity,
 )
 from .insights import (
     get_aggregate,
@@ -91,6 +93,8 @@ __all__ = [
     "get_session_meta",
     "get_session_by_partial_id",
     "get_session_messages",
+    "get_message_window",
+    "verify_fts_integrity",
     "get_aggregate",
     "set_aggregate",
     "refresh_aggregates",

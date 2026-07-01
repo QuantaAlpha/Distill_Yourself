@@ -127,6 +127,16 @@ def rebuild_fts():
     maybe_commit(conn)
 
 
+def verify_fts_integrity() -> bool:
+    """Return whether FTS row counts match their content tables."""
+    conn = get_conn()
+    messages = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    messages_fts = conn.execute("SELECT COUNT(*) FROM messages_fts").fetchone()[0]
+    sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    sessions_fts = conn.execute("SELECT COUNT(*) FROM sessions_fts").fetchone()[0]
+    return messages == messages_fts and sessions == sessions_fts
+
+
 def prune_stale_sessions(valid_file_paths) -> int:
     """Remove sessions whose source file no longer exists in the current scan."""
     conn = get_conn()
@@ -378,4 +388,18 @@ def get_session_messages(session_id: str, role: str = "") -> list:
             "SELECT * FROM messages WHERE session_id=? ORDER BY idx",
             (session_id,),
         ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_message_window(session_id: str, start_idx: int, end_idx: int) -> list:
+    """Return messages in an inclusive idx window for a session."""
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT * FROM messages
+        WHERE session_id=? AND idx BETWEEN ? AND ?
+        ORDER BY idx
+        """,
+        (session_id, start_idx, end_idx),
+    ).fetchall()
     return [dict(r) for r in rows]

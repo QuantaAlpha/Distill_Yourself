@@ -34,6 +34,10 @@ from chatview.commands.evolve import (
     cmd_aggregates,
     cmd_profile_digest,
 )
+from chatview.commands.retrieval import (
+    cmd_search_plus, cmd_read_window, cmd_find_repeats, cmd_session_brief,
+    cmd_evidence_audit,
+)
 from chatview.commands.twin import (
     cmd_twin_stats,
     cmd_twin_events,
@@ -112,6 +116,51 @@ Examples:
     p_search = sub.add_parser("search", parents=[shared], help="Search user messages")
     p_search.add_argument("query", help="Search query")
 
+    p_search_plus = sub.add_parser(
+        "search-plus",
+        parents=[shared],
+        help="Hybrid higher-recall search with match reasons",
+    )
+    p_search_plus.add_argument("query", help="Search query")
+    p_search_plus.add_argument(
+        "--include-artifacts",
+        action="store_true",
+        help="Deprecated compatibility flag; artifacts are always marked and downranked",
+    )
+
+    p_read_window = sub.add_parser(
+        "read-window",
+        parents=[shared],
+        help="Read a small message window around a match index",
+    )
+    p_read_window.add_argument("session", nargs="?", help="Session ID or partial match")
+    p_read_window.add_argument("--idx", type=int, help="Target message index")
+    p_read_window.add_argument(
+        "--radius",
+        type=int,
+        default=2,
+        help="How many message indexes before/after to include",
+    )
+    p_read_window.add_argument(
+        "--batch",
+        default="",
+        help='JSON list of {"session": "...", "idx": N, "radius": N} items',
+    )
+
+    p_find_repeats = sub.add_parser(
+        "find-repeats",
+        parents=[shared],
+        help="Find repeated history evidence with reranking buckets",
+    )
+    p_find_repeats.add_argument("query", help="Natural-language evidence query")
+
+    p_session_brief = sub.add_parser(
+        "session-brief",
+        parents=[shared],
+        help="Compact session summary for retrieval triage",
+    )
+    p_session_brief.add_argument("session", help="Session ID or partial match")
+
     p_queries = sub.add_parser(
         "queries", parents=[shared], help="Extract user queries only (no AI responses)"
     )
@@ -139,6 +188,17 @@ Examples:
         "highlights",
         parents=[shared],
         help="Per-session one-line highlights with signal counts",
+    )
+    p_audit = sub.add_parser(
+        "evidence-audit",
+        parents=[shared],
+        help="Audit obvious orchestration noise in correction/decision candidates",
+    )
+    p_audit.add_argument(
+        "--kind",
+        default="all",
+        choices=["all", "corrections", "decisions"],
+        help="Candidate type to audit",
     )
     sub.add_parser(
         "evolve-rules", parents=[shared], help="Generate rules JSON for Evolve page"
@@ -317,6 +377,10 @@ Examples:
         "sessions": cmd_sessions,
         "read": cmd_read,
         "search": cmd_search,
+        "search-plus": cmd_search_plus,
+        "read-window": cmd_read_window,
+        "find-repeats": cmd_find_repeats,
+        "session-brief": cmd_session_brief,
         "queries": cmd_queries,
         "corrections": cmd_corrections,
         "decisions": cmd_decisions,
@@ -324,6 +388,7 @@ Examples:
         "stats": cmd_stats,
         "files": cmd_files,
         "highlights": cmd_highlights,
+        "evidence-audit": cmd_evidence_audit,
         "evolve-rules": cmd_evolve_rules,
         "evolve-signals": cmd_evolve_signals,
         "evolve-patterns": cmd_evolve_patterns,

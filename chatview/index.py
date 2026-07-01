@@ -152,6 +152,15 @@ def schedule_index_refresh_if_stale(
     return True
 
 
+def _post_process_db_refresh(_db, force: bool, changed: bool):
+    """Refresh derived DB state after source files changed."""
+    if not changed:
+        return
+    if force or not _db.verify_fts_integrity():
+        _db.rebuild_fts()
+    _db.refresh_aggregates()
+
+
 def build_index(force: bool = False) -> dict:
     """Scan all JSONL files and build/update the metadata index + SQLite DB."""
     global _index, _index_gen
@@ -442,11 +451,14 @@ def build_index(force: bool = False) -> dict:
         _index_gen += 1
         _result_cache.clear()
 
-    # Rebuild DB FTS + aggregates if anything changed
+    # Upserts/prunes maintain FTS incrementally; rebuild only on force or drift.
     if new_sessions or codex_new or pruned_count:
         try:
-            _db.rebuild_fts()
-            _db.refresh_aggregates()
+            _post_process_db_refresh(
+                _db,
+                force=force,
+                changed=bool(new_sessions or codex_new or pruned_count),
+            )
         except Exception as e:
             print(f"DB post-process error: {e}")
 
