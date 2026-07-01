@@ -1175,7 +1175,7 @@ def cmd_evolve_sync(args):
     engine = getattr(args, "engine", "auto") or "auto"
     execute = getattr(args, "execute", False)
 
-    row = _db.evolve_get(tab, source, date, project, engine)
+    row = _db.evolve_get_shared(tab, source, date, project, engine)
     if not row:
         print(json.dumps({
             "error": f"{tab} cache not found for scope "
