@@ -139,6 +139,41 @@ class TestEvolveStream(unittest.TestCase):
         self.assertEqual(row["data"]["nodes"][0]["id"], "m1")
         self.assertTrue(stream.closed)
 
+    def test_evolve_stream_persists_events_for_replay(self):
+        """Every streamed evolve event is persisted so a refreshed page can replay it."""
+
+        class _ReplayStream:
+            def close(self):
+                self.closed = True
+
+            def __iter__(self):
+                yield {"type": "tool", "name": "Bash", "status": "running"}
+                yield {"type": "text", "content": "thinking"}
+                db.evolve_upsert(
+                    "memory",
+                    "all",
+                    "7d",
+                    "",
+                    "codex",
+                    json.dumps({"nodes": [{"id": "m1"}], "links": [], "cards": []}),
+                )
+
+        handler = _FakeHandler()
+        stream = _ReplayStream()
+
+        with patch.object(evolve, "_build_evolve_prompt", return_value="prompt"), \
+             patch.object(evolve, "_run_ai_engine_stream", return_value=stream):
+            evolve._handle_evolve_stream(handler, "memory", "all", "7d", "", "codex", "zh")
+
+        runs = db.evolve_runs_latest_for_scope("all", "7d", "", "codex")
+        run_id = runs["memory"]["run_id"]
+        events = db.evolve_run_events(run_id)
+        self.assertEqual(
+            [entry["event"]["type"] for entry in events],
+            ["run", "tool", "text", "evolve_result"],
+        )
+        self.assertEqual([entry["event_index"] for entry in events], [1, 2, 3, 4])
+
 
 if __name__ == "__main__":
     unittest.main()

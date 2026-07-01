@@ -100,6 +100,7 @@ _KNOWN_TABLES = frozenset(
         "messages_fts",
         "twin_checkpoints",
         "evolve_runs",
+        "evolve_run_events",
         "chat_cache",
     }
 )
@@ -184,6 +185,8 @@ _KNOWN_COLUMNS = frozenset(
         "lang",
         "status",
         "snapshot",
+        "event",
+        "event_index",
         "error_message",
         "run_id",
     }
@@ -199,6 +202,7 @@ _VALID_DEFINITIONS = frozenset(
         "INTEGER NOT NULL",
         "REAL NOT NULL",
         "TEXT DEFAULT ''",
+        "TEXT NOT NULL DEFAULT ''",
         "INTEGER DEFAULT 0",
         "REAL DEFAULT 0.0",
     }
@@ -447,6 +451,16 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_evolve_runs_status
             ON evolve_runs(status, updated_at);
 
+        CREATE TABLE IF NOT EXISTS evolve_run_events (
+            run_id      TEXT NOT NULL,
+            event_index INTEGER NOT NULL,
+            event       TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            PRIMARY KEY (run_id, event_index)
+        );
+        CREATE INDEX IF NOT EXISTS idx_evolve_run_events_run
+            ON evolve_run_events(run_id, event_index);
+
         -- =================================================================
         -- Twin analysis checkpoint tracking
         -- =================================================================
@@ -473,6 +487,7 @@ def init_db():
     _ensure_column(conn, "cognitive_traits", "run_id", "TEXT")
     _ensure_column(conn, "sessions", "starred", "INTEGER DEFAULT 0")
     _migrate_evidence_run_unique(conn)
+    _migrate_evolve_cache_engine_unique(conn)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_evidence_run ON evidence_events(run_id)"
     )
@@ -492,6 +507,10 @@ def init_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_traits_run ON cognitive_traits(run_id)"
     )
+    # Evolve runs schema migrations
+    _ensure_column(conn, "evolve_runs", "lang", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "evolve_runs", "error_message", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "evolve_runs", "completed_at", "TEXT")
     _ensure_sessions_fts(conn)
     conn.commit()
     try:
@@ -566,6 +585,55 @@ def _migrate_evidence_run_unique(conn: sqlite3.Connection):
         FROM evidence_events_legacy
     """)
     conn.execute("DROP TABLE evidence_events_legacy")
+
+
+def _migrate_evolve_cache_engine_unique(conn: sqlite3.Connection):
+    """Replace legacy evolve_cache scope uniqueness with engine-scoped uniqueness."""
+    indexes = conn.execute("PRAGMA index_list(evolve_cache)").fetchall()
+    has_current_unique = False
+    has_legacy_unique = False
+    for idx in indexes:
+        name = idx[1]
+        unique = idx[2]
+        if not unique:
+            continue
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            continue
+        cols = [r[2] for r in conn.execute(f"PRAGMA index_info({name})").fetchall()]
+        if cols == ["tab", "source", "date_range", "project", "engine"]:
+            has_current_unique = True
+            break
+        if cols == ["tab", "source", "date_range", "project"]:
+            has_legacy_unique = True
+
+    if has_current_unique or not has_legacy_unique:
+        return
+
+    conn.execute("ALTER TABLE evolve_cache RENAME TO evolve_cache_legacy")
+    conn.execute("""
+        CREATE TABLE evolve_cache (
+            tab         TEXT NOT NULL,
+            source      TEXT NOT NULL DEFAULT 'all',
+            date_range  TEXT NOT NULL DEFAULT '7d',
+            project     TEXT NOT NULL DEFAULT '',
+            engine      TEXT NOT NULL DEFAULT 'auto',
+            data        TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            PRIMARY KEY (tab, source, date_range, project, engine)
+        )
+    """)
+    conn.execute("""
+        INSERT OR REPLACE INTO evolve_cache
+        (tab, source, date_range, project, engine, data, created_at, updated_at)
+        SELECT tab, source, date_range, project, engine, data, created_at, updated_at
+        FROM evolve_cache_legacy
+    """)
+    conn.execute("DROP TABLE evolve_cache_legacy")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evolve_tab ON evolve_cache(tab)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_evolve_updated ON evolve_cache(updated_at)"
+    )
 
 
 def _ensure_sessions_fts(conn: sqlite3.Connection):

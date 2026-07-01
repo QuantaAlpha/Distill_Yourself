@@ -216,6 +216,51 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("_scheduleRecoveredRunPoll(tab, requestScope);", script)
         self.assertIn("setTimeout(poll, 2000)", script)
 
+    def test_evolve_recovered_runs_replay_persisted_events(self):
+        script = read_static("evolve.js")
+
+        self.assertIn("function _replayRecoveredRunEvents(", script)
+        self.assertIn("/api/evolve/run-events", script)
+        self.assertIn("_replayRecoveredRunEvents(", script)
+        self.assertIn("run.run_id", script)
+        self.assertIn("replayState", script)
+
+    def test_evolve_recovered_poll_does_not_clobber_replay_progress(self):
+        script = read_static("evolve.js")
+        apply_body = script[
+            script.index("function _applyRecoveredRun") : script.index(
+                "function _makeRecoveredStreamState",
+                script.index("function _applyRecoveredRun"),
+            )
+        ]
+
+        self.assertIn("const canAppendReplay =", apply_body)
+        self.assertRegex(
+            apply_body,
+            re.compile(
+                r"if \(!canAppendReplay\) \{\s*"
+                r"progressState\.stepCount = snapshot\.step_count \|\| 0;"
+            ),
+        )
+
+    def test_evolve_recovered_poll_starts_after_initial_replay(self):
+        script = read_static("evolve.js")
+        running_body = script[
+            script.index("if (running) {", script.index("function _applyRecoveredRun")) : script.index(
+                "} else if (tab === evolveActiveTab)",
+                script.index("function _applyRecoveredRun"),
+            )
+        ]
+
+        self.assertLess(
+            running_body.index("_replayRecoveredRunEvents("),
+            running_body.index("_scheduleRecoveredRunPoll(tab, requestScope)"),
+        )
+        self.assertIn(
+            ").finally(() => _scheduleRecoveredRunPoll(tab, requestScope));",
+            running_body,
+        )
+
     def test_evolve_recovered_pollers_keep_chrome_in_running_state(self):
         script = read_static("evolve.js")
 
@@ -377,8 +422,10 @@ class TestFrontendStreamingStatic(unittest.TestCase):
             )
         ]
 
-        self.assertIn('text.startsWith("Timeout")', clear_body)
+        self.assertIn('lower.startsWith("timeout")', clear_body)
         self.assertIn('"AI analysis timed out"', clear_body)
+        self.assertIn('lower.includes("operationalerror")', clear_body)
+        self.assertIn('lower.startsWith("internal server error")', clear_body)
         self.assertIn("_clearCachedTabTransientError(tab, requestScope)", restore_body)
         self.assertIn("_clearCachedTabTransientError(tab, requestScope)", refresh_body)
         self.assertLess(

@@ -130,6 +130,7 @@ class APITestCase(unittest.TestCase):
         conn = _db.get_conn()
         for table in (
             "evolve_cache",
+            "evolve_run_events",
             "evolve_runs",
             "evidence_events",
             "judgment_cards",
@@ -556,6 +557,62 @@ class TestEvolveProgress(APITestCase):
             migrated["data"].get("nodes"),
             [{"id": "legacy-memory"}],
         )
+
+    def test_run_events_endpoint_replays_events_after_since_index(self):
+        from chatview import db as _db
+
+        _db.init_db()
+        run_id = _db.evolve_run_start(
+            "memory",
+            "all",
+            "7d",
+            "",
+            "codex",
+            lang="zh",
+            snapshot={"text": "restoring", "step_count": 1},
+        )
+        _db.evolve_run_event_append(run_id, {"type": "run", "run_id": run_id})
+        _db.evolve_run_event_append(
+            run_id, {"type": "tool", "name": "Bash", "status": "running"}
+        )
+        _db.evolve_run_event_append(
+            run_id, {"type": "text", "content": "partial answer"}
+        )
+
+        code, body = self._get(f"/api/evolve/run-events?run_id={run_id}&since=1")
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["run_id"], run_id)
+        self.assertEqual(body["next_index"], 3)
+        self.assertEqual(
+            [event["event"]["type"] for event in body["events"]],
+            ["tool", "text"],
+        )
+        self.assertEqual(body["events"][0]["event_index"], 2)
+
+    def test_progress_includes_persisted_event_count_for_recovered_run(self):
+        from chatview import db as _db
+
+        _db.init_db()
+        run_id = _db.evolve_run_start(
+            "memory",
+            "all",
+            "7d",
+            "",
+            "codex",
+            lang="zh",
+            snapshot={"text": "restoring", "step_count": 1},
+        )
+        _db.evolve_run_event_append(run_id, {"type": "run", "run_id": run_id})
+        _db.evolve_run_event_append(run_id, {"type": "text", "content": "hello"})
+
+        code, body = self._get(
+            "/api/evolve/progress?tab=memory&source=all&date=7d&project=&engine=codex"
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["run"]["run_id"], run_id)
+        self.assertEqual(body["event_count"], 2)
 
 
 class TestEvolveCancel(APITestCase):

@@ -33,6 +33,7 @@ from chatview.handlers.evolve import (
     _get_evolve_tab,
     _handle_evolve_stream,
     _handle_evolve_progress,
+    _handle_evolve_run_events,
     _handle_evolve_cancel,
     _AI_TABS,
 )
@@ -206,6 +207,9 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
         elif path.startswith("/api/evolve/"):
             if path == "/api/evolve/progress":
                 _handle_evolve_progress(self, params)
+                return
+            if path == "/api/evolve/run-events":
+                _handle_evolve_run_events(self, params)
                 return
             tab = path[len("/api/evolve/") :]
             if tab not in ("rules", "signals", "patterns", "profile", "memory"):

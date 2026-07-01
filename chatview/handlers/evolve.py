@@ -32,8 +32,20 @@ _AI_TABS = set(_EVOLVE_TABS)
 _active_evolve_runs = {}  # {run_id: {"tab", "source", "date", "project", "engine", "proc", "starting", "finalizing", "phase_started_at"}}
 _cancelled_evolve_run_ids = set()
 _evolve_lock = threading.Lock()
-_EVOLVE_STARTING_GRACE_SECONDS = 15
+_EVOLVE_STARTING_GRACE_SECONDS = 45
 _EVOLVE_FINALIZING_GRACE_SECONDS = 15
+
+
+def _persist_evolve_event(run_id: str, event: dict):
+    """Best-effort append of one replayable run event."""
+    if not run_id or not isinstance(event, dict):
+        return
+    try:
+        from chatview import db as _db
+
+        _db.evolve_run_event_append(run_id, event)
+    except Exception:
+        pass
 
 
 def _get_evolve_tab(
@@ -209,7 +221,9 @@ def _handle_evolve_stream(
         }
 
     _start_sse(handler)
-    _sse_event(handler, {"type": "run", "run_id": run_id})
+    run_evt = {"type": "run", "run_id": run_id}
+    _persist_evolve_event(run_id, run_evt)
+    _sse_event(handler, run_evt)
     proc_ref = [None]
 
     def _on_proc_start(proc):
@@ -246,6 +260,9 @@ def _handle_evolve_stream(
             with _evolve_lock:
                 cancelled = run_id in _cancelled_evolve_run_ids
             if cancelled:
+                _persist_evolve_event(
+                    run_id, {"type": "error", "message": "Cancelled by user"}
+                )
                 _db.evolve_run_update(
                     run_id,
                     status="cancelled",
@@ -269,6 +286,7 @@ def _handle_evolve_stream(
                 usage_output += int(evt.get("output_tokens") or 0)
             if etype in ("error", "timeout"):
                 last_error = evt.get("message") or etype
+            _persist_evolve_event(run_id, evt)
             if etype in ("tool", "error", "timeout", "result", "done"):
                 event_tail.append(evt)
                 event_tail = event_tail[-12:]
@@ -296,6 +314,7 @@ def _handle_evolve_stream(
         stream_finished = True
     except Exception as e:
         last_error = str(e)
+        _persist_evolve_event(run_id, {"type": "error", "message": last_error})
         _db.evolve_run_update(
             run_id,
             status="failed",
@@ -349,6 +368,8 @@ def _handle_evolve_stream(
     try:
         row = _db.evolve_get(tab, source, date, project, engine)
         if row:
+            result_evt = {"type": "evolve_result", "data": row["data"]}
+            _persist_evolve_event(run_id, result_evt)
             _db.evolve_run_update(
                 run_id,
                 status="completed",
@@ -362,10 +383,10 @@ def _handle_evolve_stream(
                 error_message="",
             )
             if not disconnected:
-                _sse_event(handler, {"type": "evolve_result", "data": row["data"]})
+                _sse_event(handler, result_evt)
         elif last_error:
-            # A concrete error/timeout already surfaced upstream — don't override
-            # it with a vague "did not write" message; just close cleanly.
+            error_evt = {"type": "error", "message": last_error}
+            _persist_evolve_event(run_id, error_evt)
             _db.evolve_run_update(
                 run_id,
                 status="failed",
@@ -377,9 +398,16 @@ def _handle_evolve_stream(
                 },
                 error_message=last_error,
             )
+            if not disconnected:
+                try:
+                    _sse_event(handler, error_evt)
+                except BrokenPipeError:
+                    pass
             return
         else:
             msg = "AI 已运行但未写入有效结果（可能是分析中断或输出不符合 schema）"
+            error_evt = {"type": "error", "message": msg}
+            _persist_evolve_event(run_id, error_evt)
             _db.evolve_run_update(
                 run_id,
                 status="failed",
@@ -394,10 +422,7 @@ def _handle_evolve_stream(
             if not disconnected:
                 _sse_event(
                     handler,
-                    {
-                        "type": "error",
-                        "message": msg,
-                    },
+                    error_evt,
                 )
     except BrokenPipeError:
         return
@@ -462,7 +487,14 @@ def _evolve_progress_entry(
     running = _is_evolve_run_active(run) if run else False
     stale = bool(run and run.get("status") == "running" and not running)
     cache = _db.evolve_get_shared(tab, source, date, project, engine)
-    return {"running": running, "stale": stale, "run": run, "cache": cache}
+    event_count = _db.evolve_run_event_count(run["run_id"]) if run else 0
+    return {
+        "running": running,
+        "stale": stale,
+        "run": run,
+        "cache": cache,
+        "event_count": event_count,
+    }
 
 
 def _handle_evolve_progress(handler, params):
@@ -499,6 +531,37 @@ def _handle_evolve_progress(handler, params):
     from chatview.handlers.base import _json_response
 
     _json_response(handler, {"ok": True, "running": any_running, "tabs": payload_tabs})
+
+
+def _handle_evolve_run_events(handler, params):
+    """GET /api/evolve/run-events — replay persisted stream events for a run."""
+    from chatview import db as _db
+    from chatview.handlers.base import _json_response
+
+    run_id = params.get("run_id", [""])[0]
+    try:
+        since = int(params.get("since", ["0"])[0] or 0)
+    except (TypeError, ValueError):
+        since = 0
+    try:
+        limit = int(params.get("limit", ["500"])[0] or 500)
+    except (TypeError, ValueError):
+        limit = 500
+
+    run = _db.evolve_run_get(run_id) if run_id else None
+    events = _db.evolve_run_events(run_id, since=since, limit=limit) if run else []
+    next_index = events[-1]["event_index"] if events else max(0, since)
+    _json_response(
+        handler,
+        {
+            "ok": True,
+            "run_id": run_id,
+            "run": run,
+            "events": events,
+            "next_index": next_index,
+            "event_count": _db.evolve_run_event_count(run_id) if run else 0,
+        },
+    )
 
 
 def _kill_evolve_process(proc):

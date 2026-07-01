@@ -15,6 +15,7 @@
   let evolveStreamAborts = {}; // {tab: AbortController} — per-tab stream abort
   let evolveDetachedTabs = {}; // {tab: true} — detachOnly markers
   let evolveRecoveredRunPollers = {}; // {tab: {timer, scopeKey}} — resume backend progress after rehydrate
+  let evolveReplayStates = {}; // {tab: {runId, lastIndex, scopeKey, streamState}}
   let evolveScopeSource = "all";
   let evolveScopeDate = "7d";
   let evolveScopeProject = "";
@@ -514,14 +515,18 @@
 
   function _isTransientEvolveError(error) {
     const text = String(error || "");
+    const lower = text.toLowerCase();
     return (
-      text === "Network error" ||
-      text === "Failed to fetch" ||
+      lower === "network error" ||
+      lower === "failed to fetch" ||
+      lower === "load failed" ||
       text === "Analysis interrupted: no active backend process" ||
       text === "AI analysis timed out" ||
       text === _tt("evolve.error.timedOut") ||
-      text.toLowerCase() === "timeout" ||
-      text.startsWith("Timeout")
+      lower === "timeout" ||
+      lower.startsWith("timeout") ||
+      (lower.startsWith("internal server error") &&
+        lower.includes("operationalerror"))
     );
   }
 
@@ -659,15 +664,16 @@
     $$(".evolve-tab").forEach((t) =>
       t.classList.toggle("active", t.dataset.tab === tab),
     );
-    // Show/hide per-tab panels instead of re-rendering
+    // Show/hide per-tab panels — re-render if language changed or stale recovery content
     const activePanel = _ensureTabPanel(tab);
     const scope = getEvolveScope();
-    if (
+    const needsRerender =
       activePanel &&
-      activePanel.dataset.langRendered &&
-      activePanel.dataset.langRendered !== _getLang() &&
-      !_isTabBusy(tab, scope)
-    ) {
+      !_isTabBusy(tab, scope) &&
+      ((activePanel.dataset.langRendered &&
+        activePanel.dataset.langRendered !== _getLang()) ||
+        activePanel.querySelector(".evolve-recovered-progress"));
+    if (needsRerender) {
       _renderTabPanel(tab, activePanel);
     }
     $$(".evolve-tab-panel").forEach((p) => {
@@ -1212,11 +1218,23 @@
     const result = snapshot.result;
     const requestScope = scope || getEvolveScope();
     const progressState = _getProgressState(tab);
-    progressState.runId = (run && run.run_id) || progressState.runId || "";
-    progressState.stepCount = snapshot.step_count || 0;
-    progressState.usageInput = snapshot.usage?.input || 0;
-    progressState.usageOutput = snapshot.usage?.output || 0;
-    progressState.starting = !progressState.stepCount;
+    const runId = (run && run.run_id) || "";
+    progressState.runId = runId || progressState.runId || "";
+    const replayState = evolveReplayStates[tab];
+    const scopeKey = getScopeCacheKey(tab, requestScope);
+    const canAppendReplay = !!(
+      running &&
+      replayState &&
+      runId &&
+      replayState.runId === runId &&
+      replayState.scopeKey === scopeKey
+    );
+    if (!canAppendReplay) {
+      progressState.stepCount = snapshot.step_count || 0;
+      progressState.usageInput = snapshot.usage?.input || 0;
+      progressState.usageOutput = snapshot.usage?.output || 0;
+      progressState.starting = !progressState.stepCount;
+    }
     progressState.recovered = !!running;
     if (run && run.run_id) {
       try {
@@ -1252,12 +1270,23 @@
     if (running) {
       _clearCachedTabTransientError(tab, requestScope);
       _markTabLoading(tab, requestScope);
-      _scheduleRecoveredRunPoll(tab, requestScope);
       const panel = _ensureTabPanel(tab);
-      _renderRecoveredProgress(tab, panel, snapshot);
+      if (!canAppendReplay) _renderRecoveredProgress(tab, panel, snapshot);
+      if (run && run.run_id) {
+        _replayRecoveredRunEvents(
+          tab,
+          run.run_id,
+          requestScope,
+          true,
+          !canAppendReplay,
+        ).finally(() => _scheduleRecoveredRunPoll(tab, requestScope));
+      } else {
+        _scheduleRecoveredRunPoll(tab, requestScope);
+      }
       _syncEvolveChrome(tab, requestScope);
     } else if (tab === evolveActiveTab) {
       _stopRecoveredRunPoll(tab);
+      delete evolveReplayStates[tab];
       try {
         localStorage.removeItem(`${EVOLVE_ACTIVE_RUN_KEY}::${tab}`);
       } catch (e) {}
@@ -1268,13 +1297,103 @@
       _syncEvolveChrome(tab, requestScope);
     } else if (!running) {
       _stopRecoveredRunPoll(tab);
+      delete evolveReplayStates[tab];
       try {
         localStorage.removeItem(`${EVOLVE_ACTIVE_RUN_KEY}::${tab}`);
       } catch (e) {}
       progressState.recovered = false;
       progressState.starting = false;
+      // Re-render panel even for non-active tabs so stale recovery DOM is replaced
+      const panel = _ensureTabPanel(tab);
+      _renderTabPanel(tab, panel);
       _syncEvolveChrome(tab, requestScope);
     }
+  }
+
+  function _makeRecoveredStreamState(tab, runId, requestScope) {
+    const scope = requestScope || getEvolveScope();
+    const progressState = _getProgressState(tab);
+    progressState.runId = runId || progressState.runId || "";
+    progressState.recovered = true;
+    return {
+      blockText: "",
+      textBlock: null,
+      runningCards: [],
+      stepCount: 0,
+      currentToolGroup: null,
+      toolGroupCounts: {},
+      toolGroupRunning: 0,
+      toolGroupTotal: 0,
+      toolGroupCollapseTimer: null,
+      requestScope: scope,
+      requestCacheKey: getScopeCacheKey(tab, scope),
+      runId: runId || "",
+      progressState,
+      replayState: true,
+    };
+  }
+
+  function _ensureRecoveredReplayState(tab, runId, requestScope, reset) {
+    const scope = requestScope || getEvolveScope();
+    const scopeKey = getScopeCacheKey(tab, scope);
+    let replayState = evolveReplayStates[tab];
+    const container = document.getElementById(`evolve-stream-${tab}`);
+    if (
+      reset ||
+      !replayState ||
+      replayState.runId !== runId ||
+      replayState.scopeKey !== scopeKey ||
+      !container
+    ) {
+      const panel = _ensureTabPanel(tab);
+      if (panel) {
+        panel.innerHTML = `<div class="evolve-stream-progress evolve-recovered-progress" id="evolve-stream-${tab}"></div>`;
+      }
+      replayState = {
+        runId,
+        scopeKey,
+        lastIndex: 0,
+        streamState: _makeRecoveredStreamState(tab, runId, scope),
+      };
+      evolveReplayStates[tab] = replayState;
+      _updateProgressSummary(tab, replayState.streamState.progressState, true);
+    }
+    return replayState;
+  }
+
+  function _replayRecoveredRunEvents(tab, runId, requestScope, live, reset) {
+    if (!runId) return Promise.resolve(null);
+    const scope = requestScope || getEvolveScope();
+    const replayState = _ensureRecoveredReplayState(tab, runId, scope, !!reset);
+    const params = new URLSearchParams({
+      run_id: runId,
+      since: String(replayState.lastIndex || 0),
+      limit: "1000",
+    });
+    return fetch(`/api/evolve/run-events?${params}`)
+      .then((r) => r.json())
+      .then((payload) => {
+        if (!payload || !payload.ok || evolveReplayStates[tab] !== replayState) {
+          return payload;
+        }
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        events.forEach((entry) => {
+          const evt = entry && entry.event;
+          if (!evt || !evt.type) return;
+          replayState.lastIndex = Math.max(
+            replayState.lastIndex || 0,
+            entry.event_index || 0,
+          );
+          _handleEvolveStreamEvent(evt, tab, replayState.streamState);
+        });
+        if (live && evolveReplayStates[tab] === replayState) {
+          const state = replayState.streamState.progressState;
+          state.recovered = true;
+          _updateProgressSummary(tab, state, true);
+        }
+        return payload;
+      })
+      .catch(() => null);
   }
 
   function _renderRecoveredProgress(tab, panel, snapshot) {
@@ -1435,10 +1554,13 @@
         ),
       )
       .catch((err) => {
-        // 切页 / 切 scope / 停止分析都会 abort 这个 fetch。abort 触发的 reject
-        // 不是真实网络错误，必须在这里吞掉，否则会冒泡到 refreshEvolveTab.catch
-        // 被持久化成 { _error: "Network error" }，导致切页后误报。
+        // 切页 / 切 scope / 停止分析 / 页面刷新都会中断 fetch。
+        // 这些不是真实网络错误，吞掉，否则会冒泡到 refreshEvolveTab.catch
+        // 被持久化成 { _error: "Network error" }，导致刷新后误报。
         if (abortCtrl.signal.aborted || (err && err.name === "AbortError"))
+          return;
+        // 页面 unload 时浏览器断连抛 TypeError("network error") / TypeError("Failed to fetch")
+        if (err instanceof TypeError && _isTransientEvolveError(err.message))
           return;
         throw err; // 真实错误（如 !response.ok）继续上抛由调用方处理
       })
@@ -1500,6 +1622,7 @@
       evolveStreamAborts[tab].abort();
       delete evolveStreamAborts[tab];
     }
+    delete evolveReplayStates[tab];
     _clearTabLoading(tab, scope);
     _resetProgressState(tab);
     try {
@@ -1828,8 +1951,13 @@
         progressState.recovered = false;
         progressState.starting = false;
         const emsg = evt.message || "Unknown error";
-        // Persist failure so it survives re-render (don't silently reset to "never").
-        setCachedTab(tab, { _error: emsg }, streamState.requestScope);
+        // Only cache the error if there's no existing good data — don't overwrite
+        // structured results with a transient SSE error (the server-side cache
+        // at /api/evolve/{tab} is the canonical persistent source).
+        const existingCache = getCachedTab(tab, streamState.requestScope);
+        if (!existingCache || !existingCache.data || existingCache.data._error) {
+          setCachedTab(tab, { _error: emsg }, streamState.requestScope);
+        }
         if (streamState.runId) {
           try {
             localStorage.removeItem(`${EVOLVE_ACTIVE_RUN_KEY}::${tab}`);
@@ -1873,9 +2001,10 @@
 
     _fetchEvolveTab(tab)
       .catch((err) => {
-        // user stopped / 切页 / 切 scope 触发的 abort 不是真实失败，保留现有 UI
+        // user stopped / 切页 / 切 scope / 页面刷新 不是真实失败，保留现有 UI
         if (err && (err.name === "AbortError" || err.name === "DOMException"))
           return;
+        if (_isTransientEvolveError(err && err.message)) return;
         setCachedTab(
           tab,
           { _error: err.message || "Network error" },
@@ -1902,6 +2031,11 @@
         }
         _clearTabLoading(tab, requestScope);
         progressState.starting = false;
+        // If stream ended without a terminal event (evolve_result/error/done),
+        // the panel may still show stale streaming UI — force re-render.
+        if (panel && panel.querySelector(".evolve-stream-progress") && !_isTabBusy(tab, requestScope)) {
+          _renderTabPanel(tab, panel);
+        }
         _syncEvolveChrome(tab, requestScope);
       });
   }
@@ -3283,6 +3417,7 @@
     if (!detachOnly) {
       evolveLoadingTabs = {};
       evolveLoadingScopes = {};
+      evolveReplayStates = {};
       Object.keys(evolveProgressState).forEach((tab) =>
         _resetProgressState(tab),
       );

@@ -65,6 +65,9 @@ from .evolve import (
     evolve_run_latest_shared,
     evolve_runs_latest_for_scope,
     evolve_runs_latest_for_scope_shared,
+    evolve_run_event_append,
+    evolve_run_events,
+    evolve_run_event_count,
     cleanup_old_cache,
 )
 
@@ -130,5 +133,8 @@ __all__ = [
     "evolve_run_latest_shared",
     "evolve_runs_latest_for_scope",
     "evolve_runs_latest_for_scope_shared",
+    "evolve_run_event_append",
+    "evolve_run_events",
+    "evolve_run_event_count",
     "cleanup_old_cache",
 ]

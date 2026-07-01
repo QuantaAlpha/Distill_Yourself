@@ -348,6 +348,82 @@ def evolve_run_update(
     return evolve_run_get(run_id)
 
 
+def evolve_run_event_append(run_id: str, event: dict) -> Optional[dict]:
+    """Append one replayable event for an evolve run and return the stored row."""
+    if not run_id or not isinstance(event, dict):
+        return None
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COALESCE(MAX(event_index), 0) + 1 AS next_index "
+        "FROM evolve_run_events WHERE run_id=?",
+        (run_id,),
+    ).fetchone()
+    event_index = int(row["next_index"] or 1)
+    now = _utc_now()
+    conn.execute(
+        """
+        INSERT INTO evolve_run_events (run_id, event_index, event, created_at)
+        VALUES (?, ?, ?, ?)
+    """,
+        (run_id, event_index, json.dumps(event, ensure_ascii=False), now),
+    )
+    conn.commit()
+    return {
+        "run_id": run_id,
+        "event_index": event_index,
+        "event": event,
+        "created_at": now,
+    }
+
+
+def evolve_run_events(run_id: str, since: int = 0, limit: int = 500) -> list[dict]:
+    """Return replayable events with event_index greater than ``since``."""
+    if not run_id:
+        return []
+    try:
+        since = max(0, int(since or 0))
+    except (TypeError, ValueError):
+        since = 0
+    try:
+        limit = max(1, min(int(limit or 500), 2000))
+    except (TypeError, ValueError):
+        limit = 500
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT run_id, event_index, event, created_at
+        FROM evolve_run_events
+        WHERE run_id=? AND event_index>?
+        ORDER BY event_index ASC
+        LIMIT ?
+    """,
+        (run_id, since, limit),
+    ).fetchall()
+    result = []
+    for row in rows:
+        result.append(
+            {
+                "run_id": row["run_id"],
+                "event_index": row["event_index"],
+                "event": _json_load(row["event"]),
+                "created_at": row["created_at"],
+            }
+        )
+    return result
+
+
+def evolve_run_event_count(run_id: str) -> int:
+    """Return persisted event count for a run."""
+    if not run_id:
+        return 0
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM evolve_run_events WHERE run_id=?",
+        (run_id,),
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
 def evolve_run_latest(
     tab: str, source: str, date_range: str, project: str, engine: str
 ) -> Optional[dict]:
