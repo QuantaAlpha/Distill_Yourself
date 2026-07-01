@@ -2,10 +2,15 @@
 
 Shared by ``chatview/handlers/sync.py`` and ``chatview/handlers/twin.py`` for
 all writes to ``~/.claude/CLAUDE.md``.
+
+Also provides ``atomic_write_text()`` for non-CLAUDE.md file writes (memory
+files) — temp-file + rename for crash safety.
 """
 
 import fcntl
+import os
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Optional, Union
@@ -166,3 +171,37 @@ def _safe_write_claude_md(
         "backup_path": str(backup) if backup.exists() else None,
         "restored": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# Atomic write for non-CLAUDE.md files (memory files etc.)
+# ---------------------------------------------------------------------------
+
+
+def atomic_write_text(
+    path: Path, content: str, encoding: str = "utf-8", backup: bool = True
+) -> None:
+    """Write content to path atomically via temp file + rename.
+
+    If backup=True and the target file exists, creates a .bak copy first.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Backup existing file
+    if backup and path.exists():
+        bak = path.with_suffix(path.suffix + ".bak")
+        shutil.copy2(str(path), str(bak))
+
+    # Write to temp file in same directory (same filesystem for atomic rename)
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(content)
+        os.replace(tmp_path, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise

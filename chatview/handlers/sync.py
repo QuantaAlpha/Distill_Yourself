@@ -9,263 +9,163 @@ from pathlib import Path
 from chatview.utils.sync import _safe_write_claude_md
 
 # ---------------------------------------------------------------------------
-# Paths (mirrored from server.py module-level constants)
+# Paths
 # ---------------------------------------------------------------------------
 CLAUDE_MD_PATH = Path.home() / ".claude" / "CLAUDE.md"
 MEMORY_DIR = Path.home() / ".claude" / "memory"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
+MEMORY_FILE = MEMORY_DIR / "evolve_sync.md"
+MEMORY_MARKER_START = "<!-- evolve-sync:memory:start -->"
+MEMORY_MARKER_END = "<!-- evolve-sync:memory:end -->"
 SYNC_MARKER_START = "<!-- evolve-sync:profile:start -->"
 SYNC_MARKER_END = "<!-- evolve-sync:profile:end -->"
+RULES_MARKER_START = "<!-- evolve-sync:rules:start -->"
+RULES_MARKER_END = "<!-- evolve-sync:rules:end -->"
 
 
 def _sanitize_filename(text: str) -> str:
     """Convert text to a safe filename component."""
-    # Keep alphanumeric, Chinese chars, hyphens, underscores
-    clean = re.sub(r"[^\w\u4e00-\u9fff-]", "_", text)
-    clean = re.sub(r"_+", "_", clean).strip("_")
+    clean = re.sub(r'[^\w\u4e00-\u9fff-]', '_', text)
+    clean = re.sub(r'_+', '_', clean).strip('_')
     return clean[:60] if clean else "unnamed"
 
 
-def _evolve_sync_memory_preview(mem_data: dict) -> dict:
-    """Generate preview of what memory sync would do.
+# ── Memory sync (single file) ──────────────────────────────────────────────
 
-    Pure read-only: does not create directories or files. The directory is
-    created by _evolve_sync_memory_execute when actually writing.
-    """
-    nodes = {n["id"]: n for n in mem_data.get("nodes", [])}
-
-    files = []
-    for nid, node in nodes.items():
-        if node.get("confidence") == "low":
-            files.append(
-                {
-                    "id": nid,
-                    "filename": "",
-                    "label": node.get("label", ""),
-                    "status": "skip",
-                }
-            )
-            continue
-        fname = f"evolve_{nid}.md"
-        fpath = MEMORY_DIR / fname
-        status = "update" if fpath.exists() else "create"
-        files.append(
-            {
-                "id": nid,
-                "filename": fname,
-                "label": node.get("label", ""),
-                "status": status,
-            }
-        )
-
-    summary = {"create": 0, "update": 0, "skip": 0}
-    for f in files:
-        summary[f["status"]] = summary.get(f["status"], 0) + 1
-
-    # Build per-file diffs for preview dialog
-    cards = {c["id"]: c for c in mem_data.get("cards", [])}
-    diffs = []
-    for entry in files:
-        if entry["status"] == "skip":
-            continue
-        nid = entry["id"]
-        node = nodes[nid]
-        card = cards.get(nid, {})
-        new_content = _build_memory_file_content(node, card)
-        fpath = MEMORY_DIR / entry["filename"]
-        diffs.append(_build_sync_diff_raw(
-            f"~/.claude/memory/{entry['filename']}",
-            fpath.read_text(encoding="utf-8") if fpath.exists() else "",
-            new_content,
-        ))
-
-    return {"files": files, "summary": summary, "diff": diffs}
-
-
-def _build_memory_file_content(node: dict, card: dict) -> str:
-    """Build the content string for a single memory file."""
-    label = node.get("label", "")
-    name_kebab = _sanitize_filename(label)
-    trigger = card.get("trigger", "")
-    instruction = card.get("instruction", "")
-    avoid = card.get("avoid", "")
-
-    if trigger and instruction:
-        body = f"When: {trigger}\nDo: {instruction}"
-        if avoid:
-            body += f"\nAvoid: {avoid}"
-    else:
-        body = card.get("content", label)
-
-    content_lines = [
-        "---", f"name: {name_kebab}", f"description: {label}",
-        "type: feedback", "source: evolve-sync", "---", "", body,
-    ]
-
-    evidence = card.get("evidence", "")
-    if isinstance(evidence, list) and evidence:
-        content_lines.extend(["", "**Evidence:**"])
-        for ev in evidence[:3]:
-            if isinstance(ev, dict):
-                q = ev.get("quote", "")
-                sid = ev.get("sessionId", "")
-                d = ev.get("date", "")
-                content_lines.append(f'- "{q}" ({sid}, {d})')
-            else:
-                content_lines.append(f"- {ev}")
-    elif isinstance(evidence, str) and evidence:
-        content_lines.extend(["", f"**Evidence:** {evidence}"])
-
-    meta_parts = []
-    if card.get("firstSeen"):
-        meta_parts.append(f"**First seen:** {card['firstSeen']}")
-    if card.get("lastSeen"):
-        meta_parts.append(f"**Last seen:** {card['lastSeen']}")
-    if node.get("frequency"):
-        meta_parts.append(f"**Frequency:** {node['frequency']}")
-    if node.get("priority"):
-        meta_parts.append(f"**Priority:** {node['priority']}")
-    if meta_parts:
-        content_lines.append(" | ".join(meta_parts))
-
-    content_lines.append("")
-    return "\n".join(content_lines)
-
-
-def _build_sync_diff_raw(file_label: str, old_text: str, new_text: str) -> dict:
-    """Build a simple diff object from old and new text (no markers)."""
-    old_lines = old_text.split("\n") if old_text else []
-    new_lines = new_text.rstrip("\n").split("\n")
-
-    if not old_text:
-        return {
-            "file": file_label,
-            "action": "create",
-            "current": [],
-            "new": [{"ln": i + 1, "text": line, "type": "add"} for i, line in enumerate(new_lines)],
-        }
-
-    return {
-        "file": file_label,
-        "action": "replace",
-        "current": [{"ln": i + 1, "text": line, "type": "remove"} for i, line in enumerate(old_lines)],
-        "new": [{"ln": i + 1, "text": line, "type": "add"} for i, line in enumerate(new_lines)],
-    }
-
-
-def _evolve_sync_memory_execute(mem_data: dict) -> dict:
-    """Write memory files from evolve data."""
+def _build_memory_section(mem_data: dict) -> str:
+    """Build the full memory section content from evolve memory data."""
     nodes = {n["id"]: n for n in mem_data.get("nodes", [])}
     cards = {c["id"]: c for c in mem_data.get("cards", [])}
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 
-    created, updated = 0, 0
-    written_files = []
+    lines = [MEMORY_MARKER_START, "---",
+             "name: evolve-sync-memory",
+             "description: Evolve AI 分析提取的用户偏好与行为模式",
+             "type: feedback",
+             "source: evolve-sync",
+             "---", ""]
 
+    count = 0
     for nid, node in nodes.items():
-        if node.get("confidence") == "low":
-            continue
-        if node.get("status") == "stale":
+        if node.get("confidence") == "low" or node.get("status") == "stale":
             continue
 
         card = cards.get(nid, {})
         label = node.get("label", "")
-        name_kebab = _sanitize_filename(label)
-        fname = f"evolve_{nid}.md"
-        fpath = MEMORY_DIR / fname
-
-        is_update = fpath.exists()
-
-        # Build content: prefer trigger/instruction format, fall back to v1 content
         trigger = card.get("trigger", "")
         instruction = card.get("instruction", "")
         avoid = card.get("avoid", "")
 
+        lines.append(f"### {label}")
         if trigger and instruction:
-            body = f"When: {trigger}\nDo: {instruction}"
+            lines.append(f"When: {trigger}")
+            lines.append(f"Do: {instruction}")
             if avoid:
-                body += f"\nAvoid: {avoid}"
+                lines.append(f"Avoid: {avoid}")
         else:
             body = card.get("content", label)
+            if body and body != label:
+                lines.append(body)
 
-        content_lines = [
-            "---",
-            f"name: {name_kebab}",
-            f"description: {label}",
-            "type: feedback",
-            "source: evolve-sync",
-            "---",
-            "",
-            body,
-        ]
-
-        # Evidence
+        # Evidence (compact)
         evidence = card.get("evidence", "")
         if isinstance(evidence, list) and evidence:
-            content_lines.extend(["", "**Evidence:**"])
-            for ev in evidence[:3]:
+            for ev in evidence[:2]:
                 if isinstance(ev, dict):
-                    q = ev.get("quote", "")
-                    sid = ev.get("sessionId", "")
-                    d = ev.get("date", "")
-                    content_lines.append(f'- "{q}" ({sid}, {d})')
+                    lines.append(f'- "{ev.get("quote", "")}" ({ev.get("date", "")})')
                 else:
-                    content_lines.append(f"- {ev}")
-        elif isinstance(evidence, str) and evidence:
-            content_lines.extend(["", f"**Evidence:** {evidence}"])
+                    lines.append(f"- {ev}")
 
-        meta_parts = []
-        if card.get("firstSeen"):
-            meta_parts.append(f"**First seen:** {card['firstSeen']}")
-        if card.get("lastSeen"):
-            meta_parts.append(f"**Last seen:** {card['lastSeen']}")
+        # Meta (one line)
+        meta = []
         if node.get("frequency"):
-            meta_parts.append(f"**Frequency:** {node['frequency']}")
+            meta.append(f"频次:{node['frequency']}")
         if node.get("priority"):
-            meta_parts.append(f"**Priority:** {node['priority']}")
-        if meta_parts:
-            content_lines.append(" | ".join(meta_parts))
+            meta.append(f"{node['priority']}")
+        if card.get("lastSeen"):
+            meta.append(f"最近:{card['lastSeen']}")
+        if meta:
+            lines.append(f"*{' | '.join(meta)}*")
 
-        content_lines.append("")  # trailing newline
-        fpath.write_text("\n".join(content_lines), encoding="utf-8")
-        written_files.append(fname)
+        lines.append("")
+        count += 1
 
-        if is_update:
-            updated += 1
-        else:
-            created += 1
-
-    # Update MEMORY.md index
-    _update_memory_index(written_files, nodes)
-
-    return {"created": created, "updated": updated}
+    lines.append(MEMORY_MARKER_END)
+    return "\n".join(lines) + "\n", count
 
 
-def _update_memory_index(written_files: list, nodes: dict):
-    """Add new evolve entries to MEMORY.md if not already listed."""
+def _evolve_sync_memory_preview(mem_data: dict) -> dict:
+    """Generate preview of what memory sync would do."""
+    section, count = _build_memory_section(mem_data)
+
+    fpath = MEMORY_FILE
+    current = fpath.read_text(encoding="utf-8") if fpath.exists() else ""
+
+    if MEMORY_MARKER_START in current and MEMORY_MARKER_END in current:
+        status = "replace"
+    elif fpath.exists():
+        status = "append"
+    else:
+        status = "create"
+
+    diff = _build_sync_diff(fpath, MEMORY_MARKER_START, MEMORY_MARKER_END, section)
+
+    return {
+        "summary": {"items": count, "status": status},
+        "diff": diff,
+    }
+
+
+def _evolve_sync_memory_execute(mem_data: dict) -> dict:
+    """Write memory to single file."""
+    section, count = _build_memory_section(mem_data)
+
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    fpath = MEMORY_FILE
+
+    if fpath.exists():
+        existing = fpath.read_text(encoding="utf-8")
+    else:
+        existing = ""
+
+    if MEMORY_MARKER_START in existing and MEMORY_MARKER_END in existing:
+        start_idx = existing.index(MEMORY_MARKER_START)
+        end_idx = existing.index(MEMORY_MARKER_END) + len(MEMORY_MARKER_END)
+        new_text = existing[:start_idx] + section + existing[end_idx:]
+        status = "replaced"
+    elif existing:
+        if not existing.endswith("\n\n"):
+            existing = existing.rstrip("\n") + "\n\n"
+        new_text = existing + section
+        status = "appended"
+    else:
+        new_text = section
+        status = "created"
+
+    from chatview.utils.sync import atomic_write_text
+    atomic_write_text(fpath, new_text, backup=False)
+
+    # Ensure MEMORY.md index has a pointer
+    _update_memory_index_single()
+
+    return {"status": status, "items": count}
+
+
+def _update_memory_index_single():
+    """Ensure evolve_sync.md is listed in MEMORY.md."""
     if not MEMORY_INDEX.exists():
         return
+    existing = MEMORY_INDEX.read_text(encoding="utf-8")
+    fname = "evolve_sync.md"
+    if fname.lower() in existing.lower():
+        return
+    if not existing.endswith("\n"):
+        existing += "\n"
+    existing += f"| [{fname}]({fname}) | feedback | Evolve AI 分析提取的用户偏好 |\n"
+    from chatview.utils.sync import atomic_write_text
+    atomic_write_text(MEMORY_INDEX, existing, backup=False)
 
-    existing_text = MEMORY_INDEX.read_text(encoding="utf-8")
-    existing_lower = existing_text.lower()
-    new_lines = []
 
-    for fname in written_files:
-        if fname.lower() in existing_lower:
-            continue
-        # Find the node for this file
-        nid = fname.replace("evolve_", "").replace(".md", "")
-        node = nodes.get(nid, {})
-        label = node.get("label", fname)
-        new_lines.append(f"| [{fname}]({fname}) | feedback | {label} |")
-
-    if new_lines:
-        # Append to file
-        if not existing_text.endswith("\n"):
-            existing_text += "\n"
-        existing_text += "\n".join(new_lines) + "\n"
-        MEMORY_INDEX.write_text(existing_text, encoding="utf-8")
-
+# ── Profile sync (CLAUDE.md) ──────────────────────────────────────────────
 
 def _evolve_sync_claude_md_preview(prof_data: dict) -> dict:
     """Generate preview of what CLAUDE.md sync would do."""
@@ -273,16 +173,13 @@ def _evolve_sync_claude_md_preview(prof_data: dict) -> dict:
     radar = prof_data.get("radar", {})
     dims = radar.get("dimensions", [])
 
-    # Count items (excluding low confidence)
     item_count = sum(
         len([i for i in cat.get("items", []) if i.get("confidence") != "low"])
         for cat in categories
     )
 
-    # Generate the section to estimate lines
     section = _build_profile_section(prof_data)
     line_count = len(section.strip().split("\n"))
-
     status = "replace" if _claude_md_has_marker() else "append"
     diff = _build_sync_diff(CLAUDE_MD_PATH, SYNC_MARKER_START, SYNC_MARKER_END, section)
 
@@ -297,7 +194,7 @@ def _evolve_sync_claude_md_preview(prof_data: dict) -> dict:
 
 
 def _evolve_sync_claude_md_execute(prof_data: dict) -> dict:
-    """Write profile section to CLAUDE.md with backup, lock, and verification."""
+    """Write profile section to CLAUDE.md."""
     section = _build_profile_section(prof_data)
 
     CLAUDE_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -308,13 +205,11 @@ def _evolve_sync_claude_md_execute(prof_data: dict) -> dict:
         existing = ""
 
     if SYNC_MARKER_START in existing and SYNC_MARKER_END in existing:
-        # Replace between markers
         start_idx = existing.index(SYNC_MARKER_START)
         end_idx = existing.index(SYNC_MARKER_END) + len(SYNC_MARKER_END)
         new_text = existing[:start_idx] + section + existing[end_idx:]
         status = "replaced"
     else:
-        # Append
         if existing and not existing.endswith("\n\n"):
             existing = existing.rstrip("\n") + "\n\n"
         new_text = existing + section
@@ -347,19 +242,6 @@ def _build_profile_section(prof_data: dict) -> str:
             lines.append(f"- {item['text']}")
         lines.append("")
 
-    # Radar
-    dims = prof_data.get("radar", {}).get("dimensions", [])
-    if dims:
-        lines.append("### 📊 能力雷达")
-        lines.append("| 领域 | 评分 | 依据 |")
-        lines.append("|------|------|------|")
-        for dim in dims:
-            score = dim.get("score", 0)
-            name = dim.get("name", "")
-            evidence = dim.get("evidence", "")
-            lines.append(f"| {name} | {score:.2f} | {evidence} |")
-        lines.append("")
-
     lines.append(SYNC_MARKER_END)
     return "\n".join(lines) + "\n"
 
@@ -369,7 +251,73 @@ def _claude_md_has_marker() -> bool:
     if not CLAUDE_MD_PATH.exists():
         return False
     text = CLAUDE_MD_PATH.read_text(encoding="utf-8")
-    return SYNC_MARKER_START in text
+    return SYNC_MARKER_START in text and SYNC_MARKER_END in text
+
+
+# ── Rules sync (CLAUDE.md) ────────────────────────────────────────────────
+
+def _build_rules_section(rules_data: dict) -> str:
+    """Build CLAUDE.md section from rules data."""
+    rules = rules_data.get("rules", [])
+    lines = [RULES_MARKER_START, "## Rules (Evolve Auto-sync)", ""]
+
+    for r in rules:
+        rule_text = r.get("rule", "")
+        why = r.get("why", "")
+        priority = r.get("priority", "")
+        category = r.get("category", "")
+        tag = f"[{priority}]" if priority else ""
+        if category:
+            tag += f" [{category}]"
+        lines.append(f"- {tag} {rule_text}")
+        if why:
+            lines.append(f"  - Why: {why}")
+
+    lines.append("")
+    lines.append(RULES_MARKER_END)
+    return "\n".join(lines) + "\n"
+
+
+def _evolve_sync_rules_preview(rules_data: dict) -> dict:
+    """Generate preview of rules sync to CLAUDE.md."""
+    rules = rules_data.get("rules", [])
+    section = _build_rules_section(rules_data)
+    line_count = len(section.strip().split("\n"))
+
+    existing = CLAUDE_MD_PATH.read_text(encoding="utf-8") if CLAUDE_MD_PATH.exists() else ""
+    status = "replace" if (RULES_MARKER_START in existing and RULES_MARKER_END in existing) else "append"
+    diff = _build_sync_diff(CLAUDE_MD_PATH, RULES_MARKER_START, RULES_MARKER_END, section)
+
+    return {
+        "status": status,
+        "rules_count": len(rules),
+        "lines": line_count,
+        "diff": diff,
+    }
+
+
+def _evolve_sync_rules_execute(rules_data: dict) -> dict:
+    """Write rules section to CLAUDE.md."""
+    section = _build_rules_section(rules_data)
+
+    CLAUDE_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing = CLAUDE_MD_PATH.read_text(encoding="utf-8") if CLAUDE_MD_PATH.exists() else ""
+
+    if RULES_MARKER_START in existing and RULES_MARKER_END in existing:
+        start_idx = existing.index(RULES_MARKER_START)
+        end_idx = existing.index(RULES_MARKER_END) + len(RULES_MARKER_END)
+        new_text = existing[:start_idx] + section + existing[end_idx:]
+        status = "replaced"
+    else:
+        if existing and not existing.endswith("\n\n"):
+            existing = existing.rstrip("\n") + "\n\n"
+        new_text = existing + section
+        status = "appended"
+
+    _safe_write_claude_md(
+        new_text, marker_start=RULES_MARKER_START, marker_end=RULES_MARKER_END
+    )
+    return {"status": status, "rules_count": len(rules_data.get("rules", []))}
 
 
 # ── Diff helpers ──────────────────────────────────────────────────────────

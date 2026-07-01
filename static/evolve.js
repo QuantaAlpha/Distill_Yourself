@@ -3028,18 +3028,13 @@
   }
 
   // ── Sync to Claude Code ──
-  const SYNC_TABS = new Set(["profile", "memory"]);
-
-  function isSyncableCached(tab, scope) {
-    if (!SYNC_TABS.has(tab)) return false;
-    const cached = getExactCachedTab(tab, scope || getEvolveScope());
-    return !!(cached && hasRenderableData(tab, cached.data));
-  }
+  const SYNC_TABS = new Set(["profile", "memory", "rules"]);
 
   function updateSyncButtonState() {
     const btn = $("#evolve-tab-sync");
     if (!btn) return;
-    btn.disabled = !isSyncableCached(evolveActiveTab);
+    const hasSyncableData = SYNC_TABS.has(evolveActiveTab) && getCachedTab(evolveActiveTab);
+    btn.disabled = !hasSyncableData;
   }
 
   function toggleSyncPanel() {
@@ -3055,9 +3050,11 @@
     panel.innerHTML =
       '<div style="padding:8px 0;color:var(--text-muted);font-size:12px">Loading preview...</div>';
 
+    // Only sync the target matching the active tab
+    const tabTargetMap = { memory: "memory", profile: "claude_md", rules: "rules" };
     const targets = [];
-    if (isSyncableCached("memory")) targets.push("memory");
-    if (isSyncableCached("profile")) targets.push("claude_md");
+    const targetKey = tabTargetMap[evolveActiveTab];
+    if (targetKey && getCachedTab(evolveActiveTab)) targets.push(targetKey);
 
     if (targets.length === 0) {
       panel.innerHTML =
@@ -3089,83 +3086,66 @@
   function renderSyncPanel(panel, preview, initialTargets) {
     const esc = window.esc || String;
     let html = `<div class="sync-panel-title">${esc(_tt("evolve.sync.title"))}</div>`;
+    let canSync = false;
 
-    // Memory target
-    const memData = preview.memory;
-    const hasMemory = memData && !memData.error;
-    html += `<div class="sync-target${hasMemory ? "" : " disabled"}" id="sync-target-memory">
-      <input type="checkbox" id="sync-check-memory" ${hasMemory ? "checked" : "disabled"}>
-      <div class="sync-target-info">
-        <div class="sync-target-label">Memory</div>
-        <div class="sync-target-path">~/.claude/memory/</div>
-        <div class="sync-target-summary">`;
-    if (hasMemory) {
-      const s = memData.summary;
-      html += `+${s.create} new · ~${s.update} update · ${s.skip} skip`;
-    } else {
-      html += esc(memData ? memData.error : "No memory data");
+    if (initialTargets.includes("memory")) {
+      const memData = preview.memory;
+      const ok = memData && !memData.error;
+      html += `<div class="sync-target${ok ? '' : ' disabled'}">
+        <div class="sync-target-info">
+          <div class="sync-target-label">Memory → ~/.claude/memory/evolve_sync.md</div>
+          <div class="sync-target-summary">${ok ? `${memData.summary.items} items · ${memData.summary.status}` : esc(memData ? memData.error : "No data")}</div>
+        </div></div>`;
+      canSync = ok;
     }
-    html += `</div></div></div>`;
 
-    // CLAUDE.md target
-    const mdData = preview.claude_md;
-    const hasMd = mdData && !mdData.error;
-    html += `<div class="sync-target${hasMd ? "" : " disabled"}" id="sync-target-claude-md">
-      <input type="checkbox" id="sync-check-claude-md" ${hasMd ? "checked" : "disabled"}>
-      <div class="sync-target-info">
-        <div class="sync-target-label">CLAUDE.md</div>
-        <div class="sync-target-path">~/.claude/CLAUDE.md</div>
-        <div class="sync-target-summary">`;
-    if (hasMd) {
-      const action =
-        mdData.status === "replace"
-          ? _tt("evolve.sync.replace")
-          : _tt("evolve.sync.append");
-      html += _tt("evolve.sync.mdSummary", {
-        action,
-        categories: mdData.categories,
-        radar_dims: mdData.radar_dims,
-        lines: mdData.lines,
-      });
-    } else {
-      html += esc(mdData ? mdData.error : "No profile data");
+    if (initialTargets.includes("claude_md")) {
+      const mdData = preview.claude_md;
+      const ok = mdData && !mdData.error;
+      const action = ok ? (mdData.status === "replace" ? _tt("evolve.sync.replace") : _tt("evolve.sync.append")) : "";
+      html += `<div class="sync-target${ok ? '' : ' disabled'}">
+        <div class="sync-target-info">
+          <div class="sync-target-label">Profile → ~/.claude/CLAUDE.md</div>
+          <div class="sync-target-summary">${ok ? _tt("evolve.sync.mdSummary", { action, categories: mdData.categories, radar_dims: mdData.radar_dims, lines: mdData.lines }) : esc(mdData ? mdData.error : "No data")}</div>
+        </div></div>`;
+      canSync = ok;
     }
-    html += `</div></div></div>`;
 
-    // Actions
-    const canSync = hasMemory || hasMd;
+    if (initialTargets.includes("rules")) {
+      const rulesData = preview.rules;
+      const ok = rulesData && !rulesData.error;
+      html += `<div class="sync-target${ok ? '' : ' disabled'}">
+        <div class="sync-target-info">
+          <div class="sync-target-label">Rules → ~/.claude/CLAUDE.md</div>
+          <div class="sync-target-summary">${ok ? `${rulesData.rules_count} rules · ${rulesData.status}` : esc(rulesData ? rulesData.error : "No data")}</div>
+        </div></div>`;
+      canSync = ok;
+    }
+
     html += `<div class="sync-actions">
       <button class="btn-text" id="sync-cancel">${esc(_tt("evolve.sync.cancel"))}</button>
-      <button class="btn-text btn-confirm" id="sync-confirm" ${canSync ? "" : "disabled"}>${esc(_tt("evolve.sync.confirm"))}</button>
+      <button class="btn-text btn-confirm" id="sync-confirm" ${canSync ? '' : 'disabled'}>${esc(_tt("evolve.sync.confirm"))}</button>
     </div>`;
 
     panel.innerHTML = html;
+    panel._syncTargets = initialTargets;
 
     // Bind events
     const cancelBtn = panel.querySelector("#sync-cancel");
-    if (cancelBtn)
-      cancelBtn.onclick = () => {
-        panel.classList.add("hidden");
-        panel.innerHTML = "";
-      };
+    if (cancelBtn) cancelBtn.onclick = () => { panel.classList.add("hidden"); panel.innerHTML = ""; };
 
     const confirmBtn = panel.querySelector("#sync-confirm");
     if (confirmBtn) confirmBtn.onclick = () => executeSyncFromPanel(panel);
   }
 
   function executeSyncFromPanel(panel) {
-    const targets = [];
-    const memCheck = panel.querySelector("#sync-check-memory");
-    const mdCheck = panel.querySelector("#sync-check-claude-md");
-    if (memCheck && memCheck.checked) targets.push("memory");
-    if (mdCheck && mdCheck.checked) targets.push("claude_md");
-
+    const targets = panel._syncTargets || [];
     if (targets.length === 0) return;
 
     const confirmBtn = panel.querySelector("#sync-confirm");
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Loading diff..."; }
 
-    // Fetch fresh preview diffs before showing dialog
+    // Always fetch fresh preview diffs before showing dialog
     fetch("/api/evolve/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3175,14 +3155,9 @@
       .then((preview) => {
         if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = (window.esc || String)(_tt("evolve.sync.confirm")); }
         const diffs = [];
-        if (preview.claude_md && preview.claude_md.diff) {
-          const d = preview.claude_md.diff;
-          if (Array.isArray(d)) diffs.push(...d); else diffs.push(d);
-        }
-        if (preview.memory && preview.memory.diff) {
-          const d = preview.memory.diff;
-          if (Array.isArray(d)) diffs.push(...d); else diffs.push(d);
-        }
+        if (preview.claude_md && preview.claude_md.diff) diffs.push(preview.claude_md.diff);
+        if (preview.memory && preview.memory.diff) diffs.push(preview.memory.diff);
+        if (preview.rules && preview.rules.diff) diffs.push(preview.rules.diff);
 
         if (diffs.length > 0 && window.showSyncDiffDialog) {
           window.showSyncDiffDialog({
@@ -3223,11 +3198,15 @@
           const parts = [];
           if (data.memory)
             parts.push(
-              `Memory: +${data.memory.created} new, ~${data.memory.updated} updated`,
+              `Memory: ${data.memory.status} (${data.memory.items} items)`,
             );
           if (data.claude_md)
             parts.push(
               `CLAUDE.md: ${data.claude_md.status} (${data.claude_md.lines} lines)`,
+            );
+          if (data.rules)
+            parts.push(
+              `Rules: ${data.rules.status} (${data.rules.rules_count} rules)`,
             );
           msg += parts.join("; ");
           panel.innerHTML = `<div class="sync-result">${(window.esc || String)(msg)}</div>`;
@@ -3237,6 +3216,8 @@
             errors.push(`Memory: ${data.memory.error}`);
           if (data.claude_md && data.claude_md.error)
             errors.push(`CLAUDE.md: ${data.claude_md.error}`);
+          if (data.rules && data.rules.error)
+            errors.push(`Rules: ${data.rules.error}`);
           panel.innerHTML = `<div class="sync-result error">${(window.esc || String)(errors.join("; ") || "Sync failed")}</div>`;
         }
         setTimeout(() => {

@@ -128,6 +128,8 @@ def _handle_evolve_sync(handler):
         _evolve_sync_memory_execute,
         _evolve_sync_claude_md_preview,
         _evolve_sync_claude_md_execute,
+        _evolve_sync_rules_preview,
+        _evolve_sync_rules_execute,
     )
     from chatview import db as _db
 
@@ -186,6 +188,22 @@ def _handle_evolve_sync(handler):
         else:
             result["claude_md"] = {
                 "error": "Profile cache not found — run Refresh first"
+            }
+
+    if "rules" in targets:
+        row = _db.evolve_get_shared("rules", source, date, project, engine)
+        if row:
+            try:
+                rules_data = row["data"]
+                if action == "preview":
+                    result["rules"] = _evolve_sync_rules_preview(rules_data)
+                else:
+                    result["rules"] = _evolve_sync_rules_execute(rules_data)
+            except Exception as e:
+                result["rules"] = {"error": str(e)}
+        else:
+            result["rules"] = {
+                "error": "Rules cache not found — run Refresh first"
             }
 
     result["ok"] = all("error" not in v for v in result.values() if isinstance(v, dict))
