@@ -3163,6 +3163,45 @@
     if (targets.length === 0) return;
 
     const confirmBtn = panel.querySelector("#sync-confirm");
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Loading diff..."; }
+
+    // Fetch fresh preview diffs before showing dialog
+    fetch("/api/evolve/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "preview", targets, scope: getEvolveScope() }),
+    })
+      .then((r) => r.json())
+      .then((preview) => {
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = (window.esc || String)(_tt("evolve.sync.confirm")); }
+        const diffs = [];
+        if (preview.claude_md && preview.claude_md.diff) {
+          const d = preview.claude_md.diff;
+          if (Array.isArray(d)) diffs.push(...d); else diffs.push(d);
+        }
+        if (preview.memory && preview.memory.diff) {
+          const d = preview.memory.diff;
+          if (Array.isArray(d)) diffs.push(...d); else diffs.push(d);
+        }
+
+        if (diffs.length > 0 && window.showSyncDiffDialog) {
+          window.showSyncDiffDialog({
+            title: _tt("evolve.sync.confirm"),
+            diffs: diffs,
+            onConfirm: function() { _doSync(panel, targets); },
+          });
+          return;
+        }
+        _doSync(panel, targets);
+      })
+      .catch((err) => {
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = (window.esc || String)(_tt("evolve.sync.confirm")); }
+        if (window.showToast) window.showToast.error("Preview failed: " + err.message);
+      });
+  }
+
+  function _doSync(panel, targets) {
+    const confirmBtn = panel.querySelector("#sync-confirm");
     if (confirmBtn) {
       confirmBtn.disabled = true;
       confirmBtn.textContent = _tt("evolve.sync.syncing");

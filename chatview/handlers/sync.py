@@ -62,7 +62,95 @@ def _evolve_sync_memory_preview(mem_data: dict) -> dict:
     for f in files:
         summary[f["status"]] = summary.get(f["status"], 0) + 1
 
-    return {"files": files, "summary": summary}
+    # Build per-file diffs for preview dialog
+    cards = {c["id"]: c for c in mem_data.get("cards", [])}
+    diffs = []
+    for entry in files:
+        if entry["status"] == "skip":
+            continue
+        nid = entry["id"]
+        node = nodes[nid]
+        card = cards.get(nid, {})
+        new_content = _build_memory_file_content(node, card)
+        fpath = MEMORY_DIR / entry["filename"]
+        diffs.append(_build_sync_diff_raw(
+            f"~/.claude/memory/{entry['filename']}",
+            fpath.read_text(encoding="utf-8") if fpath.exists() else "",
+            new_content,
+        ))
+
+    return {"files": files, "summary": summary, "diff": diffs}
+
+
+def _build_memory_file_content(node: dict, card: dict) -> str:
+    """Build the content string for a single memory file."""
+    label = node.get("label", "")
+    name_kebab = _sanitize_filename(label)
+    trigger = card.get("trigger", "")
+    instruction = card.get("instruction", "")
+    avoid = card.get("avoid", "")
+
+    if trigger and instruction:
+        body = f"When: {trigger}\nDo: {instruction}"
+        if avoid:
+            body += f"\nAvoid: {avoid}"
+    else:
+        body = card.get("content", label)
+
+    content_lines = [
+        "---", f"name: {name_kebab}", f"description: {label}",
+        "type: feedback", "source: evolve-sync", "---", "", body,
+    ]
+
+    evidence = card.get("evidence", "")
+    if isinstance(evidence, list) and evidence:
+        content_lines.extend(["", "**Evidence:**"])
+        for ev in evidence[:3]:
+            if isinstance(ev, dict):
+                q = ev.get("quote", "")
+                sid = ev.get("sessionId", "")
+                d = ev.get("date", "")
+                content_lines.append(f'- "{q}" ({sid}, {d})')
+            else:
+                content_lines.append(f"- {ev}")
+    elif isinstance(evidence, str) and evidence:
+        content_lines.extend(["", f"**Evidence:** {evidence}"])
+
+    meta_parts = []
+    if card.get("firstSeen"):
+        meta_parts.append(f"**First seen:** {card['firstSeen']}")
+    if card.get("lastSeen"):
+        meta_parts.append(f"**Last seen:** {card['lastSeen']}")
+    if node.get("frequency"):
+        meta_parts.append(f"**Frequency:** {node['frequency']}")
+    if node.get("priority"):
+        meta_parts.append(f"**Priority:** {node['priority']}")
+    if meta_parts:
+        content_lines.append(" | ".join(meta_parts))
+
+    content_lines.append("")
+    return "\n".join(content_lines)
+
+
+def _build_sync_diff_raw(file_label: str, old_text: str, new_text: str) -> dict:
+    """Build a simple diff object from old and new text (no markers)."""
+    old_lines = old_text.split("\n") if old_text else []
+    new_lines = new_text.rstrip("\n").split("\n")
+
+    if not old_text:
+        return {
+            "file": file_label,
+            "action": "create",
+            "current": [],
+            "new": [{"ln": i + 1, "text": line, "type": "add"} for i, line in enumerate(new_lines)],
+        }
+
+    return {
+        "file": file_label,
+        "action": "replace",
+        "current": [{"ln": i + 1, "text": line, "type": "remove"} for i, line in enumerate(old_lines)],
+        "new": [{"ln": i + 1, "text": line, "type": "add"} for i, line in enumerate(new_lines)],
+    }
 
 
 def _evolve_sync_memory_execute(mem_data: dict) -> dict:
@@ -196,6 +284,7 @@ def _evolve_sync_claude_md_preview(prof_data: dict) -> dict:
     line_count = len(section.strip().split("\n"))
 
     status = "replace" if _claude_md_has_marker() else "append"
+    diff = _build_sync_diff(CLAUDE_MD_PATH, SYNC_MARKER_START, SYNC_MARKER_END, section)
 
     return {
         "status": status,
@@ -203,6 +292,7 @@ def _evolve_sync_claude_md_preview(prof_data: dict) -> dict:
         "radar_dims": len(dims),
         "items": item_count,
         "lines": line_count,
+        "diff": diff,
     }
 
 
@@ -280,3 +370,81 @@ def _claude_md_has_marker() -> bool:
         return False
     text = CLAUDE_MD_PATH.read_text(encoding="utf-8")
     return SYNC_MARKER_START in text
+
+
+# ── Diff helpers ──────────────────────────────────────────────────────────
+
+def _build_sync_diff(file_path, marker_start, marker_end, new_section, context_lines=3):
+    """Build diff data for sync preview: current vs new content with context."""
+    path = Path(file_path)
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    all_lines = existing.rstrip("\n").split("\n") if existing else []
+    new_section_lines = new_section.rstrip("\n").split("\n")
+
+    if marker_start in existing and marker_end in existing:
+        start_idx = existing.index(marker_start)
+        end_idx = existing.index(marker_end) + len(marker_end)
+
+        start_line = existing[:start_idx].count("\n")
+        end_line = existing[:end_idx].count("\n")
+
+        ctx_start = max(0, start_line - context_lines)
+        ctx_end = min(len(all_lines), end_line + 1 + context_lines)
+
+        old_section_lines = all_lines[start_line:end_line + 1]
+
+        current = []
+        new = []
+
+        for i in range(ctx_start, start_line):
+            current.append({"ln": i + 1, "text": all_lines[i], "type": "context"})
+            new.append({"ln": i + 1, "text": all_lines[i], "type": "context"})
+
+        for i, line in enumerate(old_section_lines):
+            current.append({"ln": start_line + i + 1, "text": line, "type": "remove"})
+
+        for i, line in enumerate(new_section_lines):
+            new.append({"ln": start_line + i + 1, "text": line, "type": "add"})
+
+        for i in range(end_line + 1, ctx_end):
+            current.append({"ln": i + 1, "text": all_lines[i], "type": "context"})
+            new.append({"ln": start_line + len(new_section_lines) + (i - end_line), "text": all_lines[i], "type": "context"})
+
+        return {
+            "file": f"~/.claude/memory/{path.name}" if "memory" in str(path) else f"~/.claude/{path.name}",
+            "action": "replace",
+            "current": current,
+            "new": new,
+        }
+    else:
+        if not existing:
+            return {
+                "file": f"~/.claude/memory/{path.name}" if "memory" in str(path) else f"~/.claude/{path.name}",
+                "action": "create",
+                "current": [],
+                "new": [{"ln": i + 1, "text": line, "type": "add"} for i, line in enumerate(new_section_lines)],
+            }
+
+        total = len(all_lines)
+        ctx_start = max(0, total - context_lines)
+        current = []
+        new = []
+
+        for i in range(ctx_start, total):
+            current.append({"ln": i + 1, "text": all_lines[i], "type": "context"})
+            new.append({"ln": i + 1, "text": all_lines[i], "type": "context"})
+
+        for i, line in enumerate(new_section_lines):
+            new.append({"ln": total + i + 1, "text": line, "type": "add"})
+
+        return {
+            "file": f"~/.claude/memory/{path.name}" if "memory" in str(path) else f"~/.claude/{path.name}",
+            "action": "append",
+            "current": current,
+            "new": new,
+        }
+
+
+def build_twin_sync_diff(claude_md_path, marker_start, marker_end, section):
+    """Build diff for twin sync preview — called from twin.py handler."""
+    return _build_sync_diff(claude_md_path, marker_start, marker_end, section)

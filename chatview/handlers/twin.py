@@ -1291,9 +1291,13 @@ def _handle_twin_cancel(handler):
 
 
 def _handle_twin_sync(handler):
-    """POST /api/twin/sync — compile runtime pack from cards+traits into CLAUDE.md."""
+    """POST /api/twin/sync — compile runtime pack from cards+traits into CLAUDE.md.
+
+    Supports action: "preview" (returns diff without writing) and "execute" (writes).
+    """
     from chatview import db as _db
     from chatview.handlers.base import _read_post_body
+    from chatview.handlers.sync import build_twin_sync_diff
     import json as _json
 
     if _is_twin_analysis_running():
@@ -1310,11 +1314,13 @@ def _handle_twin_sync(handler):
     raw = _read_post_body(handler)
     lang = "zh"
     run_id = ""
+    action = "execute"
     if raw:
         try:
             body = _json.loads(raw)
             lang = body.get("lang", "zh")
             run_id = body.get("run_id", "") or ""
+            action = body.get("action", "execute")
         except Exception:
             pass
 
@@ -1375,11 +1381,11 @@ def _handle_twin_sync(handler):
         for c in cards:
             when = c.get("applies_when") or ""
             judgment = c.get("judgment") or ""
-            action = c.get("agent_action") or ""
+            act = c.get("agent_action") or ""
             exceptions = c.get("exceptions") or ""
             lines.append(f"**{when}**：{judgment}")
-            if action:
-                lines.append(f"→ {action}")
+            if act:
+                lines.append(f"→ {act}")
             if exceptions:
                 lines.append(f"{exception_label}{exceptions}")
             lines.append("")
@@ -1387,6 +1393,18 @@ def _handle_twin_sync(handler):
     lines.append(CM_MARKER_END)
     section = "\n".join(lines) + "\n"
 
+    # Preview mode: return diff without writing
+    if action == "preview":
+        diff = build_twin_sync_diff(CLAUDE_MD_PATH, CM_MARKER_START, CM_MARKER_END, section)
+        _json_response(handler, {
+            "ok": True,
+            "diff": diff,
+            "cards_count": len(cards),
+            "traits_count": len(traits),
+        })
+        return
+
+    # Execute mode: write to file
     CLAUDE_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
     existing = (
         CLAUDE_MD_PATH.read_text(encoding="utf-8") if CLAUDE_MD_PATH.exists() else ""

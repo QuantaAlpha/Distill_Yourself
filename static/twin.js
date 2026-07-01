@@ -3061,10 +3061,42 @@
 
   // ── Sync ──
   function startSync() {
-    if (!confirm(_tt("twin.sync.confirm"))) return;
     const syncRunId = _viewRunId || _activeRunId;
     const body = syncRunId ? { run_id: syncRunId } : {};
     body.lang = _getLang();
+    body.action = "preview";
+
+    fetch("/api/twin/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.ok) {
+          if (window.showToast) window.showToast.error(_tt("twin.sync.failed", { error: data.error || "Preview failed" }));
+          return;
+        }
+        if (!data.diff) {
+          if (window.showToast) window.showToast.info("No changes to sync");
+          return;
+        }
+        window.showSyncDiffDialog({
+          title: _tt("twin.sync.confirm"),
+          diff: data.diff,
+          onConfirm: _executeTwinSync,
+        });
+      })
+      .catch((e) => {
+        if (window.showToast) window.showToast.error(_tt("twin.sync.failed", { error: e }));
+      });
+  }
+
+  function _executeTwinSync() {
+    const syncRunId = _viewRunId || _activeRunId;
+    const body = syncRunId ? { run_id: syncRunId } : {};
+    body.lang = _getLang();
+    body.action = "execute";
     fetch("/api/twin/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -417,6 +417,60 @@
 .toast-success { border-left-color: #16a34a; }
 .toast-success .toast-icon { color: #16a34a; background: rgba(22, 163, 74, 0.1); }
 
+/* ── Sync diff dialog ── */
+.sync-diff-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+}
+.sync-diff-dialog {
+  background: var(--bg-primary, #fff); border-radius: 12px; width: 90vw; max-width: 1100px;
+  max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.sync-diff-header { padding: 16px 20px; border-bottom: 1px solid var(--border, #e2e8f0); }
+.sync-diff-title { font-size: 16px; font-weight: 600; }
+.sync-diff-file { font-size: 12px; color: var(--text-muted, #64748b); margin-top: 4px; font-family: monospace; }
+.sync-diff-container { flex: 1; overflow-y: auto; min-height: 0; }
+.sync-diff-file-header {
+  padding: 8px 16px; font-size: 13px; font-weight: 600; font-family: monospace;
+  background: var(--bg-secondary, #f1f5f9); border-bottom: 1px solid var(--border, #e2e8f0);
+  display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 1;
+}
+.sync-diff-file-name { flex: 1; }
+.sync-diff-file-action {
+  font-size: 11px; font-weight: 500; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--accent-bg, #dbeafe); color: var(--accent, #2563eb);
+}
+.sync-diff-body { display: flex; overflow: hidden; min-height: 0; max-height: 300px; }
+.sync-diff-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.sync-diff-panel + .sync-diff-panel { border-left: 1px solid var(--border, #e2e8f0); }
+.sync-diff-panel-header {
+  padding: 8px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  color: var(--text-muted, #64748b); background: var(--bg-secondary, #f8fafc);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.sync-diff-code { flex: 1; overflow: auto; font-family: monospace; font-size: 12px; line-height: 20px; }
+.sync-diff-line { display: flex; white-space: pre; min-height: 20px; }
+.sync-diff-ln {
+  width: 40px; min-width: 40px; text-align: right; padding: 0 8px 0 4px;
+  color: var(--text-muted, #94a3b8); user-select: none; border-right: 1px solid var(--border, #e2e8f0);
+}
+.sync-diff-text { padding: 0 8px; flex: 1; }
+.sync-diff-context { background: transparent; }
+.sync-diff-remove { background: rgba(239, 68, 68, 0.1); }
+.sync-diff-remove .sync-diff-text { color: #dc2626; }
+.sync-diff-add { background: rgba(34, 197, 94, 0.1); }
+.sync-diff-add .sync-diff-text { color: #16a34a; }
+.sync-diff-footer {
+  padding: 12px 20px; border-top: 1px solid var(--border, #e2e8f0);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+/* Dark theme */
+[data-theme="dark"] .sync-diff-remove { background: rgba(239, 68, 68, 0.15); }
+[data-theme="dark"] .sync-diff-remove .sync-diff-text { color: #f87171; }
+[data-theme="dark"] .sync-diff-add { background: rgba(34, 197, 94, 0.15); }
+[data-theme="dark"] .sync-diff-add .sync-diff-text { color: #4ade80; }
+
 .toast-error { border-left-color: #dc2626; }
 .toast-error .toast-icon { color: #dc2626; background: rgba(220, 38, 38, 0.1); }
 
