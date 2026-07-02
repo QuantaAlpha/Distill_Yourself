@@ -25,6 +25,9 @@ docs/*
 !docs/video/full-demo.mp4
 !docs/video/chapters/
 !docs/video/chapters/*.mp4
+docs/images/social/
+docs/images/community/*.jpg
+docs/video/social/
 .planning/
 AGENTS.md
 DESIGN.md
