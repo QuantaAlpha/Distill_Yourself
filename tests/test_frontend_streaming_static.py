@@ -104,6 +104,40 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("_syncEvolveChrome(tab, scope)", stop_body)
         self.assertIn("if (evolveStreamAborts[tab] === abortCtrl)", stream_body)
 
+    def test_evolve_stop_does_not_cache_cancelled_error_over_history(self):
+        script = read_static("evolve.js")
+        stop_body = script[
+            script.index("function _stopEvolveTab(tab)") : script.index(
+                '/** Show a "thinking" indicator',
+                script.index("function _stopEvolveTab(tab)"),
+            )
+        ]
+        restore_body = script[
+            script.index("function _applyRecoveredRun") : script.index(
+                "function _makeRecoveredStreamState",
+                script.index("function _applyRecoveredRun"),
+            )
+        ]
+
+        self.assertIn("_loadServerCacheForTab(tab, scope)", stop_body)
+        self.assertNotIn('setCachedTab(tab, { _error: "Cancelled by user" }', stop_body)
+        self.assertNotIn('setCachedTab(tab, { _error: "Cancelled by user" }', restore_body)
+
+    def test_evolve_memory_simulation_not_stopped_by_other_tab_renders(self):
+        script = read_static("evolve.js")
+        render_body = script[
+            script.index("function _renderTabPanel") : script.index(
+                "function renderEvolveTabContent",
+                script.index("function _renderTabPanel"),
+            )
+        ]
+
+        self.assertIn('tab === "memory" && activeSimulation', render_body)
+        self.assertNotRegex(
+            render_body,
+            re.compile(r"if \\(activeSimulation\\) \\{\\s*activeSimulation\\.on"),
+        )
+
     def test_twin_stop_preserves_progress_snapshot_and_does_not_clear_details(self):
         script = read_static("twin.js")
         stop_body = script[
@@ -116,6 +150,32 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("_renderRunProgress(run, false)", stop_body)
         self.assertNotIn("_restoreOverviewAfterStoppedAnalysis()", stop_body)
         self.assertNotIn('progress.innerHTML = ""', stop_body)
+
+    def test_twin_analyze_reattaches_when_backend_reports_running(self):
+        script = read_static("twin.js")
+        start_body = script[
+            script.index("function startAnalysis") : script.index(
+                "async function _finishAnalysis",
+                script.index("function startAnalysis"),
+            )
+        ]
+
+        self.assertIn("function _reattachToRunningTwinAnalysis", script)
+        self.assertIn("response.status === 409", start_body)
+        self.assertIn("_reattachToRunningTwinAnalysis()", start_body)
+        self.assertIn("analysisAttached", start_body)
+        self.assertIn("if (analysisAttached) return;", start_body)
+
+        helper_body = script[
+            script.index("function _reattachToRunningTwinAnalysis") : script.index(
+                "function _startBackgroundPoll",
+                script.index("function _reattachToRunningTwinAnalysis"),
+            )
+        ]
+        self.assertIn('fetch("/api/twin/progress")', helper_body)
+        self.assertIn("_attachBackgroundRun()", helper_body)
+        self.assertIn('status: "running"', helper_body)
+        self.assertIn("_lastError = \"\";", helper_body)
 
     def test_evolve_stream_handles_timeout_usage_and_persists_errors(self):
         script = read_static("evolve.js")
@@ -225,6 +285,38 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("run.run_id", script)
         self.assertIn("replayState", script)
 
+    def test_evolve_stale_running_run_renders_saved_progress_as_disconnected(self):
+        script = read_static("evolve.js")
+        apply_body = script[
+            script.index("function _applyRecoveredRun") : script.index(
+                "function _makeRecoveredStreamState",
+                script.index("function _applyRecoveredRun"),
+            )
+        ]
+
+        self.assertIn("_renderRecoveredProgress(tab, panel, snapshot, true)", apply_body)
+        self.assertIn("evolve.progress.disconnected", script)
+        self.assertIn("state.disconnected", script)
+        self.assertIn("preserveRecoveredProgress", script)
+        self.assertIn("_updateProgressSummary(tab, progressState, !progressState.disconnected)", script)
+
+    def test_evolve_empty_stale_run_does_not_cover_existing_cache(self):
+        script = read_static("evolve.js")
+        apply_body = script[
+            script.index("function _applyRecoveredRun") : script.index(
+                "function _makeRecoveredStreamState",
+                script.index("function _applyRecoveredRun"),
+            )
+        ]
+
+        self.assertIn("_hasRecoveredProgressSnapshot(snapshot)", apply_body)
+        self.assertIn("hasRecoveredProgress", apply_body)
+        self.assertIn("!hasRecoveredProgress", apply_body)
+        self.assertLess(
+            apply_body.index("!hasRecoveredProgress"),
+            apply_body.index("_renderRecoveredProgress(tab, panel, snapshot, true)"),
+        )
+
     def test_evolve_recovered_poll_does_not_clobber_replay_progress(self):
         script = read_static("evolve.js")
         apply_body = script[
@@ -267,17 +359,29 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn("function _isTabBusy(", script)
         self.assertIn("!!evolveRecoveredRunPollers[tab]", script)
 
-        for marker in (
-            "function _updateEvolveHeader",
-            "function _updateTabStatusIndicators",
-            "function _setEvolveRefreshButton",
-        ):
+        status_key_body = script[
+            script.index("function _getEvolveTabStatusKey") : script.index(
+                "function _makeEvolveTabStatus",
+                script.index("function _getEvolveTabStatusKey"),
+            )
+        ]
+        self.assertIn("_isTabBusy(", status_key_body)
+
+        for marker in ("function _updateEvolveHeader", "function _setEvolveRefreshButton"):
             body = script[
                 script.index(marker) : script.index(
                     "function ", script.index(marker) + len(marker)
                 )
             ]
             self.assertIn("_isTabBusy(", body, marker)
+
+        status_body = script[
+            script.index("function _updateTabStatusIndicators") : script.index(
+                "/** Ensure a per-tab panel exists",
+                script.index("function _updateTabStatusIndicators"),
+            )
+        ]
+        self.assertIn("_getEvolveTabStatusKey(tab, scope)", status_body)
 
     def test_evolve_init_checks_backend_progress_before_rendering_empty_state(self):
         script = read_static("evolve.js")
@@ -352,6 +456,93 @@ class TestFrontendStreamingStatic(unittest.TestCase):
         self.assertIn(".evolve-progress-live", css)
         self.assertIn("@keyframes evolve-progress-glow", css)
 
+    def test_evolve_memory_layout_favors_readable_cards(self):
+        css = read_static("css/evolve.css")
+        memory_css = css[
+            css.index("/* Evolve — Memory tab */") : css.index(
+                "/* Evolve — Rules tab */",
+                css.index("/* Evolve — Memory tab */"),
+            )
+        ]
+
+        self.assertIn("flex: 0.9;", memory_css)
+        self.assertIn("flex: 1.25;", memory_css)
+        self.assertIn("align-items: flex-start;", memory_css)
+        self.assertIn("position: sticky;", memory_css)
+        self.assertIn("top: 16px;", memory_css)
+        self.assertIn("height: clamp(360px, calc(100vh - 380px), 520px);", memory_css)
+        self.assertIn("overflow-y: visible;", memory_css)
+        self.assertNotIn("max-height: 560px;", memory_css)
+        self.assertNotIn("overflow-y: auto;", memory_css)
+        self.assertIn("font-size: 14px;", memory_css)
+        self.assertIn(".evolve-memory-card .memory-card-body", memory_css)
+
+    def test_evolve_overview_cards_are_the_only_tab_navigation(self):
+        html = read_static("index.html")
+        script = read_static("evolve.js")
+        css = read_static("css/evolve.css")
+        overview_css = css[
+            css.index("#evolve-overview-bar") : css.index(
+                ".evolve-tab-status",
+                css.index("#evolve-overview-bar"),
+            )
+        ]
+        overview_body = script[
+            script.index("function updateEvolveOverviewBar") : script.index(
+                "function getTabItemCount",
+                script.index("function updateEvolveOverviewBar"),
+            )
+        ]
+        switch_body = script[
+            script.index("function switchEvolveTab") : script.index(
+                "/** Update per-tab status indicators",
+                script.index("function switchEvolveTab"),
+            )
+        ]
+        status_body = script[
+            script.index("function _updateTabStatusIndicators") : script.index(
+                "/** Ensure a per-tab panel exists",
+                script.index("function _updateTabStatusIndicators"),
+            )
+        ]
+
+        self.assertNotIn('id="evolve-tabs"', html)
+        self.assertNotRegex(html, re.compile(r'class="[^"]*\\bevolve-tab\\b'))
+        self.assertNotIn("#evolve-tabs", css)
+        self.assertNotRegex(css, re.compile(r"\\.evolve-tab\\s*\\{"))
+        self.assertIn("flex-wrap: nowrap;", css)
+        self.assertIn("overflow-x: auto;", css)
+        self.assertIn("position: relative;", overview_css)
+        self.assertIn("flex: 1 1 0;", overview_css)
+        self.assertIn("justify-content: center;", overview_css)
+        self.assertIn("min-width: 0;", overview_css)
+        self.assertIn("position: absolute;", overview_css)
+        self.assertIn("div.dataset.tab = tab", overview_body)
+        self.assertIn("_getEvolveTabStatusKey(tab, scope)", overview_body)
+        self.assertIn("_makeEvolveTabStatus(tab, statusKeys[i], scope)", overview_body)
+        self.assertIn("statusKeys.join", overview_body)
+        self.assertIn('$$(".evolve-stat-card")', switch_body)
+        self.assertIn('document.querySelector(`.evolve-stat-card[data-tab="${tab}"]`)', status_body)
+        self.assertNotIn('$$(".evolve-tab")', script)
+
+    def test_evolve_rule_cards_show_collapsed_preview_line(self):
+        script = read_static("evolve.js")
+        css = read_static("css/evolve.css")
+        rules_body = script[
+            script.index("function renderRulesTab") : script.index(
+                "/** Copy text to clipboard",
+                script.index("function renderRulesTab"),
+            )
+        ]
+
+        self.assertIn("function _rulePreviewText(rule, whyText)", rules_body)
+        self.assertIn("const previewText = _rulePreviewText(rule, whyText)", rules_body)
+        self.assertIn('class="rule-preview"', rules_body)
+        self.assertIn("rule.evidence", rules_body)
+        self.assertIn(".rule-preview", css)
+        self.assertIn("white-space: nowrap;", css)
+        self.assertIn("text-overflow: ellipsis;", css)
+
     def test_evolve_restore_does_not_persist_inactive_running_as_error(self):
         script = read_static("evolve.js")
         restore_body = script[
@@ -392,14 +583,14 @@ class TestFrontendStreamingStatic(unittest.TestCase):
             )
         ]
         preload_body = script[
-            script.index("function _loadServerCacheForMissingTabs") : script.index(
+            script.index("function _loadServerCacheForTab") : script.index(
                 "function _progressParams",
-                script.index("function _loadServerCacheForMissingTabs"),
+                script.index("function _loadServerCacheForTab"),
             )
         ]
 
         self.assertIn("_syncEvolveChrome(tab, scope)", interrupted_body)
-        self.assertIn("_syncEvolveChrome(tab, scope)", preload_body)
+        self.assertIn("_syncEvolveChrome(tab, requestScope)", preload_body)
 
     def test_evolve_restore_running_clears_transient_timeout_cache(self):
         script = read_static("evolve.js")
@@ -424,6 +615,7 @@ class TestFrontendStreamingStatic(unittest.TestCase):
 
         self.assertIn('lower.startsWith("timeout")', clear_body)
         self.assertIn('"AI analysis timed out"', clear_body)
+        self.assertIn('lower === "cancelled by user"', clear_body)
         self.assertIn('lower.includes("operationalerror")', clear_body)
         self.assertIn('lower.startsWith("internal server error")', clear_body)
         self.assertIn("_clearCachedTabTransientError(tab, requestScope)", restore_body)
@@ -442,18 +634,22 @@ class TestFrontendStreamingStatic(unittest.TestCase):
             )
         ]
         server_cache_body = script[
-            script.index("function _loadServerCacheForMissingTabs") : script.index(
-                "function _progressParams",
-                script.index("function _loadServerCacheForMissingTabs"),
+            script.index("function _loadServerCacheForTab") : script.index(
+                "function _loadServerCacheForMissingTabs",
+                script.index("function _loadServerCacheForTab"),
             )
         ]
 
-        for body in (interrupted_body, server_cache_body):
-            self.assertIn("if (_isTabBusy(tab, scope)) return;", body)
-            self.assertGreaterEqual(
-                body.count("if (_isTabBusy(tab, scope)) return;"),
-                2,
-            )
+        self.assertIn("if (_isTabBusy(tab, scope)) return;", interrupted_body)
+        self.assertGreaterEqual(
+            interrupted_body.count("if (_isTabBusy(tab, scope)) return;"),
+            2,
+        )
+        self.assertIn("if (_isTabBusy(tab, requestScope)) return", server_cache_body)
+        self.assertGreaterEqual(
+            server_cache_body.count("if (_isTabBusy(tab, requestScope)) return"),
+            2,
+        )
 
     def test_evolve_restore_paths_cover_all_profile_tabs(self):
         script = read_static("evolve.js")
