@@ -8,17 +8,17 @@ from collections import defaultdict
 from chatview.commands.analysis import _get_filtered, _get_filtered_db, _get_messages_db
 from chatview.utils.text import normalize_error as _normalize_error
 
+_CORRECTION_EXTRACTOR_VERSION = "corrections-v3"
+
 
 # ---------------------------------------------------------------------------
 # Corrections
 # ---------------------------------------------------------------------------
 
 
-def _data_corrections(args):
-    """Compute correction data and return as a list of dicts (sorted by date desc)."""
-    # Correction signal patterns (Chinese + English)
+def _correction_regexes():
+    """Compile correction regexes shared by uncached and cached extraction."""
     patterns = [
-        # Chinese: explicit correction
         r"不是这样",
         r"不对[，。！\s]",
         r"不要这样",
@@ -37,7 +37,6 @@ def _data_corrections(args):
         r"搞反了",
         r"改回去",
         r"撤销",
-        # Chinese: soft/implicit correction
         r"不行[，。！\s]",
         r"太[简精粗]",
         r"回退",
@@ -64,7 +63,6 @@ def _data_corrections(args):
         r"太复杂",
         r"太臃肿",
         r"没有达到",
-        # Chinese: repeated errors / unresolved
         r"怎么又",
         r"又错了",
         r"又来了",
@@ -74,24 +72,20 @@ def _data_corrections(args):
         r"没解决",
         r"问题还在",
         r"bug还在",
-        # Chinese: ask to retry / rethink
         r"你再看看",
         r"再想想",
         r"再试试",
         r"重新想",
-        # Chinese: challenging AI assumptions
         r"我没说",
         r"我没让你",
         r"谁让你",
         r"哪里说了",
-        # Chinese: dissatisfaction
         r"不合适",
         r"不合理",
         r"不是我想要",
         r"差太远",
         r"按我说的",
         r"照我说的",
-        # English: explicit correction
         r"\b(?:that\'?s?|you\'?re?|this is|you.{0,5})wrong\b",
         r"\byou forgot\b",
         r"\bthat's not right\b",
@@ -102,7 +96,6 @@ def _data_corrections(args):
         r"\byou missed\b",
         r"\bplease (?:don\'t|stop)\b",
         r"\bactually,?\s+(?:I|it|the|we|that)\b",
-        # English: soft/implicit correction
         r"\bno,?\s+(?:I|it|the|we|that|not)\b",
         r"\brevert\b",
         r"\bundo\b",
@@ -114,7 +107,6 @@ def _data_corrections(args):
         r"\bovercomplicat",
         r"\bunnecessar",
         r"\bI (?:already|never|didn\'t) (?:said|told|asked|want)\b",
-        # English: persistent issues / retry
         r"\bstill (?:broken|not working|wrong|failing)\b",
         r"\bdoesn't work\b",
         r"\bnot working\b",
@@ -127,14 +119,7 @@ def _data_corrections(args):
         r"\bnope\b",
         r"\bnah\b",
     ]
-    combined_re = re.compile("|".join(patterns), re.IGNORECASE)
-
-    # AI patterns split into correction (AI was wrong) vs insight (user's good idea)
-    # Derived from systematic scan of 34889 real assistant responses
-
-    # ── Correction: AI admitting mistakes / fixing errors ──
     ai_correction_patterns = [
-        # Chinese: apology / direct admission
         r"抱歉",
         r"对不起",
         r"我理解错",
@@ -147,7 +132,6 @@ def _data_corrections(args):
         r"你是对的",
         r"感谢.{0,4}纠正",
         r"你说得对.{0,15}(?:我|确实|漏|错|没)",
-        # Chinese: self-correction verbs
         r"我搞混",
         r"我混了",
         r"我跑偏",
@@ -157,7 +141,6 @@ def _data_corrections(args):
         r"我误判",
         r"判断错了",
         r"看错了",
-        # Chinese: acknowledging oversight
         r"我遗漏",
         r"我忽略了",
         r"漏掉了",
@@ -173,14 +156,12 @@ def _data_corrections(args):
         r"想当然",
         r"错误假设",
         r"之前以为",
-        # Chinese: Codex-style action acknowledgment
         r"已修正",
         r"已修复",
         r"撤回",
         r"改回",
         r"收到.{0,6}(?:偏|错|漏|之前|刚才)",
         r"刚才.{0,8}(?:偏差|偏了|错|漏|搞)",
-        # English: apology / direct admission
         r"\bI apologize\b",
         r"\bmy mistake\b",
         r"\bI was wrong\b",
@@ -191,7 +172,6 @@ def _data_corrections(args):
         r"\bsorry.{0,10}(?:mistake|wrong|missed|overlooked|confusion)\b",
         r"\blet me (?:fix|correct|redo) (?:that|this|my)\b",
         r"\bthank.{0,6}(?:correcting|catching)\b",
-        # English: self-correction
         r"\bI should have\b",
         r"\bI forgot\b",
         r"\bI didn't consider\b",
@@ -201,10 +181,7 @@ def _data_corrections(args):
         r"\bI mistakenly\b",
         r"\bI stand corrected\b",
     ]
-
-    # ── Insight: AI affirming user's good idea / observation ──
     ai_insight_patterns = [
-        # Chinese: positive acknowledgment
         r"好(?:想法|主意|思路|建议|眼力)",
         r"好问题.{0,10}(?:让我|确实|我之前|我没|漏|错)",
         r"问得好",
@@ -214,7 +191,6 @@ def _data_corrections(args):
         r"确实如此",
         r"没想到",
         r"感谢.{0,4}指出",
-        # Chinese: praising user's discovery
         r"你提醒得对",
         r"你抓到",
         r"你指出",
@@ -224,10 +200,8 @@ def _data_corrections(args):
         r"有道理",
         r"切中要害",
         r"说到点子上",
-        # Chinese: realization
         r"啊.{0,3}我理解",
         r"懂了.{0,6}(?:我|之前|不该|原来)",
-        # English: affirming user
         r"\bgood (?:catch|point|call|question|observation)\b",
         r"\bfair point\b",
         r"\bexcellent point\b",
@@ -237,157 +211,226 @@ def _data_corrections(args):
         r"\b(?:exactly|absolutely) right\b",
         r"\bthank.{0,6}pointing\b",
     ]
+    return {
+        "combined": re.compile("|".join(patterns), re.IGNORECASE),
+        "ai_correction": re.compile("|".join(ai_correction_patterns), re.IGNORECASE),
+        "ai_insight": re.compile("|".join(ai_insight_patterns), re.IGNORECASE),
+        "ai_ack": re.compile(
+            "|".join(ai_correction_patterns + ai_insight_patterns), re.IGNORECASE
+        ),
+    }
 
-    ai_correction_re = re.compile("|".join(ai_correction_patterns), re.IGNORECASE)
-    ai_insight_re = re.compile("|".join(ai_insight_patterns), re.IGNORECASE)
-    # Combined for backward-compatible aiConfirmed check
-    ai_ack_re = re.compile(
-        "|".join(ai_correction_patterns + ai_insight_patterns), re.IGNORECASE
-    )
 
-    def _skip_noise(text):
-        if len(text) < 5 or len(text) > 3000:
-            return True
-        if text.strip().startswith(("#", "```", "<", "{")):
-            return True
-        if "analyze.py" in text or "CLI tool" in text:
-            return True
-        if "Base directory for this skill:" in text or "skill:" in text[:30]:
-            return True
-        return False
+def _skip_correction_noise(text):
+    if len(text) < 5 or len(text) > 3000:
+        return True
+    if text.strip().startswith(("#", "```", "<", "{")):
+        return True
+    if "analyze.py" in text or "CLI tool" in text:
+        return True
+    if "Base directory for this skill:" in text or "skill:" in text[:30]:
+        return True
+    return False
 
+
+def _extract_corrections_from_session(meta, user_texts, assistant_snippets, regexes=None):
+    """Extract correction events from one session using the same rules as the legacy scan."""
+    regexes = regexes or _correction_regexes()
     corrections = []
-    seen_keys = set()  # deduplicate by (sid, idx)
+    seen_keys = set()
+    asst_by_idx = {a["idx"]: a["text"] for a in assistant_snippets}
 
-    # Build per-session data from DB if available, else fall back to old index
+    for ut in user_texts:
+        text = ut.get("text", "")
+        if _skip_correction_noise(text):
+            continue
+        matches = regexes["combined"].findall(text)
+        if not matches:
+            continue
+        key = (meta["id"], ut["idx"])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        ai_confirmed = False
+        for offset in range(1, 4):
+            asst_text = asst_by_idx.get(ut["idx"] + offset, "")
+            if asst_text and regexes["ai_ack"].search(asst_text):
+                ai_confirmed = True
+                break
+        corrections.append(
+            {
+                "sessionId": meta["id"],
+                "message_idx": ut["idx"],
+                "title": meta.get("title", "")[:60],
+                "project": meta.get("projectName", ""),
+                "date": meta.get("date", "")[:10],
+                "text": text[:400],
+                "signals": sorted(set(matches))[:5],
+                "source": "user",
+                "aiConfirmed": ai_confirmed,
+                "filePath": meta.get("filePath", ""),
+            }
+        )
+
+    user_corr_idxs = {k[1] for k in seen_keys if k[0] == meta["id"]}
+    for asst in assistant_snippets:
+        asst_text = asst.get("text", "")
+        corr_matches = regexes["ai_correction"].findall(asst_text)
+        insight_matches = regexes["ai_insight"].findall(asst_text)
+        if not corr_matches and not insight_matches:
+            continue
+        ai_idx = asst["idx"]
+        if any(abs(ai_idx - ui) <= 5 for ui in user_corr_idxs):
+            continue
+        key = (meta["id"], ai_idx)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        kind = "correction" if corr_matches else "insight"
+        all_matches = corr_matches or insight_matches
+        preceding_user = ""
+        for ut in reversed(user_texts):
+            if ut["idx"] < asst["idx"]:
+                preceding_user = ut["text"][:200]
+                break
+        corrections.append(
+            {
+                "sessionId": meta["id"],
+                "message_idx": ai_idx,
+                "title": meta.get("title", "")[:60],
+                "project": meta.get("projectName", ""),
+                "date": meta.get("date", "")[:10],
+                "text": preceding_user or "(AI-side only)",
+                "aiText": asst_text[:200],
+                "signals": sorted(set(all_matches))[:3],
+                "source": "ai",
+                "kind": kind,
+                "aiConfirmed": True,
+                "filePath": meta.get("filePath", ""),
+            }
+        )
+    return corrections
+
+
+def _data_corrections_uncached(args):
+    """Compute correction data without the correction_events cache."""
+    regexes = _correction_regexes()
+    corrections = []
+
     db_sessions = _get_filtered_db(args)
     if db_sessions:
         from chatview import db as _db
 
         _db.init_db()
-        sids = [s["id"] for s in db_sessions]
-        conn = _db.get_conn()
-        # 按 session id 分批查询，规避 SQLite 宿主参数上限。同一 session 的消息必落在
-        # 同一批内，批内 ORDER BY session_id, idx 保证分组顺序正确。
-        msg_rows = _db.query_in_chunks(
-            conn,
-            """
-            SELECT m.session_id, m.idx, m.role, m.text
-            FROM messages m
-            WHERE m.session_id IN ({placeholders})
-            ORDER BY m.session_id, m.idx
-        """,
-            sids,
-        )
-        # Reconstruct per-session structure
-        sess_user = defaultdict(list)
-        sess_asst = defaultdict(list)
-        for r in msg_rows:
-            entry = {"idx": r["idx"], "text": r["text"], "ts": ""}
-            if r["role"] == "user":
-                sess_user[r["session_id"]].append(entry)
-            elif r["role"] == "assistant":
-                sess_asst[r["session_id"]].append(entry)
-        sessions_iter = {
-            s["id"]: {
-                "id": s["id"],
-                "title": s.get("title", ""),
-                "projectName": s.get("project_name", ""),
-                "date": s.get("date", ""),
-                "filePath": s.get("file_path", ""),
-                "userTexts": sess_user[s["id"]],
-                "assistantSnippets": sess_asst[s["id"]],
+        sess_user, sess_asst = _session_messages_for_correction_extract(db_sessions)
+        for session in db_sessions:
+            meta = {
+                "id": session["id"],
+                "title": session.get("title", ""),
+                "projectName": session.get("project_name", ""),
+                "date": session.get("date", ""),
+                "filePath": session.get("file_path", ""),
             }
-            for s in db_sessions
-        }
+            corrections.extend(
+                _extract_corrections_from_session(
+                    meta,
+                    sess_user.get(session["id"], []),
+                    sess_asst.get(session["id"], []),
+                    regexes,
+                )
+            )
     else:
-        sessions_iter = _get_filtered(args)
-
-    for sid, meta in sessions_iter.items():
-        user_texts = meta.get("userTexts", [])
-        asst_snippets = meta.get("assistantSnippets", [])
-        # Build idx -> snippet lookup for quick adjacency check
-        asst_by_idx = {a["idx"]: a["text"] for a in asst_snippets}
-
-        # Pass 1: User correction signals (+ check adjacent AI acknowledgment)
-        for ut in user_texts:
-            text = ut.get("text", "")
-            if _skip_noise(text):
-                continue
-            matches = combined_re.findall(text)
-            if not matches:
-                continue
-            key = (sid, ut["idx"])
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            # Check if AI acknowledged in next response
-            ai_confirmed = False
-            for offset in range(1, 4):  # check next 1-3 messages
-                asst_text = asst_by_idx.get(ut["idx"] + offset, "")
-                if asst_text and ai_ack_re.search(asst_text):
-                    ai_confirmed = True
-                    break
-            corrections.append(
-                {
-                    "sessionId": sid,
-                    "title": meta.get("title", "")[:60],
-                    "project": meta.get("projectName", ""),
-                    "date": meta.get("date", "")[:10],
-                    "text": text[:400],
-                    "signals": list(set(matches))[:5],
-                    "source": "user",
-                    "aiConfirmed": ai_confirmed,
-                    "filePath": meta.get("filePath", ""),
-                }
+        for sid, meta in _get_filtered(args).items():
+            session_meta = dict(meta)
+            session_meta["id"] = sid
+            corrections.extend(
+                _extract_corrections_from_session(
+                    session_meta,
+                    session_meta.get("userTexts", []),
+                    session_meta.get("assistantSnippets", []),
+                    regexes,
+                )
             )
 
-        # Pass 2: AI-only (no user pattern matched but AI acknowledged)
-        # Build set of all user correction indices in this session for wider dedup
-        user_corr_idxs = {k[1] for k in seen_keys if k[0] == sid}
-        for asst in asst_snippets:
-            asst_text = asst.get("text", "")
-            # Try correction patterns first, then insight
-            corr_matches = ai_correction_re.findall(asst_text)
-            insight_matches = ai_insight_re.findall(asst_text)
-            if not corr_matches and not insight_matches:
-                continue
-            # Check if near any user correction (±5 range) — same event, don't double count
-            ai_idx = asst["idx"]
-            already = any(abs(ai_idx - ui) <= 5 for ui in user_corr_idxs)
-            if already:
-                continue
-            key = (sid, ai_idx)
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            # Determine kind: correction takes priority over insight
-            kind = "correction" if corr_matches else "insight"
-            all_matches = corr_matches or insight_matches
-            # Find the preceding user message for context
-            preceding_user = ""
-            for ut in reversed(user_texts):
-                if ut["idx"] < asst["idx"]:
-                    preceding_user = ut["text"][:200]
-                    break
-            corrections.append(
-                {
-                    "sessionId": sid,
-                    "title": meta.get("title", "")[:60],
-                    "project": meta.get("projectName", ""),
-                    "date": meta.get("date", "")[:10],
-                    "text": preceding_user or "(AI-side only)",
-                    "aiText": asst_text[:200],
-                    "signals": list(set(all_matches))[:3],
-                    "source": "ai",
-                    "kind": kind,
-                    "aiConfirmed": True,
-                    "filePath": meta.get("filePath", ""),
-                }
-            )
-
+    for item in corrections:
+        item.pop("message_idx", None)
     corrections.sort(key=lambda c: c.get("date", ""), reverse=True)
     return corrections
+
+
+def _session_messages_for_correction_extract(sessions):
+    if not sessions:
+        return {}, {}
+    from chatview import db as _db
+
+    sids = [s["id"] for s in sessions]
+    rows = _db.query_in_chunks(
+        _db.get_conn(),
+        """
+        SELECT m.session_id, m.idx, m.role, m.text
+        FROM messages m
+        WHERE m.session_id IN ({placeholders})
+        ORDER BY m.session_id, m.idx
+        """,
+        sids,
+    )
+    sess_user = defaultdict(list)
+    sess_asst = defaultdict(list)
+    for r in rows:
+        entry = {"idx": r["idx"], "text": r["text"], "ts": ""}
+        if r["role"] == "user":
+            sess_user[r["session_id"]].append(entry)
+        elif r["role"] == "assistant":
+            sess_asst[r["session_id"]].append(entry)
+    return sess_user, sess_asst
+
+
+def _ensure_correction_events_current(db_sessions):
+    from chatview import db as _db
+
+    stale_sessions = _db.stale_correction_sessions(
+        db_sessions, _CORRECTION_EXTRACTOR_VERSION
+    )
+    if not stale_sessions:
+        return 0
+
+    sess_user, sess_asst = _session_messages_for_correction_extract(stale_sessions)
+    regexes = _correction_regexes()
+    _db.begin_bulk()
+    try:
+        for session in stale_sessions:
+            meta = {
+                "id": session["id"],
+                "title": session.get("title", ""),
+                "projectName": session.get("project_name", ""),
+                "date": session.get("date", ""),
+                "filePath": session.get("file_path", ""),
+            }
+            events = _extract_corrections_from_session(
+                meta,
+                sess_user.get(session["id"], []),
+                sess_asst.get(session["id"], []),
+                regexes,
+            )
+            _db.replace_correction_events(
+                session, events, _CORRECTION_EXTRACTOR_VERSION
+            )
+    finally:
+        _db.end_bulk()
+    return len(stale_sessions)
+
+
+def _data_corrections(args):
+    """Compute correction data, using per-session cached events when DB is available."""
+    db_sessions = _get_filtered_db(args)
+    if not db_sessions:
+        return _data_corrections_uncached(args)
+
+    from chatview import db as _db
+
+    _db.init_db()
+    _ensure_correction_events_current(db_sessions)
+    return _db.query_correction_events(db_sessions, _CORRECTION_EXTRACTOR_VERSION)
 
 
 def cmd_corrections(args):

@@ -173,6 +173,8 @@ def prune_stale_sessions(valid_file_paths) -> int:
         "insight_file_refs",
         "insight_errors",
         "insight_snippets",
+        "correction_events",
+        "correction_session_state",
     ):
         for i in range(0, len(stale_ids), 900):
             chunk = stale_ids[i : i + 900]

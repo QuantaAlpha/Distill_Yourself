@@ -97,6 +97,8 @@ _KNOWN_TABLES = frozenset(
         "insight_file_refs",
         "insight_errors",
         "insight_snippets",
+        "correction_events",
+        "correction_session_state",
         "messages_fts",
         "twin_checkpoints",
         "evolve_runs",
@@ -337,6 +339,41 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_snippets_session ON insight_snippets(session_id);
 
+        -- Correction events: extracted per session and reused by profile-digest.
+        CREATE TABLE IF NOT EXISTS correction_events (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id        TEXT NOT NULL,
+            message_idx       INTEGER,
+            source            TEXT NOT NULL,
+            kind              TEXT,
+            date              TEXT,
+            project           TEXT,
+            title             TEXT,
+            text              TEXT,
+            ai_text           TEXT,
+            signals           TEXT,
+            ai_confirmed      INTEGER DEFAULT 0,
+            file_path         TEXT,
+            extractor_version TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id),
+            UNIQUE(session_id, message_idx, source, kind)
+        );
+        CREATE INDEX IF NOT EXISTS idx_correction_events_session ON correction_events(session_id);
+        CREATE INDEX IF NOT EXISTS idx_correction_events_date ON correction_events(date);
+
+        CREATE TABLE IF NOT EXISTS correction_session_state (
+            session_id          TEXT PRIMARY KEY,
+            extractor_version   TEXT NOT NULL,
+            file_path           TEXT,
+            file_size           INTEGER,
+            file_mtime          REAL,
+            user_message_count  INTEGER,
+            message_count       INTEGER,
+            max_message_id      INTEGER,
+            updated_at          TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+
         -- =================================================================
         -- Cognitive Handbook tables (Digital Twin 4-layer pipeline)
         -- L1: evidence_events  L2: judgment_cards + card_relations
@@ -487,6 +524,7 @@ def init_db():
     _ensure_column(conn, "judgment_cards", "run_id", "TEXT")
     _ensure_column(conn, "cognitive_traits", "run_id", "TEXT")
     _ensure_column(conn, "sessions", "starred", "INTEGER DEFAULT 0")
+    _ensure_column(conn, "correction_session_state", "file_path", "TEXT")
     _migrate_evidence_run_unique(conn)
     _migrate_evolve_cache_engine_unique(conn)
     conn.execute(

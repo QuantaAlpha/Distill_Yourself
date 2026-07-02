@@ -37,6 +37,11 @@ from .insights import (
     get_session_file_refs,
     get_sessions_for_file,
 )
+from .corrections import (
+    stale_correction_sessions,
+    replace_correction_events,
+    query_correction_events,
+)
 from .twin import (
     _CM_TABLES,
     cm_upsert,
@@ -110,6 +115,9 @@ __all__ = [
     "get_session_tool_usage",
     "get_session_file_refs",
     "get_sessions_for_file",
+    "stale_correction_sessions",
+    "replace_correction_events",
+    "query_correction_events",
     "_CM_TABLES",
     "cm_upsert",
     "cm_get",

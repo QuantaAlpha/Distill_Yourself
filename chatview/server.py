@@ -184,20 +184,21 @@ class ChatViewerHandler(SimpleHTTPRequestHandler):
                 count = len(_idx_mod._index.get("sessions", {}))
             _json_response(self, {"gen": gen, "count": count})
         elif path == "/api/engines":
-            engines = []
-            for name, cmd in [
-                ("claude", ["claude", "--version"]),
-                ("codex", ["codex", "--version"]),
-            ]:
-                try:
-                    result = subprocess.run(cmd, capture_output=True, timeout=5)
-                    if result.returncode == 0:
-                        engines.append(name)
-                except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-                    pass
+            from chatview.cli_resolver import get_cli_status
+
+            statuses = [get_cli_status(name) for name in ("claude", "codex")]
+            engines = [s["engine"] for s in statuses if s.get("ok")]
+            public_statuses = [
+                {k: v for k, v in status.items() if k != "auth_message"}
+                for status in statuses
+            ]
             _json_response(
                 self,
-                {"engines": ["auto"] + engines, "default": "auto"},
+                {
+                    "engines": ["auto"] + engines,
+                    "default": "auto",
+                    "status": public_statuses,
+                },
             )
         elif path == "/api/refresh":
             build_index()
