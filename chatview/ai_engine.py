@@ -9,6 +9,12 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from chatview.cli_resolver import (
+    clear_cli_resolution_cache,
+    get_cli_status,
+    resolve_cli_path,
+)
+
 
 # ---------------------------------------------------------------------------
 # Concurrency control (Issue 2.4)
@@ -28,7 +34,6 @@ _twin_semaphore = threading.Semaphore(1)  # Prevent overlapping twin analyses
 _ai_engine_cache = None  # "codex" | "claude" | ""
 _ai_engine_cache_ts = 0.0  # time.time() when _ai_engine_cache was set
 _ENGINE_CACHE_TTL = 300  # seconds — re-check every 5 minutes
-_HEALTH_PROBE_TIMEOUT = 120  # seconds — 2 minutes for both codex and claude
 
 
 def _clear_ai_engine_cache():
@@ -36,6 +41,7 @@ def _clear_ai_engine_cache():
     global _ai_engine_cache, _ai_engine_cache_ts
     _ai_engine_cache = None
     _ai_engine_cache_ts = 0.0
+    clear_cli_resolution_cache()
 
 
 def _normalize_ai_engine(engine: str) -> str:
@@ -109,44 +115,29 @@ def _detect_ai_engine():
     if _ai_engine_cache is not None and (now - _ai_engine_cache_ts) < _ENGINE_CACHE_TTL:
         return _ai_engine_cache
     _ai_engine_cache = None  # Force re-evaluation when TTL expired
-    for name, cmd in [
-        ("claude", ["claude", "--version"]),
-        ("codex", ["codex", "--version"]),
-    ]:
-        try:
-            result = subprocess.run(cmd, capture_output=True, timeout=5)
-            if result.returncode == 0:
-                if name == "claude":
-                    # Verify real API access: auth failure still exits 0 with
-                    # "Not logged in" in the response.  Run a quick probe.
-                    test = subprocess.run(
-                        [
-                            "claude",
-                            "-p",
-                            "--output-format",
-                            "stream-json",
-                            "--verbose",
-                            "--max-turns",
-                            "1",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=_HEALTH_PROBE_TIMEOUT,
-                        input="say ok",
-                    )
-                    test_out = (test.stdout or "") + (test.stderr or "")
-                    if "Not logged in" in test_out or "authentication_failed" in test_out or "Please run /login" in test_out:
-                        # Auth failed -- fall through to check codex
-                        continue
-                _ai_engine_cache = name
-                _ai_engine_cache_ts = time.time()
-                print(f"AI engine: {name}")
-                return _ai_engine_cache
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            continue
+    for name in ("claude", "codex"):
+        status = get_cli_status(name)
+        if status.get("ok"):
+            _ai_engine_cache = name
+            _ai_engine_cache_ts = time.time()
+            print(f"AI engine: {name}")
+            return _ai_engine_cache
     _ai_engine_cache = ""
     _ai_engine_cache_ts = time.time()
     return _ai_engine_cache
+
+
+def _engine_executable(engine: str) -> str:
+    path = resolve_cli_path(engine)
+    if path:
+        return path
+    env_hint = "CHATVIEW_CLAUDE_BIN" if engine == "claude" else "CHATVIEW_CODEX_BIN"
+    install_hint = (
+        "Install Claude Code or set CHATVIEW_CLAUDE_BIN."
+        if engine == "claude"
+        else "Install Codex or set CHATVIEW_CODEX_BIN."
+    )
+    raise FileNotFoundError(f"{engine} CLI not found. {install_hint} ({env_hint})")
 
 
 def _run_ai_engine(prompt, allow_write=False, timeout=300, engine_override="auto"):
@@ -176,9 +167,10 @@ def _run_ai_engine_unlocked(
     engine = engine_override if engine_override != "auto" else _detect_ai_engine()
     if engine == "codex":
         sandbox = "workspace-write" if allow_write else "read-only"
+        codex_bin = _engine_executable("codex")
         stdout, stderr, rc = _run_ai_command(
             [
-                "codex",
+                codex_bin,
                 "--sandbox",
                 sandbox,
                 "exec",
@@ -194,8 +186,9 @@ def _run_ai_engine_unlocked(
         else:
             return stdout, stderr, rc
     if engine == "claude":
+        claude_bin = _engine_executable("claude")
         return _run_ai_command(
-            ["claude", "-p"],
+            [claude_bin, "-p"],
             prompt_input=prompt,
             timeout=timeout,
         )
@@ -295,36 +288,6 @@ def _analyze_codex_probe(stdout: str, returncode: int):
     return True, ""
 
 
-def _codex_health_check():
-    """Run a fast Codex health probe. Returns ``(ok, message)``.
-
-    Codex retries internally (5x WS + 5x HTTP) which can take 30-60s on
-    transient failures (e.g. status 521). A tiny prompt with a 5s timeout
-    surfaces such failures quickly instead of blocking the whole analysis.
-    """
-    try:
-        test = subprocess.run(
-            [
-                "codex",
-                "--sandbox",
-                "read-only",
-                "exec",
-                "--json",
-                "--skip-git-repo-check",
-                "echo ok",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_HEALTH_PROBE_TIMEOUT,
-            stdin=subprocess.DEVNULL,
-        )
-        return _analyze_codex_probe(test.stdout, test.returncode)
-    except subprocess.TimeoutExpired:
-        return False, "codex health check timed out (likely network/auth issue)"
-    except (FileNotFoundError, OSError) as e:
-        return False, f"codex unavailable: {e}"
-
-
 def _run_ai_engine_stream_impl(
     prompt,
     allow_write=False,
@@ -340,76 +303,18 @@ def _run_ai_engine_stream_impl(
         yield {"type": "error", "message": "No AI engine found"}
         return
 
-    # Codex health check — run for BOTH auto and explicit codex so a transient
-    # failure (status 521, usage limit) does not block for 30-60s on internal
-    # retries.  Auto mode silently falls back to claude; an explicitly chosen
-    # codex instead surfaces an actionable error with ``suggest_engine`` so the
-    # UI can offer a one-click switch to Claude.
-    if engine == "codex":
-        ok, reason = _codex_health_check()
-        if not ok:
-            if engine_override == "auto":
-                yield {
-                    "type": "text",
-                    "content": "Codex unavailable, falling back to Claude...\n",
-                }
-                yield from _run_engine_stream_inner(
-                    "claude",
-                    prompt,
-                    allow_write,
-                    timeout,
-                    proc_ref,
-                    on_proc_start,
-                )
-                return
-            # Explicit codex: do not silently swap — let the caller/UI decide.
-            yield {
-                "type": "error",
-                "message": f"codex: {reason}",
-                "suggest_engine": "claude",
-            }
-            return
-        # Codex passed health check — use it
+    try:
         yield from _run_engine_stream_inner(
-            "codex", prompt, allow_write, timeout, proc_ref, on_proc_start
+            engine, prompt, allow_write, timeout, proc_ref, on_proc_start
         )
-        return
-
-    # Claude auth probe — run for ALL claude uses (not just auto-detect) so
-    # a stale cache or user logout is caught before the actual call.
-    if engine == "claude":
-        try:
-            test = subprocess.run(
-                ["claude", "-p", "--output-format", "stream-json", "--verbose", "--max-turns", "1"],
-                capture_output=True,
-                text=True,
-                timeout=_HEALTH_PROBE_TIMEOUT,
-                input="say ok",
-            )
-            test_out = (test.stdout or "") + (test.stderr or "")
-            if "Not logged in" in test_out or "authentication_failed" in test_out or "Please run /login" in test_out:
-                raise RuntimeError("claude auth failed")
-        except (subprocess.TimeoutExpired, RuntimeError, FileNotFoundError, OSError):
-            _clear_ai_engine_cache()
-            if engine_override == "claude":
-                # Explicit claude: surface an actionable error with a switch hint
-                yield {
-                    "type": "error",
-                    "message": "Claude is not authenticated. Please run /login in Claude Code.",
-                    "suggest_engine": "codex",
-                }
-                return
-            # auto mode: silently fall back to codex
-            yield {
-                "type": "text",
-                "content": "Claude not authenticated, falling back to Codex...\n",
-            }
-            yield from _run_engine_stream_inner(
-                "codex", prompt, allow_write, timeout, proc_ref, on_proc_start
-            )
-            return
-
-    yield from _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_ref, on_proc_start)
+    except FileNotFoundError as e:
+        _clear_ai_engine_cache()
+        evt = {"type": "error", "message": str(e)}
+        if engine == "claude":
+            evt["suggest_engine"] = "codex"
+        elif engine == "codex":
+            evt["suggest_engine"] = "claude"
+        yield evt
 
 
 def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_ref=None,
@@ -424,8 +329,9 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_ref=None
     """
     if engine == "codex":
         sandbox = "workspace-write" if allow_write else "read-only"
+        codex_bin = _engine_executable("codex")
         cmd = [
-            "codex",
+            codex_bin,
             "--sandbox",
             sandbox,
             "exec",
@@ -443,8 +349,9 @@ def _run_engine_stream_inner(engine, prompt, allow_write, timeout, proc_ref=None
             start_new_session=(os.name == "posix"),
         )
     else:  # claude
+        claude_bin = _engine_executable("claude")
         cmd = [
-            "claude",
+            claude_bin,
             "-p",
             "--output-format",
             "stream-json",
@@ -855,6 +762,85 @@ def _codex_tool_event(item: dict, status: str):
     return None
 
 
+def _compact_json_payload(value, limit=200):
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value)
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, (dict, list)):
+                text = json.dumps(parsed, ensure_ascii=False)
+        except (TypeError, ValueError):
+            pass
+    return text.replace("\n", " ")[:limit]
+
+
+def _codex_function_call_event(payload: dict):
+    name = payload.get("name", "") or "tool"
+    raw_args = payload.get("arguments") or ""
+    args = {}
+    if isinstance(raw_args, str) and raw_args:
+        try:
+            args = json.loads(raw_args)
+        except (TypeError, ValueError):
+            args = {}
+    if name == "exec_command":
+        detail = args.get("cmd") if isinstance(args, dict) else raw_args
+        return {
+            "type": "tool",
+            "name": "Bash",
+            "status": "running",
+            "detail": _compact_json_payload(detail),
+        }
+    if name in ("spawn_agent", "wait_agent"):
+        if name == "wait_agent" and isinstance(args, dict):
+            targets = args.get("targets") or []
+            detail = f"wait_agent {len(targets)} agents"
+        elif isinstance(args, dict):
+            detail = f"{name} {args.get('agent_type', '')}: {args.get('message', '')}"
+        else:
+            detail = name
+        return {
+            "type": "tool",
+            "name": "Agent",
+            "status": "running",
+            "detail": _compact_json_payload(detail),
+        }
+    return {
+        "type": "tool",
+        "name": "Tool",
+        "status": "running",
+        "detail": _compact_json_payload(name),
+    }
+
+
+def _codex_function_output_event(payload: dict):
+    output = payload.get("output")
+    if output is None:
+        output = payload.get("content")
+    detail = _compact_json_payload(output, limit=1200)
+    name = "Tool"
+    try:
+        parsed = json.loads(output) if isinstance(output, str) else output
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, dict) and (
+        "status" in parsed or "agent_id" in parsed or "nickname" in parsed
+    ):
+        name = "Agent"
+    elif detail.startswith("Chunk ID:") or "Process exited with code" in detail:
+        name = "Bash"
+    return {
+        "type": "tool",
+        "name": name,
+        "status": "done",
+        "detail": detail,
+    }
+
+
 def _parse_stream_event(engine: str, line: str) -> dict:
     """Parse a JSONL line from Codex or Claude into a normalized event."""
     try:
@@ -864,6 +850,24 @@ def _parse_stream_event(engine: str, line: str) -> dict:
 
     if engine == "codex":
         evt_type = obj.get("type", "")
+        if evt_type == "event_msg":
+            payload = obj.get("payload") or {}
+            payload_type = payload.get("type")
+            if payload_type in ("agent_message", "reasoning"):
+                text = payload.get("message") or payload.get("text") or payload.get("summary") or ""
+                if text:
+                    return {"type": "text", "content": text}
+            if payload_type == "task_complete":
+                text = payload.get("message") or payload.get("result") or payload.get("output") or ""
+                if text:
+                    return {"type": "text", "content": _compact_json_payload(text, limit=1200)}
+        if evt_type == "response_item":
+            payload = obj.get("payload") or {}
+            payload_type = payload.get("type")
+            if payload_type in ("function_call", "custom_tool_call"):
+                return _codex_function_call_event(payload)
+            if payload_type in ("function_call_output", "custom_tool_call_output"):
+                return _codex_function_output_event(payload)
         # Tool execution started
         if evt_type == "item.started":
             item = obj.get("item", {})

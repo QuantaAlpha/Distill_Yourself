@@ -1,8 +1,8 @@
 """Tests for the AI engine abstraction layer (chatview/ai_engine.py).
 
 Covers Group C — 双引擎适配:
-  1. Codex 健康探针解析抽成可测试的纯函数 _analyze_codex_probe。
-  2. 显式 codex 不健康时不应傻等 30-60s 内部重试，而是给出可切换 claude 的 error。
+  1. Codex JSONL 错误事件解析抽成可测试的纯函数 _analyze_codex_probe。
+  2. stream 热路径不再执行模型级健康检查。
   3. 统一 codex 工具事件解析粒度（file_change / web_search / mcp_tool_call / reasoning）。
 """
 
@@ -12,7 +12,7 @@ import unittest
 from chatview import ai_engine
 
 
-class TestAnalyzeCodexProbe(unittest.TestCase):
+class TestAnalyzeCodexErrorParsing(unittest.TestCase):
     def test_detects_521_error_event(self):
         stdout = "\n".join(
             [
@@ -53,27 +53,19 @@ class TestAnalyzeCodexProbe(unittest.TestCase):
 
 
 class TestExplicitCodexUnhealthy(unittest.TestCase):
-    def test_explicit_codex_unhealthy_yields_switch_error_without_running(self):
-        """显式 codex 探针失败时，应直接给出可切换 claude 的 error，
-        且不进入 _run_engine_stream_inner（避免 30-60s 卡顿）。"""
+    def test_explicit_codex_starts_without_preflight_probe(self):
+        """显式 codex 不应先跑模型级健康检查；真实请求负责返回错误。"""
         inner_called = []
-
-        class _FakeProbe:
-            returncode = 0
-            stdout = json.dumps(
-                {"type": "error", "message": "unexpected status 521"}
-            )
-            stderr = ""
 
         orig_run = ai_engine.subprocess.run
         orig_inner = ai_engine._run_engine_stream_inner
 
         def _fake_run(*a, **k):
-            return _FakeProbe()
+            raise AssertionError("subprocess.run preflight should not be called")
 
         def _fake_inner(engine, *a, **k):
             inner_called.append(engine)
-            yield {"type": "done", "content": ""}
+            yield {"type": "error", "message": "codex: unexpected status 521"}
 
         ai_engine.subprocess.run = _fake_run
         ai_engine._run_engine_stream_inner = _fake_inner
@@ -87,28 +79,22 @@ class TestExplicitCodexUnhealthy(unittest.TestCase):
             ai_engine.subprocess.run = orig_run
             ai_engine._run_engine_stream_inner = orig_inner
 
-        # codex 未被实际运行
-        self.assertNotIn("codex", inner_called)
-        # 给出 error 且建议切换到 claude
+        self.assertEqual(inner_called, ["codex"])
         errs = [e for e in events if e.get("type") == "error"]
         self.assertTrue(errs, f"expected an error event, got {events}")
-        self.assertEqual(errs[0].get("suggest_engine"), "claude")
         self.assertIn("521", errs[0].get("message", ""))
 
-    def test_auto_codex_unhealthy_falls_back_to_claude(self):
-        """auto 模式下 codex 不健康应回退 claude（保持既有行为）。"""
+    def test_auto_codex_starts_without_preflight_probe(self):
+        """auto 选中 codex 后也不应先跑模型级健康检查。"""
         inner_called = []
-
-        class _FakeProbe:
-            returncode = 0
-            stdout = json.dumps({"type": "error", "message": "status 521"})
-            stderr = ""
 
         orig_run = ai_engine.subprocess.run
         orig_inner = ai_engine._run_engine_stream_inner
         orig_detect = ai_engine._detect_ai_engine
 
-        ai_engine.subprocess.run = lambda *a, **k: _FakeProbe()
+        ai_engine.subprocess.run = lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("subprocess.run preflight should not be called")
+        )
         ai_engine._detect_ai_engine = lambda: "codex"
 
         def _fake_inner(engine, *a, **k):
@@ -127,7 +113,7 @@ class TestExplicitCodexUnhealthy(unittest.TestCase):
             ai_engine._run_engine_stream_inner = orig_inner
             ai_engine._detect_ai_engine = orig_detect
 
-        self.assertIn("claude", inner_called)
+        self.assertEqual(inner_called, ["codex"])
 
 
 class TestCodexToolEventParsing(unittest.TestCase):
@@ -187,6 +173,71 @@ class TestCodexToolEventParsing(unittest.TestCase):
         evt = ai_engine._parse_stream_event("codex", line)
         self.assertEqual(evt["type"], "text")
         self.assertIn("thinking", evt["content"])
+
+    def test_codex_response_item_spawn_agent_becomes_tool_event(self):
+        line = json.dumps(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "spawn_agent",
+                    "arguments": json.dumps(
+                        {
+                            "agent_type": "explorer",
+                            "message": "你是 Chat Viewer Evolve 的子分析 agent。",
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            },
+            ensure_ascii=False,
+        )
+        evt = ai_engine._parse_stream_event("codex", line)
+        self.assertEqual(evt["type"], "tool")
+        self.assertEqual(evt["name"], "Agent")
+        self.assertEqual(evt["status"], "running")
+        self.assertIn("spawn_agent", evt["detail"])
+
+    def test_codex_response_item_wait_agent_output_becomes_done_tool_event(self):
+        line = json.dumps(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "output": json.dumps(
+                        {
+                            "status": {
+                                "019f1e69-a8d1": {
+                                    "completed": "第一批候选 memory 如下"
+                                }
+                            }
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "call_id": "call_wait",
+                },
+            },
+            ensure_ascii=False,
+        )
+        evt = ai_engine._parse_stream_event("codex", line)
+        self.assertEqual(evt["type"], "tool")
+        self.assertEqual(evt["status"], "done")
+        self.assertIn("第一批候选", evt["detail"])
+
+    def test_codex_event_msg_agent_message_becomes_text(self):
+        line = json.dumps(
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "agent_message",
+                    "message": "第二个 agent 的结果也回来了",
+                },
+            },
+            ensure_ascii=False,
+        )
+        evt = ai_engine._parse_stream_event("codex", line)
+        self.assertEqual(evt["type"], "text")
+        self.assertIn("第二个 agent", evt["content"])
 
 
 if __name__ == "__main__":
