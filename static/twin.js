@@ -1185,6 +1185,30 @@
     _startBackgroundPoll();
   }
 
+  function _reattachToRunningTwinAnalysis() {
+    return fetch("/api/twin/progress")
+      .then(r => r.json())
+      .then((p) => {
+        if (!p || !p.ok || !p.running || !p.run) return false;
+        _lastProgressRun = p.run;
+        _activeRunId = p.run.run_id || _activeRunId;
+        if (_activeRunId) {
+          try { localStorage.setItem(TWIN_ACTIVE_RUN_KEY, _activeRunId); } catch (e) {}
+        }
+        _lastError = "";
+        analysisRunning = false;
+        hasAnalysisProgress = true;
+        _stopStatsPoll();
+        _saveProgressSnapshot({ status: "running", error: "" });
+        _attachBackgroundRun();
+        _updateAnalyzeButton();
+        const updatedEl = document.getElementById("twin-last-analyzed");
+        if (updatedEl) updatedEl.textContent = _tt("twin.status.bgRunning");
+        return true;
+      })
+      .catch(() => false);
+  }
+
   function _startBackgroundPoll() {
     if (_bgPollTimer) return;
     _bgPollTimer = setInterval(() => {
@@ -2535,6 +2559,7 @@
       body.resume = true;
       if (_activeRunId) body.run_id = _activeRunId;
     }
+    let analysisAttached = false;
 
     fetch("/api/twin/analyze", {
       method: "POST",
@@ -2542,15 +2567,23 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
-      .then((response) => window.readSseStream(response, _wrappedHandleFn))
+      .then(async (response) => {
+        if (response.status === 409) {
+          analysisAttached = await _reattachToRunningTwinAnalysis();
+          if (analysisAttached) return;
+        }
+        return window.readSseStream(response, _wrappedHandleFn);
+      })
       .then(() => {
         // Clear watchdog since the stream ended normally
         if (streamState._watchdogTimer) { clearTimeout(streamState._watchdogTimer); streamState._watchdogTimer = null; }
+        if (analysisAttached) return;
         _finishAnalysis(streamState, streamState.failed);
       })
       .catch((e) => {
         // Clear watchdog
         if (streamState._watchdogTimer) { clearTimeout(streamState._watchdogTimer); streamState._watchdogTimer = null; }
+        if (analysisAttached) return;
         if (e.name === "AbortError") {
           if (analysisAbort === abortCtrl) { analysisRunning = false; _updateAnalyzeButton(); }
           return;

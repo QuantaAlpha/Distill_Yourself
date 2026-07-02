@@ -177,6 +177,41 @@ class TwinIntegrityTestCase(unittest.TestCase):
         self.assertNotIn("B scenario", text)
         self.assertNotIn("Trait B", text)
 
+    def test_twin_search_uses_valid_sort_columns_for_all_resources(self):
+        db.cm_upsert("evidence_events", "ev_search", {
+            "session_id": "s1",
+            "event_index": 1,
+            "lesson": "regression gate lesson",
+            "signal_type": "correction",
+            "domain": "testing/search",
+        })
+        db.cm_upsert("judgment_cards", "jc_search", {
+            "applies_when": "regression gate needed",
+            "judgment": "add a regression test",
+            "agent_action": "write the test first",
+        })
+        db.cm_upsert("cognitive_traits", "ct_search", {
+            "name": "Regression Gate",
+            "category": "testing",
+            "description": "prefers a regression gate before fixes",
+        })
+
+        for resource, query, expected_id in (
+            ("events", "regression gate lesson", "ev_search"),
+            ("cards", "regression gate needed", "jc_search"),
+            ("traits", "Regression Gate", "ct_search"),
+        ):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                analyze.cmd_twin_search(
+                    SimpleNamespace(resource=resource, q=query, limit=10)
+                )
+            data = json.loads(out.getvalue())
+            self.assertTrue(
+                any(item["id"] == expected_id for item in data["items"]),
+                resource,
+            )
+
     def test_twin_cancel_preserves_stage_data_and_marks_checkpoint_cancelled(self):
         """Cancelling a running analysis must NOT delete completed stage data;
         it should keep events/cards/traits and mark the run's checkpoint so a

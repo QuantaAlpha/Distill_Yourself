@@ -56,6 +56,12 @@ _TWIN_SEARCH_COLS = {
     "cognitive_traits": ["name", "category", "description"],
 }
 
+_TWIN_SEARCH_ORDER = {
+    "evidence_events": "created_at DESC",
+    "judgment_cards": "updated_at DESC",
+    "cognitive_traits": "updated_at DESC",
+}
+
 _TWIN_MAX_OUTPUT_CHARS = 320_000  # ~80K tokens -- leave room for prompt + reasoning
 
 
@@ -571,7 +577,11 @@ def cmd_twin_search(args):
 
     total = _db.cm_count(table, where=where, params=params)
     rows = _db.cm_get_all(
-        table, where=where, params=params, order="rowid DESC", limit=args.limit
+        table,
+        where=where,
+        params=params,
+        order=_TWIN_SEARCH_ORDER[table],
+        limit=args.limit,
     )
     _twin_truncated_json(rows, args.resource, total, args.limit)
 
